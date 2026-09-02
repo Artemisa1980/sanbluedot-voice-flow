@@ -68,9 +68,10 @@ modes, and the distinction is normative rather than cosmetic.
   the application had taken. The selected mode is the answer, and it is visible before
   the speaker starts talking.
 - The mode is changeable without opening the station window, and the surface that
-  announces the change is the one visible at the time. A change applies to the next
-  dictation; a run already handed to the engine keeps the mode it was given, and is
-  reported under that mode.
+  announces the change is the one visible at the time. The switch is refused while a
+  dictation is in flight — from the moment the shortcut is pressed until the result is
+  delivered — and the refusal is reported rather than silent. A run keeps the mode it
+  was started with and is reported under that mode.
 - `actions` is an application mode, not an engine mode. The engine transcribes and cleans
   as usual, and the command is recognized from the text it returns.
 - Executed actions suppress auto-paste into the prior application to prevent document pollution.
@@ -99,6 +100,12 @@ modes, and the distinction is normative rather than cosmetic.
 
 - Spoken trigger phrases expand deterministically into predefined multi-line text blocks, URLs, or structured templates.
 - Snippet expansion occurs after speech recognition and cleanup/output guard to ensure long URL or template expansions are never rejected by conservative lexical guards.
+- Expansion happens in exactly one place. A single non-cascading scan is a property of
+  one scan; two implementations reading the same store and running in sequence reproduce
+  the cascade the rule forbids, because the second scan matches the payload the first one
+  wrote. The engine owns the scan; any other layer delivers its result unchanged.
+- A personal store that cannot be read is preserved under a dated name and the loss is
+  reported. Treating an unreadable store as an empty one lets the next edit overwrite it.
 - Expansion respects word boundaries (`(?<!\w)trigger(?!\w)`) in Spanish and English, operates case-insensitively, and evaluates longest triggers first in a single non-cascading scan.
 - Snippet definitions are stored locally in versioned JSON (`snippets.local.json`) with atomic writes and schema validation, completely excluded from version control.
 - If cleanup fails, snippets expand over the deterministic fallback transcript so macro invocations succeed even under provider failure.

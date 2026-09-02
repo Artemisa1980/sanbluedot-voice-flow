@@ -110,6 +110,14 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         viewModel.selectedCleaner = selected
     }
 
+    /// Name the trigger the app is actually enforcing.
+    ///
+    /// The hold hint used to read a default that nothing ever wrote, so a window launched
+    /// with `--shortcut` told the speaker to hold a key the app was not listening for.
+    func configureShortcut(name: String) {
+        viewModel.shortcutName = name
+    }
+
     func configureMode(selected: ProcessingMode) {
         viewModel.selectedMode = selected
     }

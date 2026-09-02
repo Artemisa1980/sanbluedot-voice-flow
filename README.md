@@ -98,8 +98,14 @@ additional `--allow-global` confirmation. Multi-word triggers do not require it.
 
 A spoken trigger expands into a full block of text: a signature, a link, a template.
 Expansion runs after cleanup and after the output guard, so a multi-line block or a long
-URL is never rejected as invented content, and it runs as one non-cascading scan, so an
-expansion can never trigger another snippet.
+URL is never rejected as invented content.
+
+It runs as one non-cascading scan, so an expansion can never trigger another snippet —
+and that holds because expansion happens in exactly one place, the engine's
+`snippets.py`. The app once ran a second scan of its own over the text the engine
+returned, and that pass matched the *payload* of the first expansion: a `firma` snippet
+whose body says "mi linkedin" came back with the link substituted. The macOS app now
+delivers the engine's `final_text` unchanged and only edits the store.
 
 ```bash
 ./vf snippet add --trigger "mi linkedin" --expansion "https://www.linkedin.com/in/..."

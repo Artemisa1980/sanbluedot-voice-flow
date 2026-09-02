@@ -30,8 +30,10 @@ final class HotkeyMonitor {
         onModeCycle: @escaping () -> Void = {}
     ) {
         self.shortcut = shortcut
-        // A modifier-only chord is a hold, and the mode switch is a tap. Accepting one
-        // here would fire the switch on every press of that modifier.
+        // A modifier-only chord is a hold, and the mode switch is a tap. Configuration
+        // now refuses one, so this is a defensive floor rather than the enforcement
+        // point: dropping it silently here is what left the switch dead while the menu
+        // bar still named the chord.
         self.modeShortcut = modeShortcut?.keyCode == nil ? nil : modeShortcut
         self.onPressed = onPressed
         self.onReleased = onReleased

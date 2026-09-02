@@ -44,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return DictationHistoryStore()
     }()
-    private var snippetStore: VoiceSnippetStore = VoiceSnippetStore.load()
+    private static let snippetLoad = VoiceSnippetStore.loadReporting()
+    private var snippetStore: VoiceSnippetStore = AppDelegate.snippetLoad.store
     private var historyMenuItem: NSMenuItem!
     private var historyMenu: NSMenu!
 
@@ -81,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateStatus(.failed(launchError.localizedDescription))
         } else if let configuration {
             shortcutMenuItem.title = "Shortcut: \(configuration.shortcut.displayName)"
+            controlWindow.configureShortcut(name: configuration.shortcut.displayName)
             updateModeMenuItem()
             authorizeAndStart()
         }
@@ -163,6 +165,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.clearDictationHistory()
         }
         controlWindow.updateSnippets(snippetStore.snippets)
+        // A store that could not be read is said out loud. Starting empty in silence is
+        // how the next add from this window used to overwrite the speaker's real file.
+        if let failure = AppDelegate.snippetLoad.failure {
+            controlWindow.addLog(failure, isHighlight: true)
+        }
         controlWindow.onAddSnippet = { [weak self] trigger, expansion, description in
             guard let self else { return }
             if let snip = self.snippetStore.add(trigger: trigger, expansion: expansion, description: description) {
@@ -772,13 +779,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.controlWindow.addLog("action not executed: \(action.displayDescription) · continuing dictation")
             }
 
-            // Expand voice snippets if registered
-            let deliveredText = self.snippetStore.expand(text: result.finalText)
-            if deliveredText != result.finalText {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(deliveredText, forType: .string)
-            }
+            // Snippets are already expanded. The engine runs the one scan R5b allows,
+            // over the same store this window edits, and reports the result as
+            // `final_text`. A second scan here re-matched the payload of the first
+            // expansion and delivered a string neither pass produces alone, while the
+            // history recorded that string and the engine's telemetry recorded another.
+            let deliveredText = result.finalText
 
             // The paste outcome is only known once the deferred keystroke has run its
             // decisive target check, so every label that depends on it is written from

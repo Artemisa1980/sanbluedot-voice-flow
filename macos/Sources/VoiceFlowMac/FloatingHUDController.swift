@@ -57,8 +57,7 @@ final class FloatingHUDController {
         viewModel.audioLevel = 0.0
 
         positionPanel()
-        panel.alphaValue = 1.0
-        panel.orderFrontRegardless()
+        showAtFullOpacity()
 
         meterTimer?.invalidate()
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
@@ -138,8 +137,7 @@ final class FloatingHUDController {
         viewModel.mode = .modeChanged(mode)
 
         positionPanel()
-        panel.alphaValue = 1.0
-        panel.orderFrontRegardless()
+        showAtFullOpacity()
 
         let work = DispatchWorkItem { [weak self] in
             self?.fadeOut()
@@ -174,6 +172,21 @@ final class FloatingHUDController {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
         panel.orderOut(nil)
+    }
+
+    /// Bring the panel back to full opacity, cancelling a fade that is still running.
+    ///
+    /// Setting `alphaValue` directly does not stop an animation already interpolating
+    /// toward zero, so a mode switch pressed during the last fade kept dimming for a
+    /// moment before snapping back. A zero-duration group through the same animator
+    /// replaces that animation instead of racing it.
+    private func showAtFullOpacity() {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            panel.animator().alphaValue = 1.0
+        }
+        panel.alphaValue = 1.0
+        panel.orderFrontRegardless()
     }
 
     private func fadeOut() {

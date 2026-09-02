@@ -15,6 +15,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
     case invalidLanguage(String)
     case invalidShortcut(String)
     case shortcutConflict(String)
+    case modifierOnlyModeShortcut(String)
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +33,9 @@ public enum ConfigurationError: LocalizedError, Equatable {
             return "Invalid shortcut: \(shortcut). Use fn alone or a modifier plus a supported key."
         case .shortcutConflict(let shortcut):
             return "\(shortcut) is already the push-to-talk shortcut. Give --mode-shortcut a different chord."
+        case .modifierOnlyModeShortcut(let shortcut):
+            return "\(shortcut) is a modifier by itself. The mode switch is tapped, not held, "
+                + "so --mode-shortcut needs a modifier plus a key, such as control+option+m."
         }
     }
 }
@@ -361,6 +365,12 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
         // collision is refused at launch rather than discovered mid-dictation.
         guard modeShortcut != shortcut else {
             throw ConfigurationError.shortcutConflict(modeShortcut.displayName)
+        }
+        // The mode switch is a tap, and a modifier alone can only be held. Accepting one
+        // here and dropping it later in `HotkeyMonitor` left the app running with the
+        // switch silently dead while the menu bar still advertised the chord.
+        guard modeShortcut.keyCode != nil else {
+            throw ConfigurationError.modifierOnlyModeShortcut(modeShortcut.displayName)
         }
 
         let projectRoot = resolve(

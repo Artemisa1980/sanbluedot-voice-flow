@@ -4,6 +4,9 @@ Every cold audit of this project writes its run log here, and only here. A run l
 created in this directory with `RUN STATUS: IN PROGRESS` before the audit begins, is
 checkpointed as the run advances, and stays here when the run closes.
 
+Every run log in this directory has a row here, including a run that was blocked or
+stopped before it audited anything. An unindexed log cannot be told apart from a lost one.
+
 **These are closed runs, not open work.** Their findings were remediated by the author
 in the same work cycle. Read one to learn why a decision was made or whether a defect
 was already raised; never treat an entry as a task, and never re-run a gate because a
@@ -33,3 +36,8 @@ evidence.
 | `audit-distill-engine-gate.local.md` | 2026-09-01 | Feature 5 distillation and Python cleaners | COMPLETE · F-01 to F-09 remediated |
 | `audit-swift-terminal-gate.local.md` | 2026-09-01 | Terminal auto-paste and Swift app layer | COMPLETE · 2 critical, 3 defects remediated |
 | `audit-framework-quality-gate.local.md` | 2026-09-01 | Framework, roadmap, relay and design system | COMPLETE · 5 findings remediated |
+| `audit-engine-timings-gate.local.md` | 2026-09-01 | Python engine stage timings and opt-in distillation | COMPLETE · FAIL on `export_jsonl` data loss; remediated with a refusal and two tests |
+| `audit-station-redesign-gate.local.md` | 2026-09-01 | Station redesign and visual contract conformance | COMPLETE · 7 findings, 6 remediated, 1 rejected by the owner and recorded in the contract |
+| `audit-python-pipeline-gate.local.md` | 2026-09-02 | Feature 9 close-out · Python snippets and pipeline engine | COMPLETE · FAIL on double snippet expansion and a snippet-store data-loss path; both remediated |
+| `audit-swift-ui-gate.local.md` | 2026-09-02 | Feature 9 close-out · Swift app layer and UI | COMPLETE · CONDITIONAL PASS · 3 findings remediated |
+| `audit-framework-governance-gate.local.md` | 2026-09-02 | Feature 9 close-out · framework, roadmap and governance | COMPLETE · CONDITIONAL PASS · 2 defects and 3 notes remediated |

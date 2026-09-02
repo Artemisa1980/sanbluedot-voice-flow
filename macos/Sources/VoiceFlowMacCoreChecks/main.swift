@@ -15,6 +15,41 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
     guard condition() else { throw CheckFailure.failed(message) }
 }
 
+/// The `--mode` values the engine's `process` subcommand actually accepts.
+///
+/// Read out of `cli.py` at check time. Duplicating the list in Swift is what this check
+/// exists to catch, so it must not be the thing the check compares against.
+func enginesProcessModeChoices() throws -> Set<String> {
+    // <root>/macos/Sources/VoiceFlowMacCoreChecks/main.swift -> <root>
+    let projectRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let cli = projectRoot.appendingPathComponent("src/sanbluedot_voiceflow/cli.py")
+    guard let source = try? String(contentsOf: cli, encoding: .utf8) else {
+        throw CheckFailure.failed("Could not read the engine CLI at \(cli.path).")
+    }
+    // The `process` subparser's own --mode block, not another subcommand's.
+    guard let processRange = source.range(of: "process.add_argument(\n        \"--mode\",") else {
+        throw CheckFailure.failed("The engine CLI no longer declares process --mode where this check looks.")
+    }
+    let tail = source[processRange.upperBound...]
+    guard let choicesStart = tail.range(of: "choices=["),
+          let choicesEnd = tail[choicesStart.upperBound...].range(of: "]") else {
+        throw CheckFailure.failed("The engine CLI's process --mode declares no choices= list.")
+    }
+    let body = tail[choicesStart.upperBound..<choicesEnd.lowerBound]
+    let values = body
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \n\t\"'")) }
+        .filter { !$0.isEmpty }
+    guard !values.isEmpty else {
+        throw CheckFailure.failed("The engine CLI's process --mode choices list parsed empty.")
+    }
+    return Set(values)
+}
+
 do {
     let root = URL(fileURLWithPath: "/tmp/voiceflow-project")
     let defaults = try VoiceFlowConfiguration.parse(
@@ -480,38 +515,31 @@ do {
         try check(false, "Unexpected error thrown for invalid mode: \(error)")
     }
 
-    // Test VoiceSnippetStore
+    // --- VoiceSnippetStore: the editor's store, not an expansion engine ---
+    //
+    // Expansion belongs to `snippets.py` alone. A second scan here, over text the engine
+    // had already expanded, matched the payload of the first expansion and delivered a
+    // string neither pass produces on its own. These checks cover what this type still
+    // owns: editing, encoding, and refusing to lose a file it cannot read.
     let snippetStore = VoiceSnippetStore()
     let snip1 = snippetStore.add(trigger: "mi linkedin", expansion: "https://example.com/in/fixture-profile", description: "Profile link")
     _ = snippetStore.add(trigger: "mi linkedin corporativo", expansion: "https://linkedin.com/company/sanblue")
     _ = snippetStore.add(trigger: "mi correo", expansion: "user@example.com")
-    _ = snippetStore.add(trigger: "precio oferta", expansion: "$100 USD (código: \\g<1>)")
+    _ = snippetStore.add(trigger: "precio oferta", expansion: "$100 USD")
     _ = snippetStore.add(trigger: "c++ library", expansion: "lib/libc++.dylib")
     _ = snippetStore.add(trigger: "mi dirección", expansion: "Quito, Ecuador")
 
     try check(snippetStore.snippets.count == 6, "Snippet store should contain 6 snippets.")
     try check(snippetStore.add(trigger: "   ", expansion: "   ") == nil, "Whitespace-only trigger/expansion should be rejected.")
 
-    // Test case-insensitive word-boundary and longest-match expansion
-    let textToExpand = "Hola, visita Mi LinkedIn Corporativo o escríbeme a Mi Correo. El precio es precio oferta para c++ library en Mi Dirección."
-    let expandedText = snippetStore.expand(text: textToExpand)
-    let expectedText = "Hola, visita https://linkedin.com/company/sanblue o escríbeme a user@example.com. El precio es $100 USD (código: \\g<1>) para lib/libc++.dylib en Quito, Ecuador."
-    try check(
-        expandedText == expectedText,
-        "Snippet expansion mismatch: expected [\(expectedText)], got [\(expandedText)]"
-    )
-
-    // Test word boundary protection: trigger "correo" must not match inside "anticorreo"
-    _ = snippetStore.add(trigger: "correo", expansion: "CORREO_EXPANDED")
-    let boundaryText = "Este es un mensaje anticorreo."
-    try check(snippetStore.expand(text: boundaryText) == boundaryText, "Word boundary check failed for substring trigger.")
-
     // Test encoding and decoding
     guard let snippetData = snippetStore.encode() else {
-        throw NSError(domain: "VoiceFlow", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode snippet store."])
+        throw CheckFailure.failed("Failed to encode snippet store.")
     }
-    let decodedStore = VoiceSnippetStore.decode(from: snippetData)
-    try check(decodedStore.snippets.count == 7, "Decoded snippet store count mismatch.")
+    guard let decodedStore = VoiceSnippetStore.decode(from: snippetData) else {
+        throw CheckFailure.failed("A store this process just encoded did not decode.")
+    }
+    try check(decodedStore.snippets.count == 6, "Decoded snippet store count mismatch.")
 
     // Test delete by trigger, delete by UUID, and clear
     try check(decodedStore.delete(trigger: "mi linkedin"), "Delete snippet by trigger should return true.")
@@ -525,14 +553,49 @@ do {
     decodedStore.clear()
     try check(decodedStore.snippets.isEmpty, "Clear should empty snippet store.")
 
-    // Test non-cascading expansion: Snippet 1 expands "mi correo" -> "hello@example.dev", Snippet 2 expands "sanblue" -> "Sanblue LLC".
-    let nonCascadeStore = VoiceSnippetStore()
-    _ = nonCascadeStore.add(trigger: "mi correo", expansion: "hello@example.dev")
-    _ = nonCascadeStore.add(trigger: "sanblue", expansion: "Sanblue LLC")
-    let cascadeInput = "Escríbeme a mi correo o visita sanblue"
-    let expectedNonCascade = "Escríbeme a hello@example.dev o visita Sanblue LLC"
-    let nonCascadeResult = nonCascadeStore.expand(text: cascadeInput)
-    try check(nonCascadeResult == expectedNonCascade, "Non-cascading snippet check failed: expected [\(expectedNonCascade)], got [\(nonCascadeResult)]")
+    // A damaged store is preserved, reported, and never written over. Decoding it to an
+    // empty store with no report is what let the next add from the window destroy the
+    // speaker's real snippets.
+    try check(
+        VoiceSnippetStore.decode(from: Data("{ not json".utf8)) == nil,
+        "A damaged payload decoded to a store instead of reporting failure."
+    )
+
+    let snippetFixtureDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("voiceflow-snippet-checks-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: snippetFixtureDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: snippetFixtureDirectory) }
+    let snippetFixture = snippetFixtureDirectory.appendingPathComponent("snippets.local.json")
+
+    try check(
+        VoiceSnippetStore.loadReporting(from: snippetFixture).failure == nil,
+        "A store that does not exist yet was reported as a failure."
+    )
+
+    try Data("{ not json".utf8).write(to: snippetFixture)
+    let damaged = VoiceSnippetStore.loadReporting(from: snippetFixture)
+    try check(damaged.failure != nil, "A damaged store loaded silently.")
+    try check(damaged.store.snippets.isEmpty, "A damaged store returned snippets it could not read.")
+    try check(
+        !FileManager.default.fileExists(atPath: snippetFixture.path),
+        "A damaged store was left in place, where the next save would overwrite it."
+    )
+    let preserved = try FileManager.default
+        .contentsOfDirectory(atPath: snippetFixtureDirectory.path)
+        .filter { $0.hasPrefix("snippets.local.json.corrupt-") }
+    try check(preserved.count == 1, "The damaged store was not preserved under a dated name.")
+
+    // A healthy store survives the round trip through the same locked path.
+    let savedStore = VoiceSnippetStore()
+    _ = savedStore.add(trigger: "mi correo", expansion: "user@example.com")
+    savedStore.save(to: snippetFixture)
+    let reloaded = VoiceSnippetStore.loadReporting(from: snippetFixture)
+    try check(reloaded.failure == nil, "A store this process just wrote did not load.")
+    try check(reloaded.store.snippets.count == 1, "A saved snippet did not survive the round trip.")
+    try check(
+        VoiceSnippetStore.lockURL(for: snippetFixture).lastPathComponent == ".snippets.local.json.lock",
+        "The Swift lock sidecar does not match the name memory.py takes."
+    )
 
     // Keeping dictated text on disk is opt-in. An ordinary run must not carry the
     // flag, and cloud cleanup alone must not add it: the store fills only when the
@@ -578,10 +641,15 @@ do {
 
     // --- Processing modes and the mode switch (Feature 9) ---
 
-    // The engine's own vocabulary. `--mode actions` was sent verbatim and argparse
-    // rejected the whole run, so every dictation failed while ACTION was selected.
-    // This list is what `cli.py` accepts; a mode that maps outside it fails here first.
-    let engineModes: Set<String> = ["clean", "translate", "meeting"]
+    // The engine's own vocabulary, read from `cli.py` rather than copied here. `--mode
+    // actions` was sent verbatim once and argparse rejected the whole run, so every
+    // dictation failed while ACTION was selected. A hand-kept duplicate of this list
+    // would pass while the two drifted apart, so the check reads the real `choices=`.
+    let engineModes = try enginesProcessModeChoices()
+    try check(
+        engineModes.contains("translate") && engineModes.contains("meeting"),
+        "The engine CLI's mode list parsed as \(engineModes.sorted()), which is not the real list."
+    )
     for mode in ProcessingMode.allCases {
         try check(
             engineModes.contains(mode.engineMode),
@@ -654,6 +722,22 @@ do {
     try check(
         conflictRejected,
         "A mode shortcut equal to the push-to-talk trigger was accepted."
+    )
+
+    // A modifier alone can only be held, and the mode switch is tapped. Accepting one
+    // and dropping it later left the switch dead while the menu bar still named it.
+    var modifierOnlyRejected = false
+    do {
+        _ = try VoiceFlowConfiguration.parse(
+            arguments: ["--shortcut", "command+shift+f8", "--mode-shortcut", "fn"],
+            currentDirectory: root
+        )
+    } catch ConfigurationError.modifierOnlyModeShortcut {
+        modifierOnlyRejected = true
+    }
+    try check(
+        modifierOnlyRejected,
+        "A modifier-only mode shortcut was accepted instead of refused at launch."
     )
 
     let actionsRun = EngineInvocation.make(
