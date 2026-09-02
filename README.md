@@ -131,7 +131,33 @@ the dictation is pasted normally, so speech is never lost. Conversational phrase
 merely start with "abre" or "open" are rejected rather than treated as an app name.
 
 Only the `ACTION` mode looks for a command. Every other mode writes what was said, so a
-sentence that merely opens like an instruction is dictated rather than executed.
+sentence that merely opens like an instruction is dictated rather than executed. When
+`ACTION` recognizes nothing, it says so — the capsule shows `NO CMD` and the activity log
+names the sentence it dictated instead. Silence there made the mode look broken.
+
+A spoken name with no application behind it opens that name's website. This Mac is
+searched first, so `abre spotify` opens Spotify and `abre youtube` opens youtube.com,
+which used to fail because there is no `YouTube.app`. The interface names what actually
+happened, so a site opened in place of an application is never reported as a launch. The
+list covers the everyday web properties — YouTube, Gmail, Drive, GitHub, LinkedIn,
+WhatsApp, Instagram, Facebook, Netflix, ChatGPT, Claude, Canva, Notion, Figma — and a
+name outside it is still refused rather than guessed at.
+
+These phrasings are recognized:
+
+| Say | Result |
+|---|---|
+| `abre notas` · `abre spotify` · `abre la calculadora` | Launches the application |
+| `abre youtube` · `abre gmail` · `abre github` | Opens the site, when no such app exists |
+| `busca en youtube <query>` · `search youtube for <query>` | YouTube search |
+| `busca en google <query>` · `googlea <query>` | Google search |
+| `busca en github <query>` | GitHub search |
+| `abre safari y busca <query>` | Browser with the search |
+| `ir a apple.com` · `open github.com` | Opens the address |
+
+`abre youtube y busca lofi` is not one of them: an application name is a name, not a
+sentence, and a phrase of more than three words that matches no known application is
+rejected as conversation.
 
 ## Switching mode
 

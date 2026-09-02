@@ -4,7 +4,7 @@ import VoiceFlowMacCore
 enum HUDMode {
     case recording
     case processing
-    case completed(didAutoPaste: Bool, usedFallback: Bool)
+    case completed(didAutoPaste: Bool, usedFallback: Bool, unrecognizedCommand: Bool = false)
     case actionExecuted(description: String)
     case failed(String)
     /// The mode switch was used while nothing was being dictated. The capsule appears
@@ -261,7 +261,7 @@ struct RetroMicHUDView: View {
                     .foregroundColor(.white.opacity(0.85))
                     .lineLimit(1)
             }
-        case .completed(let didAutoPaste, _):
+        case .completed(let didAutoPaste, _, let unrecognizedCommand):
             HStack(spacing: 5) {
                 Image(systemName: didAutoPaste ? "checkmark.circle.fill" : "doc.on.clipboard.fill")
                     .font(.system(size: 10))
@@ -269,7 +269,13 @@ struct RetroMicHUDView: View {
                 Text(didAutoPaste ? "PASTED" : "COPIED")
                     .font(.system(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(VoiceStationTokens.ok)
-                if let model = viewModel.answeredModel {
+                // ACTION mode found no command. Said here rather than only in the window,
+                // because the window is the surface the speaker does not have open.
+                if unrecognizedCommand {
+                    Text("NO CMD")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VoiceStationTokens.rec)
+                } else if let model = viewModel.answeredModel {
                     Text(Self.shortModelName(model))
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundColor(vintageGold.opacity(0.85))

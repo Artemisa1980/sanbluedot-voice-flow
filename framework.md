@@ -76,6 +76,14 @@ modes, and the distinction is normative rather than cosmetic.
   as usual, and the command is recognized from the text it returns.
 - Executed actions suppress auto-paste into the prior application to prevent document pollution.
 - Action execution failure falls through to standard dictation paste so user speech is never discarded.
+- A dictation in the action mode that matches no intent is reported as such. Falling
+  through in silence gives the mode the same visible result as every other mode, so the
+  speaker cannot tell a refusal from a failure.
+- A spoken application name with no application behind it resolves to that name's website
+  when the name is one of an explicit list. The machine is searched first, so an installed
+  application always wins, and a name outside the list is refused rather than guessed at.
+- The result names what was performed, not what was parsed. An action that opened a site
+  in place of an application is never reported as a launch.
 - Conversational phrases with non-app keywords are rejected to prevent accidental app launches.
 
 ### R4 — Output

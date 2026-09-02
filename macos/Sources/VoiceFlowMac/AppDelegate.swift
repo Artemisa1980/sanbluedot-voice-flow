@@ -749,12 +749,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let action = detectedAction {
                 let execution = VoiceActionExecutor.execute(action)
                 if execution.isSuccess {
-                    floatingHUD.showActionExecuted(description: action.displayDescription)
+                    // Name what the executor actually did. A spoken app name with no app
+                    // behind it opens that name's website, and saying "Open App" there
+                    // would report something that did not happen.
+                    let performed = execution.label(for: action)
+                    floatingHUD.showActionExecuted(description: performed)
 
                     let record = DictationRecord(
                         rawText: result.rawText,
                         personalizedText: result.personalizedText,
-                        finalText: action.displayDescription,
+                        finalText: performed,
                         cleaner: self.selectedCleaner.rawValue,
                         mode: "action",
                         model: model,
@@ -767,16 +771,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.rebuildHistoryMenu()
                     self.controlWindow.updateRecentDictations(self.historyStore.records)
 
-                    let resultMsg = "⚡ action: \(action.displayDescription)"
+                    let resultMsg = "⚡ action: \(performed)"
                     self.statusMenuItem.title = String(format: "%@ · in %.1f seconds", resultMsg, elapsed)
                     self.controlWindow.addLog("\(resultMsg) (from: \"\(result.finalText)\")", isHighlight: true)
                     self.controlWindow.update(
-                        title: "Executed: \(action.displayDescription)",
+                        title: "Executed: \(performed)",
                         detail: String(format: "Matched \"\(result.finalText)\" · %.1fs", elapsed)
                     )
                     return
                 }
                 self.controlWindow.addLog("action not executed: \(action.displayDescription) · continuing dictation")
+            }
+
+            // ACTION mode with nothing recognized. Pasting in silence here is what made
+            // the mode look broken: the speaker asked for a command to be looked for and
+            // got the same result as every other mode, with nothing saying why.
+            let unrecognizedCommand = runMode.parsesVoiceActions && detectedAction == nil
+            if unrecognizedCommand {
+                self.controlWindow.addLog(
+                    "no action recognized · dictated instead: \"\(result.finalText)\"",
+                    isHighlight: true
+                )
             }
 
             // Snippets are already expanded. The engine runs the one scan R5b allows,
@@ -794,7 +809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.floatingHUD.showCompleted(
                     didAutoPaste: didAutoPaste,
                     usedFallback: usedFallback,
-                    model: model
+                    model: model,
+                    unrecognizedCommand: unrecognizedCommand
                 )
                 let record = DictationRecord(
                     rawText: result.rawText,

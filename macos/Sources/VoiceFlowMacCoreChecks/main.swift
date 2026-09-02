@@ -759,6 +759,43 @@ do {
         throw CheckFailure.failed("The engine run carries no --mode argument.")
     }
 
+    // --- Spoken app names that are really websites ---
+    //
+    // The executor searches this Mac first, so an installed app always wins. The table
+    // only catches a name with no app behind it, which used to fail the action and paste
+    // the sentence instead.
+    guard let youtubeAction = VoiceActionParser.parse(text: "abre youtube"),
+          case .openApp(let youtubeName) = youtubeAction.type else {
+        throw CheckFailure.failed("\"abre youtube\" no longer parses as an application name.")
+    }
+    try check(
+        WebDestination.hasSite(forApplicationNamed: youtubeName),
+        "\(youtubeName) has no site to fall back to, so \"abre youtube\" still fails."
+    )
+    try check(
+        WebDestination.url(forApplicationNamed: "YOUTUBE")?.host == "www.youtube.com",
+        "The site lookup is case-sensitive; the parser capitalizes what it returns."
+    )
+
+    // A name with a real application must never be diverted to a website.
+    for installed in [
+        "Spotify", "Safari", "Notes", "Terminal", "Mail", "Calculator",
+        "Finder", "Messages", "Calendar", "Reminders", "Music", "Google Chrome",
+        "System Settings", "Visual Studio Code",
+    ] {
+        try check(
+            !WebDestination.hasSite(forApplicationNamed: installed),
+            "\(installed) is an application; the site table must not claim it."
+        )
+    }
+
+    for (name, site) in WebDestination.sites {
+        try check(
+            URL(string: site)?.scheme == "https",
+            "The site for \(name) is not an https URL: \(site)."
+        )
+    }
+
     print("VoiceFlowMacCore checks passed.")
 } catch {
     FileHandle.standardError.write(Data("Check failed: \(error.localizedDescription)\n".utf8))

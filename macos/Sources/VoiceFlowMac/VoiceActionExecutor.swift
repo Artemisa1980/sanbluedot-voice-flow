@@ -5,12 +5,27 @@ import VoiceFlowMacCore
 enum VoiceActionExecutionResult {
     case openedApp(String)
     case openedURL(URL)
+    /// No application by that name exists on this Mac, so the name's website opened
+    /// instead. Kept distinct so the interface can say a site opened rather than repeat
+    /// the parser's "Open App", which would name something that did not happen.
+    case openedSiteForMissingApp(name: String, url: URL)
     case failed(String)
 
     var isSuccess: Bool {
         switch self {
-        case .openedApp, .openedURL: return true
+        case .openedApp, .openedURL, .openedSiteForMissingApp: return true
         case .failed: return false
+        }
+    }
+
+    /// What to show the speaker. The parser's description is right for everything the
+    /// executor did as asked; only the site fallback did something else.
+    func label(for action: VoiceAction) -> String {
+        switch self {
+        case .openedSiteForMissingApp(let name, let url):
+            return "Open site: \(url.host ?? url.absoluteString) · no \(name) app installed"
+        case .openedApp, .openedURL, .failed:
+            return action.displayDescription
         }
     }
 }
@@ -81,6 +96,15 @@ enum VoiceActionExecutor {
                     NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
                     return .openedApp(appName)
                 }
+            }
+            // No application by that name. Some of these names are a website, not an
+            // app: opening the site is what the speaker meant, and failing here is what
+            // made "abre youtube" paste the sentence instead.
+            if let site = WebDestination.url(forApplicationNamed: appName) {
+                if NSWorkspace.shared.open(site) {
+                    return .openedSiteForMissingApp(name: appName, url: site)
+                }
+                return .failed("Could not open \(site.absoluteString).")
             }
             return .failed("Application \"\(appName)\" was not found.")
         }

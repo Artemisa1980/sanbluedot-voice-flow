@@ -83,7 +83,12 @@ final class FloatingHUDController {
         }
     }
 
-    func showCompleted(didAutoPaste: Bool, usedFallback: Bool, model: String? = nil) {
+    func showCompleted(
+        didAutoPaste: Bool,
+        usedFallback: Bool,
+        model: String? = nil,
+        unrecognizedCommand: Bool = false
+    ) {
         meterTimer?.invalidate()
         meterTimer = nil
         processingTimer?.invalidate()
@@ -92,14 +97,22 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.answeredModel = model
-        viewModel.mode = .completed(didAutoPaste: didAutoPaste, usedFallback: usedFallback)
+        viewModel.mode = .completed(
+            didAutoPaste: didAutoPaste,
+            usedFallback: usedFallback,
+            unrecognizedCommand: unrecognizedCommand
+        )
 
-        // Schedule auto-dismiss with smooth fade
+        // A notice needs longer on screen than a plain confirmation the speaker already
+        // expects, so an unrecognized command holds the capsule for a full second.
         let work = DispatchWorkItem { [weak self] in
             self?.fadeOut()
         }
         dismissWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + (unrecognizedCommand ? 1.4 : 0.6),
+            execute: work
+        )
     }
 
     func showActionExecuted(description: String) {

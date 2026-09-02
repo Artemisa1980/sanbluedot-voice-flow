@@ -27,6 +27,49 @@ public struct VoiceAction: Equatable, Sendable {
     }
 }
 
+/// Names that are a website here, not an application.
+///
+/// "abre youtube" used to resolve to `YouTube.app`, which does not exist, so the action
+/// failed and the sentence was pasted instead. The lookup is consulted only after the
+/// executor has searched this Mac for a real application, so an installed app always
+/// wins: `abre spotify` opens Spotify, and only a name with no app behind it becomes a
+/// site. A name that is neither is still a failure, so an ordinary word can never turn
+/// into a browser window.
+public enum WebDestination {
+    /// Keyed by the lowercased application name the parser produced.
+    public static let sites: [String: String] = [
+        "youtube": "https://www.youtube.com",
+        "gmail": "https://mail.google.com",
+        "google": "https://www.google.com",
+        "google drive": "https://drive.google.com",
+        "drive": "https://drive.google.com",
+        "github": "https://github.com",
+        "linkedin": "https://www.linkedin.com",
+        "whatsapp": "https://web.whatsapp.com",
+        "instagram": "https://www.instagram.com",
+        "facebook": "https://www.facebook.com",
+        "netflix": "https://www.netflix.com",
+        "chatgpt": "https://chatgpt.com",
+        "claude": "https://claude.ai",
+        "canva": "https://www.canva.com",
+        "notion": "https://www.notion.so",
+        "figma": "https://www.figma.com",
+    ]
+
+    /// The site to open when no application by this name exists on the machine.
+    public static func url(forApplicationNamed name: String) -> URL? {
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let site = sites[key] else { return nil }
+        return URL(string: site)
+    }
+
+    /// Whether this name has a site to fall back to. Exposed so a check can assert the
+    /// table stays parseable without opening anything.
+    public static func hasSite(forApplicationNamed name: String) -> Bool {
+        url(forApplicationNamed: name) != nil
+    }
+}
+
 public enum VoiceActionParser {
     /// Parse natural speech into a recognized system action.
     /// Handles both Spanish and English phrases with leading/trailing punctuation tolerance.
