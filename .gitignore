@@ -1,0 +1,44 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+.build/
+*.egg-info/
+
+# Handoff state and the folder adapter. The shared contract excludes relays and
+# folder CLAUDE.md files from every commit; ignoring them enforces that by default.
+relay-log.md
+CLAUDE.md
+
+# Private user data and local configuration
+audio/
+recordings/
+transcripts/
+user-data/
+config.local.*
+*.local.json
+*.local.md
+*.local.txt
+*.jsonl
+*-audio/
+practice/
+*.corrupt-*
+.*.lock
+.env
+.env.*
+
+# Model weights and packaged binaries
+models/
+*.bin
+*.gguf
+*.mlmodelc/
+src-tauri/binaries/
+
+# Platform metadata
+.DS_Store
+Thumbs.db

@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>sanblueᵈᵒᵗ VoiceFlow — station palette proposals 01</title>
+<style>
+  /* The face the application actually ships, loaded from the app's own Resources.
+     A preview that renders a different cut of the type predicts the wrong result. */
+  @font-face {
+    font-family: 'PressStart2P-Local';
+    src: url('../macos/Resources/Fonts/PressStart2P-Regular.ttf') format('truetype');
+    font-display: swap;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1d1c17;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    color: #e8e4d9;
+    padding: 36px 24px 80px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .sheet { max-width: 1140px; margin: 0 auto; }
+
+  .pixel { font-family: 'PressStart2P-Local', ui-monospace, monospace; }
+
+  h1 { font-size: 16px; line-height: 1.6; color: #EFC15E; margin-bottom: 8px; }
+  .lede { color: #A49E85; max-width: 80ch; margin-bottom: 26px; }
+
+  .rules {
+    border: 1px solid #4a4533; border-left: 3px solid #EFC15E;
+    background: #262319; padding: 16px 20px; margin-bottom: 44px;
+  }
+  .rules b { color: #EFC15E; }
+  .rules li { margin: 6px 0 6px 18px; }
+
+  /* ---------- proposal wrapper ---------- */
+  .proposal { margin-bottom: 56px; }
+
+  .p-head { font-size: 12px; color: #FBF7EA; margin-bottom: 6px; }
+  .p-thesis { color: #A49E85; max-width: 92ch; margin-bottom: 14px; }
+  .p-thesis em { color: #FF7B6B; font-style: normal; }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .sw { border: 1px solid #4a4533; padding: 6px 9px; min-width: 132px; font-size: 10px; line-height: 1.45; }
+  .sw i { display: block; height: 18px; margin-bottom: 6px; border: 1px solid rgba(0,0,0,.4); }
+  .sw b { display: block; color: #FBF7EA; }
+  .sw u { color: #A49E85; text-decoration: none; }
+  .sw s { color: #7CB3E8; text-decoration: none; }
+
+  /* ---------- the station window ---------- */
+  .window {
+    width: 1040px; max-width: 100%;
+    background: var(--app-bg);
+    border: 3px solid var(--navy);
+    border-radius: 12px;
+    box-shadow: 10px 10px 0 rgba(0,0,0,.5);
+    overflow: hidden;
+    color: var(--navy);
+  }
+
+  .masthead {
+    background: var(--navy); border-bottom: 2px solid var(--gold);
+    height: 68px; display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; padding: 0 20px;
+  }
+  .mast-left { display: flex; align-items: center; gap: 12px; }
+  .sysdev { font-size: 12px; color: var(--panel-bg); letter-spacing: .6px; }
+  .vchip { font-size: 8px; color: var(--navy); background: var(--gold); padding: 5px 8px; border-radius: 5px; }
+  .pname { font-size: 9px; color: var(--panel-bg); letter-spacing: .4px; text-align: center; }
+  .brand { text-align: right; font-weight: 700; font-size: 13px; color: var(--gold); }
+  .brand sup { font-size: 8px; color: #7CB3E8; vertical-align: super; line-height: 0; }
+
+  .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 16px 20px 4px; }
+  .mode {
+    background: var(--panel-header); border: 2px solid var(--navy); border-radius: 8px;
+    padding: 12px 8px; text-align: center; font-size: 10px; font-weight: 700;
+    box-shadow: 2px 2px 0 var(--navy);
+  }
+  .mode.on {
+    background: var(--input-cream); border-width: 2.5px;
+    box-shadow: 3px 3px 0 var(--navy), 0 0 0 3px var(--dot-blue);
+  }
+
+  .body { display: grid; grid-template-columns: 366px 1fr; gap: 16px; padding: 16px 20px 20px; }
+
+  .card {
+    background: var(--panel-bg); border: 2px solid var(--navy); border-radius: 8px;
+    padding: 16px; box-shadow: 3px 3px 0 var(--navy);
+  }
+  .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .card-head b { font-size: 11px; letter-spacing: .4px; }
+
+  .pill {
+    font-size: 9px; font-weight: 700; padding: 4px 9px; border-radius: 999px;
+    border: 1.5px solid var(--navy); display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.85); border: 1px solid rgba(0,0,0,.35); }
+  .pill.ok { background: var(--ok); color: var(--ok-ink); }
+
+  .hold {
+    background: var(--input-cream); border: 2.5px solid var(--navy); border-radius: 8px;
+    padding: 17px; text-align: center; font-size: 12px; font-weight: 700;
+    box-shadow: 4px 4px 0 var(--navy);
+  }
+  .hold i {
+    width: 14px; height: 14px; border-radius: 50%; background: var(--gold);
+    border: 2px solid var(--navy); display: inline-block; vertical-align: -2px; margin-right: 10px;
+  }
+  .hint { text-align: center; font-size: 10px; color: var(--text-muted); margin-top: 9px; }
+
+  .rule { height: 1px; background: rgba(22,33,62,.3); margin: 15px 0; }
+  .label { font-size: 10px; font-weight: 700; letter-spacing: .3px; margin-bottom: 9px; }
+
+  .engines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .eng {
+    background: var(--input-cream); border: 1.5px solid var(--navy); border-radius: 8px;
+    padding: 10px 4px; text-align: center; font-size: 10px; font-weight: 700;
+  }
+  .eng.on {
+    background: var(--control-bg); color: var(--control-ink);
+    border-width: 2.5px; box-shadow: 3px 3px 0 var(--navy);
+  }
+
+  .vu-head { display: flex; align-items: center; justify-content: space-between; }
+  .vu-head span { font-size: 9px; color: var(--text-muted); }
+  .vu { display: flex; gap: 4px; margin-top: 8px; }
+  .vu i { flex: 1; height: 18px; border-radius: 2px; background: var(--input-cream); border: 1px solid rgba(22,33,62,.25); }
+  .vu i.lit { background: var(--dot-blue); }
+  .vu i.hot { background: var(--gold); }
+
+  .target {
+    margin-top: 16px; background: var(--input-cream); border: 1.5px solid var(--navy);
+    border-radius: 8px; padding: 11px 12px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .target b { font-size: 11px; display: block; }
+  .target span { font-size: 9px; color: var(--text-muted); }
+  .tag { font-size: 8px; font-weight: 700; padding: 4px 7px; border-radius: 4px; background: var(--dot-blue); color: var(--navy); border: 1px solid var(--navy); }
+
+  /* ---------- console ---------- */
+  .console {
+    background: var(--console-bg); border: 2px solid var(--navy); border-radius: 8px;
+    padding: 14px; box-shadow: 3px 3px 0 var(--navy);
+  }
+  .con-tabs {
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid rgba(239,193,94,.28); padding-bottom: 9px; margin-bottom: 10px;
+  }
+  .tabs { display: flex; gap: 7px; }
+  .tab { font-size: 10px; font-weight: 700; color: rgba(239,193,94,.7); padding: 4px 8px; border-radius: 4px; }
+  .tab.on { background: var(--gold); color: var(--navy); }
+  .con-name { font-size: 8px; color: var(--gold); opacity: .8; }
+
+  .telemetry {
+    background: rgba(0,0,0,.4); border: 1px solid rgba(239,193,94,.25); border-radius: 5px;
+    padding: 8px 11px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+  }
+  .beacon-group { display: flex; align-items: center; gap: 7px; font-size: 9px; font-weight: 700; color: var(--gold); letter-spacing: .5px; }
+  .beacon { width: 8px; height: 8px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 8px var(--rec); }
+  .metrics { display: flex; gap: 14px; font-size: 10px; }
+  .metrics span { color: rgba(239,193,94,.6); font-size: 9px; }
+  .metrics b { color: var(--console-accent); }
+  .metrics u { color: var(--paper-ink); text-decoration: none; font-weight: 700; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chip {
+    font-size: 9px; font-weight: 700; padding: 4px 8px; border-radius: 3px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(239,193,94,.22); color: rgba(239,193,94,.8);
+  }
+  .chip.on { background: var(--dot-blue); color: var(--navy); border-color: var(--navy); }
+
+  .crt {
+    background: var(--crt-bg); border: 1.5px solid rgba(239,193,94,.35); border-radius: 6px;
+    padding: 10px 12px; position: relative; min-height: 268px;
+  }
+  .crt::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 6px;
+    background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,.22) 50%);
+    background-size: 100% 3px;
+  }
+  .row { display: flex; gap: 10px; align-items: flex-start; padding: 4px 0; font-size: 10px; line-height: 1.4; }
+  .ts { color: rgba(239,193,94,.5); font-size: 9px; width: 62px; flex-shrink: 0; }
+  .badge { font-size: 8px; font-weight: 700; padding: 2px 0; border-radius: 3px; width: 66px; text-align: center; flex-shrink: 0; border: 1px solid var(--navy); }
+  .b-sys   { background: var(--console-muted); color: var(--navy); }
+  .b-stt   { background: var(--dot-blue); color: var(--navy); }
+  .b-ai    { background: var(--gold); color: var(--navy); }
+  .b-snip  { background: var(--working); color: var(--navy); }
+  .b-paste { background: var(--ok); color: var(--ok-ink); }
+  .msg { color: var(--paper-ink); flex: 1; }
+  .msg strong { color: #fff; }
+  .meta { display: inline-block; font-size: 8px; padding: 1px 5px; border-radius: 2px; background: rgba(255,255,255,.1); color: var(--console-accent); margin-top: 3px; }
+
+  .con-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 9px; font-weight: 700; color: var(--gold); }
+  .con-foot .live { display: flex; align-items: center; gap: 7px; }
+  .con-foot .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); border: 1px solid rgba(0,0,0,.4); }
+
+  .foot {
+    height: 44px; background: var(--navy); border-top: 2px solid var(--gold);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--gold);
+  }
+  .foot sup { font-size: 8px; color: #7CB3E8; vertical-align: super; line-height: 0; }
+  .foot em { color: #AAB1C1; font-style: normal; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1 class="pixel">station palette — proposals 01</h1>
+  <p class="lede">
+    Six rooms for the voice-station: four partners for the mint canvas, and two that change
+    the canvas itself so keeping mint stays a measured choice rather than an assumption.
+    Every value comes from <code>color-palette.md</code> or from brand canon — nothing here
+    is invented. The window is identical in all six, so only the palette varies.
+  </p>
+
+  <div class="rules">
+    <b>Measured before drawing.</b> Contrast computed against the real hex values:
+    <ul>
+      <li><b>Mint is a ground, not an accent.</b> A mint chip reaches 1.37 on greige and 1.30 on amber-light, but 8.04 on olive and 9.66 on navy. Keeping it as the canvas is right; using it as a detail on a light surface is not.</li>
+      <li><b>No status colour survives as ink on mint</b> — sage-deep 3.26 · clay-deep 3.99 · amber-deep 1.68 · coral 1.54 · dot 1.35 · gold 1.02, all under 4.5. That is why today's small green dot reads as decoration. Status is drawn as a filled pill with a navy hairline, or inside the dark console.</li>
+      <li><b>Ink follows the fill.</b> Dark fills take paper ink (sage-deep 5.00); bright fills take navy (amber-deep 5.77 · coral 6.28 · dot 7.17 · gold 9.43).</li>
+      <li><b>Navy passes on every candidate ground</b>, clay 4.51 through paper 14.83, so the ink never changes with the partner.</li>
+      <li><b>The selected state stops borrowing from macOS.</b> The ring is the dot <code>#7CB3E8</code>, not the system focus colour.</li>
+    </ul>
+  </div>
+
+  <!-- ============================ 01 ============================ -->
+  <section class="proposal">
+    <h2 class="p-head pixel">01 · mint × clay</h2>
+    <p class="p-thesis">The warm complement. Clay is the terracotta from the folded garments and sits opposite mint on the wheel, so canvas and card separate further than in any other pairing.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#A9D3C0"></i><b>Mint · canvas</b><u>#A9D3C0</u> <s>navy 9.66</s></div>
+      <div class="sw"><i style="background:#EAD9D1"></i><b>Clay-light · cards</b><u>#EAD9D1</u> <s>navy 11.61</s></div>
+      <div class="sw"><i style="background:#A87F76"></i><b>Clay · mode bar</b><u>#A87F76</u> <s>navy 4.51</s></div>
+      <div class="sw"><i style="background:#7A544B"></i><b>Clay-deep · selected</b><u>#7A544B</u> <s>paper 5.6</s></div>
+      <div class="sw"><i style="background:#34301F"></i><b>Olive · console</b><u>#34301F</u> <s>paper 12.33</s></div>
+    </div>
+    <div class="window" style="
+      --app-bg:#A9D3C0; --panel-bg:#EAD9D1; --panel-header:#A87F76;
+      --control-bg:#7A544B; --control-ink:#FBF7EA; --input-cream:#FBF7EA;
+      --text-muted:#7A544B; --navy:#16213E; --gold:#EFC15E; --dot-blue:#7CB3E8;
+      --console-bg:#34301F; --crt-bg:#26230F; --console-muted:#A49E85; --console-accent:#A9D3C0;
+      --paper-ink:#FBF7EA; --ok:#5F7050; --ok-ink:#FBF7EA; --working:#D98A2B; --rec:#FF7B6B;">
+
+      <div class="masthead">
+        <div class="mast-left"><span class="sysdev pixel">SANDY.SYSDEV</span><span class="vchip pixel">v0.5.0</span></div>
+        <div class="pname pixel">retro voice-station</div>
+        <div class="brand">sanblue<sup>dot</sup></div>
+      </div>
+
+      <div class="modes">
+        <div class="mode on">CLEAN</div>
+        <div class="mode">TRANSLATE (ES➔EN)</div>
+        <div class="mode">MEETING NOTES</div>
+        <div class="mode">VOICE ACTIONS</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="card-head"><b>DICTATION &amp; CONTROL</b><span class="pill ok"><i></i>READY</span></div>
+          <div class="hold"><i></i>HOLD TO TALK</div>
+          <p class="hint">Or hold Fn/Globe in any app</p>
+          <div class="rule"></div>
+          <div class="label">CLEANUP ENGINE</div>
+          <div class="engines"><div class="eng">Literal</div><div class="eng">Ollama</div><div class="eng on">Gemini</div></div>
+          <div class="rule"></div>
+          <div class="vu-head"><div class="label" style="margin:0">AUDIO INPUT VU</div><span>LIVE</span></div>
+          <div class="vu"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="hot"></i><i class="hot"></i><i></i><i></i><i></i><i></i></div>
+          <div class="target"><div><b>TARGET: Notes</b><span>Direct auto-paste</span></div><span class="tag">AUTO-PASTE</span></div>
+        </div>
+
+        <div class="console">
+          <div class="con-tabs">
+            <div class="tabs"><span class="tab on">TELEMETRY LOG</span><span class="tab">HISTORY (7)</span><span class="tab">SNIPPETS (3)</span></div>
+            <span class="con-name pixel">ANDOR CONSOLE</span>
+          </div>
+          <div class="telemetry">
+            <div class="beacon-group"><span class="beacon"></span>LIVE TELEMETRY</div>
+            <div class="metrics">
+              <div><span>STT</span> <b>0.94s</b></div>
+              <div><span>LLM</span> <u>2.31s</u></div>
+              <div><span>RATE</span> <b>148 WPM</b></div>
+              <div><span>MODEL</span> <u>gemini-3.5-flash</u></div>
+            </div>
+          </div>
+          <div class="chips"><span class="chip on">ALL (12)</span><span class="chip">MIC/STT</span><span class="chip">AI CLEAN</span><span class="chip">ACTIONS</span><span class="chip">SNIPPETS</span><span class="chip">SYSTEM</span></div>
+          <div class="crt">
+            <div class="row"><span class="ts">14:32:01</span><span class="badge b-sys">SYS</span><span class="msg">voice-station initialized · whisper local engine ready<br><span class="meta">ggml-large-v3-turbo</span></span></div>
+            <div class="row"><span class="ts">14:32:05</span><span class="badge b-stt">WHISPER</span><span class="msg">heard: “por favor revisa mi linkedin corporativo”<br><span class="meta">0.94s · es</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-ai">GEMINI</span><span class="msg"><strong>cleaned by gemini-3.5-flash</strong> · guard passed<br><span class="meta">2.31s</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-snip">SNIPPET</span><span class="msg">expanded [mi linkedin corporativo]<br><span class="meta">1 macro</span></span></div>
+            <div class="row"><span class="ts">14:32:07</span><span class="badge b-paste">PASTE</span><span class="msg"><strong>pasted into Notes</strong> · target re-checked<br><span class="meta">com.apple.Notes</span></span></div>
+          </div>
+          <div class="con-foot"><div class="live"><i></i>Ready</div><div>100% local · audio never leaves this Mac</div></div>
+        </div>
+      </div>
+
+      <div class="foot">sanblue<sup>dot</sup>&nbsp;<em>— retro dev-station</em></div>
+    </div>
+  </section>
+
+  <!-- ============================ 02 ============================ -->
+  <section class="proposal">
+    <h2 class="p-head pixel">02 · mint × amber — today, corrected</h2>
+    <p class="p-thesis">The current direction with its drift removed: the card amber returns to the brand value <code>#F4E3BC</code> instead of the invented <code>#F8ECCF</code>, and khaki carries the mode bar. This is the honest baseline the other five have to beat.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#A9D3C0"></i><b>Mint · canvas</b><u>#A9D3C0</u> <s>navy 9.66</s></div>
+      <div class="sw"><i style="background:#F4E3BC"></i><b>Amber-light · cards</b><u>#F4E3BC</u> <s>navy 12.53</s></div>
+      <div class="sw"><i style="background:#A49E85"></i><b>Khaki · mode bar</b><u>#A49E85</u> <s>navy 5.91</s></div>
+      <div class="sw"><i style="background:#D98A2B"></i><b>Amber-deep · selected</b><u>#D98A2B</u> <s>navy 5.77</s></div>
+      <div class="sw"><i style="background:#34301F"></i><b>Olive · console</b><u>#34301F</u> <s>paper 12.33</s></div>
+    </div>
+    <div class="window" style="
+      --app-bg:#A9D3C0; --panel-bg:#F4E3BC; --panel-header:#A49E85;
+      --control-bg:#D98A2B; --control-ink:#16213E; --input-cream:#FBF7EA;
+      --text-muted:#6F664E; --navy:#16213E; --gold:#EFC15E; --dot-blue:#7CB3E8;
+      --console-bg:#34301F; --crt-bg:#26230F; --console-muted:#A49E85; --console-accent:#A9D3C0;
+      --paper-ink:#FBF7EA; --ok:#5F7050; --ok-ink:#FBF7EA; --working:#D98A2B; --rec:#FF7B6B;">
+
+      <div class="masthead">
+        <div class="mast-left"><span class="sysdev pixel">SANDY.SYSDEV</span><span class="vchip pixel">v0.5.0</span></div>
+        <div class="pname pixel">retro voice-station</div>
+        <div class="brand">sanblue<sup>dot</sup></div>
+      </div>
+
+      <div class="modes">
+        <div class="mode on">CLEAN</div>
+        <div class="mode">TRANSLATE (ES➔EN)</div>
+        <div class="mode">MEETING NOTES</div>
+        <div class="mode">VOICE ACTIONS</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="card-head"><b>DICTATION &amp; CONTROL</b><span class="pill ok"><i></i>READY</span></div>
+          <div class="hold"><i></i>HOLD TO TALK</div>
+          <p class="hint">Or hold Fn/Globe in any app</p>
+          <div class="rule"></div>
+          <div class="label">CLEANUP ENGINE</div>
+          <div class="engines"><div class="eng">Literal</div><div class="eng">Ollama</div><div class="eng on">Gemini</div></div>
+          <div class="rule"></div>
+          <div class="vu-head"><div class="label" style="margin:0">AUDIO INPUT VU</div><span>LIVE</span></div>
+          <div class="vu"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="hot"></i><i class="hot"></i><i></i><i></i><i></i><i></i></div>
+          <div class="target"><div><b>TARGET: Notes</b><span>Direct auto-paste</span></div><span class="tag">AUTO-PASTE</span></div>
+        </div>
+
+        <div class="console">
+          <div class="con-tabs">
+            <div class="tabs"><span class="tab on">TELEMETRY LOG</span><span class="tab">HISTORY (7)</span><span class="tab">SNIPPETS (3)</span></div>
+            <span class="con-name pixel">ANDOR CONSOLE</span>
+          </div>
+          <div class="telemetry">
+            <div class="beacon-group"><span class="beacon"></span>LIVE TELEMETRY</div>
+            <div class="metrics">
+              <div><span>STT</span> <b>0.94s</b></div>
+              <div><span>LLM</span> <u>2.31s</u></div>
+              <div><span>RATE</span> <b>148 WPM</b></div>
+              <div><span>MODEL</span> <u>gemini-3.5-flash</u></div>
+            </div>
+          </div>
+          <div class="chips"><span class="chip on">ALL (12)</span><span class="chip">MIC/STT</span><span class="chip">AI CLEAN</span><span class="chip">ACTIONS</span><span class="chip">SNIPPETS</span><span class="chip">SYSTEM</span></div>
+          <div class="crt">
+            <div class="row"><span class="ts">14:32:01</span><span class="badge b-sys">SYS</span><span class="msg">voice-station initialized · whisper local engine ready<br><span class="meta">ggml-large-v3-turbo</span></span></div>
+            <div class="row"><span class="ts">14:32:05</span><span class="badge b-stt">WHISPER</span><span class="msg">heard: “por favor revisa mi linkedin corporativo”<br><span class="meta">0.94s · es</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-ai">GEMINI</span><span class="msg"><strong>cleaned by gemini-3.5-flash</strong> · guard passed<br><span class="meta">2.31s</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-snip">SNIPPET</span><span class="msg">expanded [mi linkedin corporativo]<br><span class="meta">1 macro</span></span></div>
+            <div class="row"><span class="ts">14:32:07</span><span class="badge b-paste">PASTE</span><span class="msg"><strong>pasted into Notes</strong> · target re-checked<br><span class="meta">com.apple.Notes</span></span></div>
+          </div>
+          <div class="con-foot"><div class="live"><i></i>Ready</div><div>100% local · audio never leaves this Mac</div></div>
+        </div>
+      </div>
+
+      <div class="foot">sanblue<sup>dot</sup>&nbsp;<em>— retro dev-station</em></div>
+    </div>
+  </section>
+
+  <!-- ============================ 03 ============================ -->
+  <section class="proposal">
+    <h2 class="p-head pixel">03 · mint × dusty blue</h2>
+    <p class="p-thesis">Your favourite blue as the structural colour, on paper-white cards. The mint reads as the room and the blue as the instruments, and it is the pairing with the brightest cards of the six.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#A9D3C0"></i><b>Mint · canvas</b><u>#A9D3C0</u> <s>navy 9.66</s></div>
+      <div class="sw"><i style="background:#FBF7EA"></i><b>Paper · cards</b><u>#FBF7EA</u> <s>navy 14.83</s></div>
+      <div class="sw"><i style="background:#7FA3B8"></i><b>Dusty blue · mode bar</b><u>#7FA3B8</u> <s>navy 5.93</s></div>
+      <div class="sw"><i style="background:#48708A"></i><b>Dusty-deep · selected</b><u>#48708A</u> <s>paper 6.1</s></div>
+      <div class="sw"><i style="background:#34301F"></i><b>Olive · console</b><u>#34301F</u> <s>paper 12.33</s></div>
+    </div>
+    <div class="window" style="
+      --app-bg:#A9D3C0; --panel-bg:#FBF7EA; --panel-header:#7FA3B8;
+      --control-bg:#48708A; --control-ink:#FBF7EA; --input-cream:#F2EDDA;
+      --text-muted:#48708A; --navy:#16213E; --gold:#EFC15E; --dot-blue:#7CB3E8;
+      --console-bg:#34301F; --crt-bg:#26230F; --console-muted:#A49E85; --console-accent:#A9D3C0;
+      --paper-ink:#FBF7EA; --ok:#5F7050; --ok-ink:#FBF7EA; --working:#D98A2B; --rec:#FF7B6B;">
+
+      <div class="masthead">
+        <div class="mast-left"><span class="sysdev pixel">SANDY.SYSDEV</span><span class="vchip pixel">v0.5.0</span></div>
+        <div class="pname pixel">retro voice-station</div>
+        <div class="brand">sanblue<sup>dot</sup></div>
+      </div>
+
+      <div class="modes">
+        <div class="mode on">CLEAN</div>
+        <div class="mode">TRANSLATE (ES➔EN)</div>
+        <div class="mode">MEETING NOTES</div>
+        <div class="mode">VOICE ACTIONS</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="card-head"><b>DICTATION &amp; CONTROL</b><span class="pill ok"><i></i>READY</span></div>
+          <div class="hold"><i></i>HOLD TO TALK</div>
+          <p class="hint">Or hold Fn/Globe in any app</p>
+          <div class="rule"></div>
+          <div class="label">CLEANUP ENGINE</div>
+          <div class="engines"><div class="eng">Literal</div><div class="eng">Ollama</div><div class="eng on">Gemini</div></div>
+          <div class="rule"></div>
+          <div class="vu-head"><div class="label" style="margin:0">AUDIO INPUT VU</div><span>LIVE</span></div>
+          <div class="vu"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="hot"></i><i class="hot"></i><i></i><i></i><i></i><i></i></div>
+          <div class="target"><div><b>TARGET: Notes</b><span>Direct auto-paste</span></div><span class="tag">AUTO-PASTE</span></div>
+        </div>
+
+        <div class="console">
+          <div class="con-tabs">
+            <div class="tabs"><span class="tab on">TELEMETRY LOG</span><span class="tab">HISTORY (7)</span><span class="tab">SNIPPETS (3)</span></div>
+            <span class="con-name pixel">ANDOR CONSOLE</span>
+          </div>
+          <div class="telemetry">
+            <div class="beacon-group"><span class="beacon"></span>LIVE TELEMETRY</div>
+            <div class="metrics">
+              <div><span>STT</span> <b>0.94s</b></div>
+              <div><span>LLM</span> <u>2.31s</u></div>
+              <div><span>RATE</span> <b>148 WPM</b></div>
+              <div><span>MODEL</span> <u>gemini-3.5-flash</u></div>
+            </div>
+          </div>
+          <div class="chips"><span class="chip on">ALL (12)</span><span class="chip">MIC/STT</span><span class="chip">AI CLEAN</span><span class="chip">ACTIONS</span><span class="chip">SNIPPETS</span><span class="chip">SYSTEM</span></div>
+          <div class="crt">
+            <div class="row"><span class="ts">14:32:01</span><span class="badge b-sys">SYS</span><span class="msg">voice-station initialized · whisper local engine ready<br><span class="meta">ggml-large-v3-turbo</span></span></div>
+            <div class="row"><span class="ts">14:32:05</span><span class="badge b-stt">WHISPER</span><span class="msg">heard: “por favor revisa mi linkedin corporativo”<br><span class="meta">0.94s · es</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-ai">GEMINI</span><span class="msg"><strong>cleaned by gemini-3.5-flash</strong> · guard passed<br><span class="meta">2.31s</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-snip">SNIPPET</span><span class="msg">expanded [mi linkedin corporativo]<br><span class="meta">1 macro</span></span></div>
+            <div class="row"><span class="ts">14:32:07</span><span class="badge b-paste">PASTE</span><span class="msg"><strong>pasted into Notes</strong> · target re-checked<br><span class="meta">com.apple.Notes</span></span></div>
+          </div>
+          <div class="con-foot"><div class="live"><i></i>Ready</div><div>100% local · audio never leaves this Mac</div></div>
+        </div>
+      </div>
+
+      <div class="foot">sanblue<sup>dot</sup>&nbsp;<em>— retro dev-station</em></div>
+    </div>
+  </section>
+
+  <!-- ============================ 04 ============================ -->
+  <section class="proposal">
+    <h2 class="p-head pixel">04 · mint × navy</h2>
+    <p class="p-thesis">Maximum graphic contrast: navy is not only the outline but the fill of whatever is selected, and the console goes navy too. The most arcade of the six, and the one where the hard shadow earns its place because only a few things carry it.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#A9D3C0"></i><b>Mint · canvas</b><u>#A9D3C0</u> <s>navy 9.66</s></div>
+      <div class="sw"><i style="background:#F2EDDA"></i><b>Cream · cards</b><u>#F2EDDA</u> <s>navy 13.55</s></div>
+      <div class="sw"><i style="background:#B5AB9F"></i><b>Greige · mode bar</b><u>#B5AB9F</u> <s>navy 7.03</s></div>
+      <div class="sw"><i style="background:#16213E"></i><b>Navy · selected + console</b><u>#16213E</u> <s>cream 13.55</s></div>
+      <div class="sw"><i style="background:#EFC15E"></i><b>Gold · accent</b><u>#EFC15E</u> <s>navy 9.43</s></div>
+    </div>
+    <div class="window" style="
+      --app-bg:#A9D3C0; --panel-bg:#F2EDDA; --panel-header:#B5AB9F;
+      --control-bg:#16213E; --control-ink:#F2EDDA; --input-cream:#FBF7EA;
+      --text-muted:#4A5568; --navy:#16213E; --gold:#EFC15E; --dot-blue:#7CB3E8;
+      --console-bg:#16213E; --crt-bg:#0F1830; --console-muted:#98AAB2; --console-accent:#7CB3E8;
+      --paper-ink:#F2EDDA; --ok:#5F7050; --ok-ink:#FBF7EA; --working:#D98A2B; --rec:#FF7B6B;">
+
+      <div class="masthead">
+        <div class="mast-left"><span class="sysdev pixel">SANDY.SYSDEV</span><span class="vchip pixel">v0.5.0</span></div>
+        <div class="pname pixel">retro voice-station</div>
+        <div class="brand">sanblue<sup>dot</sup></div>
+      </div>
+
+      <div class="modes">
+        <div class="mode on">CLEAN</div>
+        <div class="mode">TRANSLATE (ES➔EN)</div>
+        <div class="mode">MEETING NOTES</div>
+        <div class="mode">VOICE ACTIONS</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="card-head"><b>DICTATION &amp; CONTROL</b><span class="pill ok"><i></i>READY</span></div>
+          <div class="hold"><i></i>HOLD TO TALK</div>
+          <p class="hint">Or hold Fn/Globe in any app</p>
+          <div class="rule"></div>
+          <div class="label">CLEANUP ENGINE</div>
+          <div class="engines"><div class="eng">Literal</div><div class="eng">Ollama</div><div class="eng on">Gemini</div></div>
+          <div class="rule"></div>
+          <div class="vu-head"><div class="label" style="margin:0">AUDIO INPUT VU</div><span>LIVE</span></div>
+          <div class="vu"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="hot"></i><i class="hot"></i><i></i><i></i><i></i><i></i></div>
+          <div class="target"><div><b>TARGET: Notes</b><span>Direct auto-paste</span></div><span class="tag">AUTO-PASTE</span></div>
+        </div>
+
+        <div class="console">
+          <div class="con-tabs">
+            <div class="tabs"><span class="tab on">TELEMETRY LOG</span><span class="tab">HISTORY (7)</span><span class="tab">SNIPPETS (3)</span></div>
+            <span class="con-name pixel">ANDOR CONSOLE</span>
+          </div>
+          <div class="telemetry">
+            <div class="beacon-group"><span class="beacon"></span>LIVE TELEMETRY</div>
+            <div class="metrics">
+              <div><span>STT</span> <b>0.94s</b></div>
+              <div><span>LLM</span> <u>2.31s</u></div>
+              <div><span>RATE</span> <b>148 WPM</b></div>
+              <div><span>MODEL</span> <u>gemini-3.5-flash</u></div>
+            </div>
+          </div>
+          <div class="chips"><span class="chip on">ALL (12)</span><span class="chip">MIC/STT</span><span class="chip">AI CLEAN</span><span class="chip">ACTIONS</span><span class="chip">SNIPPETS</span><span class="chip">SYSTEM</span></div>
+          <div class="crt">
+            <div class="row"><span class="ts">14:32:01</span><span class="badge b-sys">SYS</span><span class="msg">voice-station initialized · whisper local engine ready<br><span class="meta">ggml-large-v3-turbo</span></span></div>
+            <div class="row"><span class="ts">14:32:05</span><span class="badge b-stt">WHISPER</span><span class="msg">heard: “por favor revisa mi linkedin corporativo”<br><span class="meta">0.94s · es</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-ai">GEMINI</span><span class="msg"><strong>cleaned by gemini-3.5-flash</strong> · guard passed<br><span class="meta">2.31s</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-snip">SNIPPET</span><span class="msg">expanded [mi linkedin corporativo]<br><span class="meta">1 macro</span></span></div>
+            <div class="row"><span class="ts">14:32:07</span><span class="badge b-paste">PASTE</span><span class="msg"><strong>pasted into Notes</strong> · target re-checked<br><span class="meta">com.apple.Notes</span></span></div>
+          </div>
+          <div class="con-foot"><div class="live"><i></i>Ready</div><div>100% local · audio never leaves this Mac</div></div>
+        </div>
+      </div>
+
+      <div class="foot">sanblue<sup>dot</sup>&nbsp;<em>— retro dev-station</em></div>
+    </div>
+  </section>
+
+  <!-- ============================ 05 ============================ -->
+  <section class="proposal">
+    <h2 class="p-head pixel">05 · greige canvas — the room changes</h2>
+    <p class="p-thesis">Greige is the basket colour: neutral enough that nothing competes with the gold and the dot. Mint does not disappear — it moves to the console, the one ground where it measures 8.04 and reads as a signal instead of a wall.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#B5AB9F"></i><b>Greige · canvas</b><u>#B5AB9F</u> <s>navy 7.03</s></div>
+      <div class="sw"><i style="background:#FBF7EA"></i><b>Paper · cards</b><u>#FBF7EA</u> <s>navy 14.83</s></div>
+      <div class="sw"><i style="background:#A49E85"></i><b>Khaki · mode bar</b><u>#A49E85</u> <s>navy 5.91</s></div>
+      <div class="sw"><i style="background:#7A7266"></i><b>Greige-deep · selected</b><u>#7A7266</u> <s>paper 5.9</s></div>
+      <div class="sw"><i style="background:#A9D3C0"></i><b>Mint · console accent</b><u>#A9D3C0</u> <s>olive 8.04</s></div>
+    </div>
+    <div class="window" style="
+      --app-bg:#B5AB9F; --panel-bg:#FBF7EA; --panel-header:#A49E85;
+      --control-bg:#7A7266; --control-ink:#FBF7EA; --input-cream:#F2EDDA;
+      --text-muted:#7A7266; --navy:#16213E; --gold:#EFC15E; --dot-blue:#7CB3E8;
+      --console-bg:#34301F; --crt-bg:#26230F; --console-muted:#A49E85; --console-accent:#A9D3C0;
+      --paper-ink:#FBF7EA; --ok:#5F7050; --ok-ink:#FBF7EA; --working:#D98A2B; --rec:#FF7B6B;">
+
+      <div class="masthead">
+        <div class="mast-left"><span class="sysdev pixel">SANDY.SYSDEV</span><span class="vchip pixel">v0.5.0</span></div>
+        <div class="pname pixel">retro voice-station</div>
+        <div class="brand">sanblue<sup>dot</sup></div>
+      </div>
+
+      <div class="modes">
+        <div class="mode on">CLEAN</div>
+        <div class="mode">TRANSLATE (ES➔EN)</div>
+        <div class="mode">MEETING NOTES</div>
+        <div class="mode">VOICE ACTIONS</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="card-head"><b>DICTATION &amp; CONTROL</b><span class="pill ok"><i></i>READY</span></div>
+          <div class="hold"><i></i>HOLD TO TALK</div>
+          <p class="hint">Or hold Fn/Globe in any app</p>
+          <div class="rule"></div>
+          <div class="label">CLEANUP ENGINE</div>
+          <div class="engines"><div class="eng">Literal</div><div class="eng">Ollama</div><div class="eng on">Gemini</div></div>
+          <div class="rule"></div>
+          <div class="vu-head"><div class="label" style="margin:0">AUDIO INPUT VU</div><span>LIVE</span></div>
+          <div class="vu"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="hot"></i><i class="hot"></i><i></i><i></i><i></i><i></i></div>
+          <div class="target"><div><b>TARGET: Notes</b><span>Direct auto-paste</span></div><span class="tag">AUTO-PASTE</span></div>
+        </div>
+
+        <div class="console">
+          <div class="con-tabs">
+            <div class="tabs"><span class="tab on">TELEMETRY LOG</span><span class="tab">HISTORY (7)</span><span class="tab">SNIPPETS (3)</span></div>
+            <span class="con-name pixel">ANDOR CONSOLE</span>
+          </div>
+          <div class="telemetry">
+            <div class="beacon-group"><span class="beacon"></span>LIVE TELEMETRY</div>
+            <div class="metrics">
+              <div><span>STT</span> <b>0.94s</b></div>
+              <div><span>LLM</span> <u>2.31s</u></div>
+              <div><span>RATE</span> <b>148 WPM</b></div>
+              <div><span>MODEL</span> <u>gemini-3.5-flash</u></div>
+            </div>
+          </div>
+          <div class="chips"><span class="chip on">ALL (12)</span><span class="chip">MIC/STT</span><span class="chip">AI CLEAN</span><span class="chip">ACTIONS</span><span class="chip">SNIPPETS</span><span class="chip">SYSTEM</span></div>
+          <div class="crt">
+            <div class="row"><span class="ts">14:32:01</span><span class="badge b-sys">SYS</span><span class="msg">voice-station initialized · whisper local engine ready<br><span class="meta">ggml-large-v3-turbo</span></span></div>
+            <div class="row"><span class="ts">14:32:05</span><span class="badge b-stt">WHISPER</span><span class="msg">heard: “por favor revisa mi linkedin corporativo”<br><span class="meta">0.94s · es</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-ai">GEMINI</span><span class="msg"><strong>cleaned by gemini-3.5-flash</strong> · guard passed<br><span class="meta">2.31s</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-snip">SNIPPET</span><span class="msg">expanded [mi linkedin corporativo]<br><span class="meta">1 macro</span></span></div>
+            <div class="row"><span class="ts">14:32:07</span><span class="badge b-paste">PASTE</span><span class="msg"><strong>pasted into Notes</strong> · target re-checked<br><span class="meta">com.apple.Notes</span></span></div>
+          </div>
+          <div class="con-foot"><div class="live"><i></i>Ready</div><div>100% local · audio never leaves this Mac</div></div>
+        </div>
+      </div>
+
+      <div class="foot">sanblue<sup>dot</sup>&nbsp;<em>— retro dev-station</em></div>
+    </div>
+  </section>
+
+  <!-- ============================ 06 ============================ -->
+  <section class="proposal">
+    <h2 class="p-head pixel">06 · dusty blue canvas — the room changes</h2>
+    <p class="p-thesis">Your favourite colour as the room instead of as the furniture. Cooler and more instrument-like than mint, and the only canvas of the six that is a blue, so the dot stops being the single cool note on screen. Mint again survives in the console.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#7FA3B8"></i><b>Dusty blue · canvas</b><u>#7FA3B8</u> <s>navy 5.93</s></div>
+      <div class="sw"><i style="background:#F2EDDA"></i><b>Cream · cards</b><u>#F2EDDA</u> <s>navy 13.55</s></div>
+      <div class="sw"><i style="background:#48708A"></i><b>Dusty-deep · mode bar</b><u>#48708A</u> <s>paper 6.1</s></div>
+      <div class="sw"><i style="background:#16213E"></i><b>Navy · selected</b><u>#16213E</u> <s>cream 13.55</s></div>
+      <div class="sw"><i style="background:#A9D3C0"></i><b>Mint · console accent</b><u>#A9D3C0</u> <s>olive 8.04</s></div>
+    </div>
+    <div class="window" style="
+      --app-bg:#7FA3B8; --panel-bg:#F2EDDA; --panel-header:#48708A;
+      --control-bg:#16213E; --control-ink:#F2EDDA; --input-cream:#FBF7EA;
+      --text-muted:#48708A; --navy:#16213E; --gold:#EFC15E; --dot-blue:#7CB3E8;
+      --console-bg:#34301F; --crt-bg:#26230F; --console-muted:#A49E85; --console-accent:#A9D3C0;
+      --paper-ink:#FBF7EA; --ok:#5F7050; --ok-ink:#FBF7EA; --working:#D98A2B; --rec:#FF7B6B;">
+
+      <div class="masthead">
+        <div class="mast-left"><span class="sysdev pixel">SANDY.SYSDEV</span><span class="vchip pixel">v0.5.0</span></div>
+        <div class="pname pixel">retro voice-station</div>
+        <div class="brand">sanblue<sup>dot</sup></div>
+      </div>
+
+      <div class="modes">
+        <div class="mode on">CLEAN</div>
+        <div class="mode">TRANSLATE (ES➔EN)</div>
+        <div class="mode">MEETING NOTES</div>
+        <div class="mode">VOICE ACTIONS</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="card-head"><b>DICTATION &amp; CONTROL</b><span class="pill ok"><i></i>READY</span></div>
+          <div class="hold"><i></i>HOLD TO TALK</div>
+          <p class="hint">Or hold Fn/Globe in any app</p>
+          <div class="rule"></div>
+          <div class="label">CLEANUP ENGINE</div>
+          <div class="engines"><div class="eng">Literal</div><div class="eng">Ollama</div><div class="eng on">Gemini</div></div>
+          <div class="rule"></div>
+          <div class="vu-head"><div class="label" style="margin:0">AUDIO INPUT VU</div><span>LIVE</span></div>
+          <div class="vu"><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="lit"></i><i class="hot"></i><i class="hot"></i><i></i><i></i><i></i><i></i></div>
+          <div class="target"><div><b>TARGET: Notes</b><span>Direct auto-paste</span></div><span class="tag">AUTO-PASTE</span></div>
+        </div>
+
+        <div class="console">
+          <div class="con-tabs">
+            <div class="tabs"><span class="tab on">TELEMETRY LOG</span><span class="tab">HISTORY (7)</span><span class="tab">SNIPPETS (3)</span></div>
+            <span class="con-name pixel">ANDOR CONSOLE</span>
+          </div>
+          <div class="telemetry">
+            <div class="beacon-group"><span class="beacon"></span>LIVE TELEMETRY</div>
+            <div class="metrics">
+              <div><span>STT</span> <b>0.94s</b></div>
+              <div><span>LLM</span> <u>2.31s</u></div>
+              <div><span>RATE</span> <b>148 WPM</b></div>
+              <div><span>MODEL</span> <u>gemini-3.5-flash</u></div>
+            </div>
+          </div>
+          <div class="chips"><span class="chip on">ALL (12)</span><span class="chip">MIC/STT</span><span class="chip">AI CLEAN</span><span class="chip">ACTIONS</span><span class="chip">SNIPPETS</span><span class="chip">SYSTEM</span></div>
+          <div class="crt">
+            <div class="row"><span class="ts">14:32:01</span><span class="badge b-sys">SYS</span><span class="msg">voice-station initialized · whisper local engine ready<br><span class="meta">ggml-large-v3-turbo</span></span></div>
+            <div class="row"><span class="ts">14:32:05</span><span class="badge b-stt">WHISPER</span><span class="msg">heard: “por favor revisa mi linkedin corporativo”<br><span class="meta">0.94s · es</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-ai">GEMINI</span><span class="msg"><strong>cleaned by gemini-3.5-flash</strong> · guard passed<br><span class="meta">2.31s</span></span></div>
+            <div class="row"><span class="ts">14:32:06</span><span class="badge b-snip">SNIPPET</span><span class="msg">expanded [mi linkedin corporativo]<br><span class="meta">1 macro</span></span></div>
+            <div class="row"><span class="ts">14:32:07</span><span class="badge b-paste">PASTE</span><span class="msg"><strong>pasted into Notes</strong> · target re-checked<br><span class="meta">com.apple.Notes</span></span></div>
+          </div>
+          <div class="con-foot"><div class="live"><i></i>Ready</div><div>100% local · audio never leaves this Mac</div></div>
+        </div>
+      </div>
+
+      <div class="foot">sanblue<sup>dot</sup>&nbsp;<em>— retro dev-station</em></div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

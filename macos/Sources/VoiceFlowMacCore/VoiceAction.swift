@@ -1,0 +1,287 @@
+import Foundation
+
+public enum VoiceActionType: Equatable, Sendable {
+    case openApp(appName: String)
+    case googleSearch(query: String)
+    case youtubeSearch(query: String)
+    case githubSearch(query: String)
+    case openURL(url: URL)
+}
+
+public struct VoiceAction: Equatable, Sendable {
+    public let type: VoiceActionType
+    public let displayDescription: String
+    public let queryOrTarget: String
+    public let originalSpeech: String
+
+    public init(
+        type: VoiceActionType,
+        displayDescription: String,
+        queryOrTarget: String,
+        originalSpeech: String
+    ) {
+        self.type = type
+        self.displayDescription = displayDescription
+        self.queryOrTarget = queryOrTarget
+        self.originalSpeech = originalSpeech
+    }
+}
+
+public enum VoiceActionParser {
+    /// Parse natural speech into a recognized system action.
+    /// Handles both Spanish and English phrases with leading/trailing punctuation tolerance.
+    public static func parse(text: String) -> VoiceAction? {
+        let cleaned = sanitize(text)
+        guard !cleaned.isEmpty else { return nil }
+
+        // 1. URL / Domain Navigation: "ir a apple.com", "open github.com", "go to https://google.com"
+        if let urlAction = parseURL(from: cleaned, original: text) {
+            return urlAction
+        }
+
+        // 2. Open Browser & Search: "abre safari y busca amazon", "open chrome and search macbook"
+        if let browserSearchAction = parseBrowserSearch(from: cleaned, original: text) {
+            return browserSearchAction
+        }
+
+        // 3. YouTube Search: "busca en youtube tutorial swiftui", "search youtube for lofi"
+        if let youtubeAction = parseYouTubeSearch(from: cleaned, original: text) {
+            return youtubeAction
+        }
+
+        // 4. GitHub Search: "busca en github voice flow", "search github for whisper"
+        if let githubAction = parseGitHubSearch(from: cleaned, original: text) {
+            return githubAction
+        }
+
+        // 5. Google Search: "busca en google amazon", "search google for apple", "googlear precios macbook"
+        if let googleAction = parseGoogleSearch(from: cleaned, original: text) {
+            return googleAction
+        }
+
+        // 6. Open Application: "abre notas", "abrir visual studio code", "open terminal", "launch spotify"
+        if let appAction = parseOpenApp(from: cleaned, original: text) {
+            return appAction
+        }
+
+        return nil
+    }
+
+    private static let leadingPunctuation = CharacterSet(charactersIn: "¿¡\"'«“` \t\n\r")
+    private static let trailingPunctuation = CharacterSet(charactersIn: ".?!,\" '»”` \t\n\r")
+
+    private static func sanitize(_ text: String) -> String {
+        var str = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip leading inverted punctuation, quotes
+        while let scalar = str.unicodeScalars.first, leadingPunctuation.contains(scalar) {
+            str.removeFirst()
+        }
+        // Strip trailing punctuation, quotes
+        while let scalar = str.unicodeScalars.last, trailingPunctuation.contains(scalar) {
+            str.removeLast()
+        }
+        return str.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func parseURL(from text: String, original: String) -> VoiceAction? {
+        let patterns = [
+            #"^(?:ir\s+a|navega\s+a|navegar\s+a|abre|abrir|open|go\s+to|navigate\s+to)\s+((?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s]*)?)$"#
+        ]
+        for pattern in patterns {
+            if let target = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+                let urlString = target.hasPrefix("http://") || target.hasPrefix("https://") ? target : "https://\(target)"
+                if let url = URL(string: urlString) {
+                    return VoiceAction(
+                        type: .openURL(url: url),
+                        displayDescription: "Open URL: \(target)",
+                        queryOrTarget: target,
+                        originalSpeech: original
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func parseBrowserSearch(from text: String, original: String) -> VoiceAction? {
+        let patterns = [
+            #"^(?:abre|abrir|open|launch)\s+(?:safari|chrome|el\s+navegador|the\s+browser)\s+(?:y|and)\s+(?:busca|buscar|search|search\s+for)(?:\s+en\s+google|\s+on\s+google)?\s+(.+)$"#,
+            #"^(?:abre|abrir|open)\s+(?:safari|chrome|el\s+navegador)\s+(?:con\s+la\s+búsqueda\s+de|searching\s+for)\s+(.+)$"#
+        ]
+        for pattern in patterns {
+            if let query = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+                let trimmed = sanitize(query)
+                if !trimmed.isEmpty {
+                    return VoiceAction(
+                        type: .googleSearch(query: trimmed),
+                        displayDescription: "Google Search \"\(trimmed)\"",
+                        queryOrTarget: trimmed,
+                        originalSpeech: original
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func parseYouTubeSearch(from text: String, original: String) -> VoiceAction? {
+        let patterns = [
+            #"^(?:busca|buscar|buscar\s+en|busca\s+en)\s+youtube\s+(?:para\s+|de\s+|sobre\s+|el\s+video\s+de\s+|videos?\s+de\s+)?(.+)$"#,
+            #"^(?:search|search\s+for|search\s+on)\s+youtube\s+(?:for\s+|about\s+|videos?\s+of\s+)?(.+)$"#,
+            #"^(?:youtube)\s+(?:search\s+for\s+|search\s+)(.+)$"#
+        ]
+        for pattern in patterns {
+            if let query = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+                let trimmed = sanitize(query)
+                if !trimmed.isEmpty {
+                    return VoiceAction(
+                        type: .youtubeSearch(query: trimmed),
+                        displayDescription: "YouTube \"\(trimmed)\"",
+                        queryOrTarget: trimmed,
+                        originalSpeech: original
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func parseGitHubSearch(from text: String, original: String) -> VoiceAction? {
+        let patterns = [
+            #"^(?:busca|buscar|buscar\s+en|busca\s+en)\s+github\s+(?:el\s+repo\s+de\s+|repositorio\s+de\s+|para\s+|sobre\s+)?(.+)$"#,
+            #"^(?:search|search\s+for|search\s+on)\s+github\s+(?:for\s+|repo\s+for\s+)?(.+)$"#,
+            #"^(?:github)\s+(?:search\s+for\s+|search\s+)(.+)$"#
+        ]
+        for pattern in patterns {
+            if let query = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+                let trimmed = sanitize(query)
+                if !trimmed.isEmpty {
+                    return VoiceAction(
+                        type: .githubSearch(query: trimmed),
+                        displayDescription: "GitHub \"\(trimmed)\"",
+                        queryOrTarget: trimmed,
+                        originalSpeech: original
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func parseGoogleSearch(from text: String, original: String) -> VoiceAction? {
+        let patterns = [
+            #"^(?:busca|buscar|busca\s+en|buscar\s+en)\s+google\s+(?:para\s+|sobre\s+|de\s+|acerca\s+de\s+)?(.+)$"#,
+            #"^(?:search|search\s+for|search\s+on)\s+google\s+(?:for\s+|about\s+)?(.+)$"#,
+            #"^(?:googlear|googlea)\s+(?:para\s+|sobre\s+|de\s+)?(.+)$"#,
+            #"^(?:google)\s+(?:search\s+for\s+|search\s+)(.+)$"#,
+            #"^(?:busca\s+en\s+la\s+web|buscar\s+en\s+la\s+web|search\s+the\s+web\s+for)\s+(.+)$"#
+        ]
+        for pattern in patterns {
+            if let query = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+                let trimmed = sanitize(query)
+                if !trimmed.isEmpty {
+                    return VoiceAction(
+                        type: .googleSearch(query: trimmed),
+                        displayDescription: "Google Search \"\(trimmed)\"",
+                        queryOrTarget: trimmed,
+                        originalSpeech: original
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func parseOpenApp(from text: String, original: String) -> VoiceAction? {
+        let patterns = [
+            #"^(?:abre|abrir)\s+(?:la\s+app\s+de\s+|la\s+aplicaci[oó]n\s+de\s+|la\s+app\s+|la\s+aplicaci[oó]n\s+|el\s+|la\s+|los\s+|las\s+)?([A-Za-z0-9\s]+)$"#,
+            #"^(?:open|launch)\s+(?:the\s+app\s+|the\s+application\s+|app\s+|the\s+)?([A-Za-z0-9\s]+)$"#
+        ]
+        for pattern in patterns {
+            if let appCandidate = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+                let trimmed = sanitize(appCandidate)
+                guard !trimmed.isEmpty else { continue }
+                
+                // Guard against conversational false positives (e.g. "abre comillas", "open discussion")
+                if isConversationalPhrase(trimmed) {
+                    continue
+                }
+
+                let normalizedApp = normalizeAppName(trimmed)
+                return VoiceAction(
+                    type: .openApp(appName: normalizedApp),
+                    displayDescription: "Open App: \(normalizedApp)",
+                    queryOrTarget: normalizedApp,
+                    originalSpeech: original
+                )
+            }
+        }
+        return nil
+    }
+
+    private static func isConversationalPhrase(_ candidate: String) -> Bool {
+        let lower = candidate.lowercased()
+        let nonAppKeywords = [
+            "comillas", "pregunta", "preguntas", "sesion", "sesión", "debate", "discusion", "discusión",
+            "cuenta", "puerta", "ventana", "documento", "archivo", "conversacion", "conversación",
+            "discussion", "ticket", "pull request", "meeting", "dialogue", "file", "tab", "bracket"
+        ]
+        for keyword in nonAppKeywords {
+            if lower == keyword || lower.hasPrefix("\(keyword) ") {
+                return true
+            }
+        }
+        // If it's more than 3 words and not a known app alias, reject as conversational
+        let words = candidate.split(separator: " ")
+        if words.count > 3 && !knownAppAliases.contains(lower) {
+            return true
+        }
+        return false
+    }
+
+    private static let knownAppAliases: Set<String> = [
+        "notas", "notes", "la app de notas", "las notas", "terminal", "la terminal", "the terminal",
+        "visual studio code", "vs code", "vscode", "code", "spotify", "calculadora", "la calculadora",
+        "calculator", "calc", "finder", "el finder", "safari", "el navegador", "the browser", "navegador",
+        "google chrome", "chrome", "mensajes", "los mensajes", "messages", "mail", "el correo", "correo",
+        "email", "calendario", "el calendario", "calendar", "recordatorios", "los recordatorios", "reminders",
+        "musica", "música", "la musica", "la música", "music", "apple music", "configuracion",
+        "configuración", "system settings", "preferencias", "ajustes"
+    ]
+
+    private static func normalizeAppName(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        switch lower {
+        case "notas", "notes", "la app de notas", "las notas": return "Notes"
+        case "terminal", "la terminal", "the terminal": return "Terminal"
+        case "visual studio code", "vs code", "vscode", "code": return "Visual Studio Code"
+        case "spotify": return "Spotify"
+        case "calculadora", "la calculadora", "calculator", "calc": return "Calculator"
+        case "finder", "el finder": return "Finder"
+        case "safari", "el navegador", "the browser", "navegador": return "Safari"
+        case "google chrome", "chrome": return "Google Chrome"
+        case "mensajes", "los mensajes", "messages": return "Messages"
+        case "mail", "el correo", "correo", "email": return "Mail"
+        case "calendario", "el calendario", "calendar": return "Calendar"
+        case "recordatorios", "los recordatorios", "reminders": return "Reminders"
+        case "musica", "música", "la musica", "la música", "music", "apple music": return "Music"
+        case "configuracion", "configuración", "system settings", "preferencias", "ajustes": return "System Settings"
+        default:
+            return raw.capitalized
+        }
+    }
+
+    private static func matchRegex(pattern: String, in text: String, captureGroup: Int) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges > captureGroup else {
+            return nil
+        }
+        let matchRange = match.range(at: captureGroup)
+        guard matchRange.location != NSNotFound else { return nil }
+        return (text as NSString).substring(with: matchRange)
+    }
+}

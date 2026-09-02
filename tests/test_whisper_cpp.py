@@ -1,0 +1,369 @@
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from sanbluedot_voiceflow.errors import DependencyUnavailable, TranscriptionError
+from sanbluedot_voiceflow.transcribers.whisper_cpp import (
+    WhisperCppTranscriber,
+    detected_language,
+    is_effectively_silent,
+    resolve_binary,
+)
+
+
+class WhisperCppTranscriberTests(unittest.TestCase):
+    def test_builds_command_and_reads_generated_transcript(self) -> None:
+        commands: list[list[str]] = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary = root / "whisper-cli"
+            model = root / "model.bin"
+            audio = root / "sample.wav"
+            binary.touch()
+            binary.chmod(0o755)
+            model.touch()
+            audio.touch()
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                commands.append(command)
+                output_base = Path(command[command.index("-of") + 1])
+                Path(f"{output_base}.txt").write_text(
+                    "  Hola, world.  \n",
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            transcriber = WhisperCppTranscriber(
+                model_path=model,
+                binary=str(binary),
+                language="auto",
+                runner=runner,
+            )
+            result = transcriber.transcribe(audio)
+
+        self.assertEqual(result.text, "  Hola, world.  ")
+        self.assertIsNone(result.language)
+        self.assertEqual(commands[0][commands[0].index("-l") + 1], "auto")
+        self.assertIn("-otxt", commands[0])
+
+    def test_automatic_mode_recovers_the_language_whisper_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text(
+                    "Hola.",
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    "",
+                    "whisper_full_with_state: auto-detected language: es (p = 0.98)\n",
+                )
+
+            result = WhisperCppTranscriber(
+                model,
+                binary=str(binary),
+                language="auto",
+                runner=runner,
+            ).transcribe(audio)
+
+        self.assertEqual(result.language, "es")
+
+    def test_an_explicit_language_ignores_engine_detection_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text(
+                    "Hello.",
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    "",
+                    "auto-detected language: es (p = 0.51)\n",
+                )
+
+            result = WhisperCppTranscriber(
+                model,
+                binary=str(binary),
+                language="en",
+                runner=runner,
+            ).transcribe(audio)
+
+        self.assertEqual(result.language, "en")
+
+    def test_a_runner_without_captured_output_reports_an_unknown_language(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text(
+                    "Hola.",
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, None, None)  # type: ignore[arg-type]
+
+            result = WhisperCppTranscriber(
+                model,
+                binary=str(binary),
+                language="auto",
+                runner=runner,
+            ).transcribe(audio)
+
+        self.assertIsNone(result.language)
+
+    def test_reports_the_useful_tail_of_whisper_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary = root / "whisper-cli"
+            model = root / "model.bin"
+            audio = root / "sample.wav"
+            binary.touch()
+            binary.chmod(0o755)
+            model.touch()
+            audio.touch()
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                raise subprocess.CalledProcessError(
+                    1,
+                    command,
+                    stderr=("backend noise\n" * 100) + "decisive failure",
+                )
+
+            transcriber = WhisperCppTranscriber(model, binary=str(binary), runner=runner)
+
+            with self.assertRaises(TranscriptionError) as raised:
+                transcriber.transcribe(audio)
+
+        self.assertIn("decisive failure", str(raised.exception))
+
+
+    def test_tuning_flags_appear_only_when_set(self) -> None:
+        commands: list[list[str]] = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                commands.append(command)
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text("ok", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            WhisperCppTranscriber(model, binary=str(binary), runner=runner).transcribe(audio)
+            WhisperCppTranscriber(
+                model,
+                binary=str(binary),
+                initial_prompt="UTEL, Gim",
+                threads=8,
+                beam_size=5,
+                runner=runner,
+            ).transcribe(audio)
+
+        self.assertNotIn("-t", commands[0])
+        self.assertNotIn("-bs", commands[0])
+        self.assertNotIn("--prompt", commands[0])
+        self.assertEqual(commands[1][commands[1].index("-t") + 1], "8")
+        self.assertEqual(commands[1][commands[1].index("-bs") + 1], "5")
+        self.assertEqual(commands[1][commands[1].index("--prompt") + 1], "UTEL, Gim")
+
+    def test_a_hung_whisper_becomes_a_transcription_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary = root / "whisper-cli"
+            model = root / "model.bin"
+            audio = root / "sample.wav"
+            binary.touch()
+            binary.chmod(0o755)
+            model.touch()
+            audio.touch()
+
+            def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                raise subprocess.TimeoutExpired(command, float(kwargs["timeout"]))  # type: ignore[arg-type]
+
+            transcriber = WhisperCppTranscriber(
+                model,
+                binary=str(binary),
+                timeout_seconds=7.0,
+                runner=runner,
+            )
+
+            with self.assertRaises(TranscriptionError) as raised:
+                transcriber.transcribe(audio)
+
+        self.assertIn("7 seconds", str(raised.exception))
+
+    def test_invalid_transcript_encoding_becomes_a_transcription_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_bytes(b"hello\xff")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with self.assertRaises(TranscriptionError):
+                WhisperCppTranscriber(model, binary=str(binary), runner=runner).transcribe(audio)
+
+    def test_transcript_read_failure_becomes_a_transcription_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text(
+                    "hello",
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with patch.object(Path, "read_text", side_effect=OSError("denied")):
+                with self.assertRaises(TranscriptionError):
+                    WhisperCppTranscriber(
+                        model,
+                        binary=str(binary),
+                        runner=runner,
+                    ).transcribe(audio)
+
+    def test_unreadable_model_raises_dependency_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            model.chmod(0o000)
+            try:
+                transcriber = WhisperCppTranscriber(model, binary=str(binary))
+                with self.assertRaises(DependencyUnavailable) as ctx:
+                    transcriber.transcribe(audio)
+                self.assertIn("not readable", str(ctx.exception))
+            finally:
+                model.chmod(0o644)
+
+
+class DetectedLanguageTests(unittest.TestCase):
+    def test_the_last_reported_detection_wins(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["whisper-cli"],
+            0,
+            "",
+            "auto-detected language: en (p = 0.40)\n"
+            "auto-detected language: es (p = 0.93)\n",
+        )
+
+        self.assertEqual(detected_language(completed), "es")
+
+    def test_stdout_is_read_when_the_build_logs_there(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["whisper-cli"],
+            0,
+            "auto-detected language: EN (p = 0.71)\n",
+            "",
+        )
+
+        self.assertEqual(detected_language(completed), "en")
+
+    def test_output_without_a_detection_line_stays_unknown(self) -> None:
+        completed = subprocess.CompletedProcess(["whisper-cli"], 0, "", "loading model\n")
+
+        self.assertIsNone(detected_language(completed))
+
+
+class SilenceGuardTests(unittest.TestCase):
+    def write_wav(self, path: Path, amplitude: int, frames: int = 16000) -> Path:
+        import array
+        import wave
+
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(
+                array.array("h", [amplitude if i % 2 else -amplitude
+                                  for i in range(frames)]).tobytes()
+            )
+        return path
+
+    def test_silence_is_rejected_before_the_engine_can_invent_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            quiet = self.write_wav(Path(temp_dir) / "quiet.wav", 0)
+
+            self.assertTrue(is_effectively_silent(quiet))
+
+    def test_a_real_recording_level_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # The owner's quietest measured take sits near 0.020 RMS.
+            speech = self.write_wav(Path(temp_dir) / "speech.wav", int(0.020 * 32768))
+
+            self.assertFalse(is_effectively_silent(speech))
+
+    def test_unreadable_audio_fails_open_rather_than_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            broken = Path(temp_dir) / "broken.wav"
+            broken.write_bytes(b"not a wav at all")
+
+            self.assertFalse(is_effectively_silent(broken))
+
+    def test_silent_audio_never_reaches_the_engine(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model = root / "whisper-cli", root / "model.bin"
+            binary.touch()
+            binary.chmod(0o755)
+            model.touch()
+            audio = self.write_wav(root / "quiet.wav", 0)
+            called: list[list[str]] = []
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                called.append(command)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with self.assertRaises(TranscriptionError):
+                WhisperCppTranscriber(model, binary=str(binary), runner=runner).transcribe(audio)
+
+            self.assertEqual(called, [])
+
+
+class BinaryResolutionTests(unittest.TestCase):
+    def test_explicit_binary_must_be_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            binary = Path(temp_dir) / "whisper-cli"
+            binary.write_text("not executable", encoding="utf-8")
+
+            self.assertIsNone(resolve_binary(str(binary)))
+            binary.chmod(0o755)
+            self.assertEqual(resolve_binary(str(binary)), binary.resolve())
+
+
+if __name__ == "__main__":
+    unittest.main()

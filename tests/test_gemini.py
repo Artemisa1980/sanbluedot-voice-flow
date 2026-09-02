@@ -1,0 +1,537 @@
+import json
+import unittest
+from urllib.error import HTTPError, URLError
+
+from sanbluedot_voiceflow.cleaners.gemini import (
+    DEFAULT_MODEL,
+    DEFAULT_TIMEOUT_SECONDS,
+    MODEL_CHAIN,
+    MINIMUM_RETRY_BUDGET_SECONDS,
+    PER_MODEL_TIMEOUT_SECONDS,
+    GeminiCleaner,
+    per_model_slice,
+    model_chain,
+)
+from sanbluedot_voiceflow.errors import CleanupError
+
+
+SECRET = "not-a-real-key-fixture"
+
+
+class FakeResponse:
+    def __init__(self, body: str) -> None:
+        self.body = body
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body.encode("utf-8")
+
+
+def reply(cleaned: str) -> str:
+    return json.dumps({
+        "candidates": [
+            {
+                "content": {
+                    "parts": [{"text": json.dumps({"cleaned_text": cleaned})}],
+                    "role": "model",
+                },
+                "finishReason": "STOP",
+            }
+        ]
+    })
+
+
+class Recorder:
+    def __init__(self, body: str | None = None, error: Exception | None = None) -> None:
+        self.body = body
+        self.error = error
+        self.requests: list[object] = []
+        self.timeouts: list[float | None] = []
+
+    def __call__(self, request: object, timeout: float | None = None) -> FakeResponse:
+        self.requests.append(request)
+        self.timeouts.append(timeout)
+        if self.error is not None:
+            raise self.error
+        return FakeResponse(self.body or "")
+
+
+class SequenceRecorder(Recorder):
+    """Serve one scripted outcome per call so a retry can be observed."""
+
+    def __init__(self, outcomes: list[str | Exception]) -> None:
+        super().__init__()
+        self.outcomes = list(outcomes)
+
+    def __call__(self, request: object, timeout: float | None = None) -> FakeResponse:
+        self.requests.append(request)
+        self.timeouts.append(timeout)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return FakeResponse(outcome)
+
+
+class Clock:
+    """A clock the test advances, so no test waits on real time."""
+
+    def __init__(self, step: float = 0.0) -> None:
+        self.now = 0.0
+        self.step = step
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        now = self.now
+        self.now += self.step
+        return now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def unavailable(status: int = 503) -> HTTPError:
+    return HTTPError("https://example.invalid", status, "Service Unavailable", {}, None)
+
+
+def build(
+    opener: Recorder,
+    *,
+    key: str | None = SECRET,
+    mode: str = "clean",
+    announced: list[str] | None = None,
+    clock: Clock | None = None,
+    fallback: bool = False,
+    model: str = DEFAULT_MODEL,
+) -> GeminiCleaner:
+    clock = clock or Clock()
+    return GeminiCleaner(
+        model=model,
+        opener=opener,
+        mode=mode,
+        announce=(announced.append if announced is not None else lambda _message: None),
+        api_key_reader=lambda _provider: key,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+        fallback=fallback,
+    )
+
+
+class TransmissionGuardTests(unittest.TestCase):
+    def test_no_key_means_no_request_at_all(self) -> None:
+        opener = Recorder(reply("Hola."))
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, key=None).clean("hola")
+
+        self.assertEqual(opener.requests, [])
+        self.assertIn("set-key", str(raised.exception))
+
+    def test_empty_text_never_reaches_the_provider(self) -> None:
+        opener = Recorder(reply("x"))
+
+        self.assertEqual(build(opener).clean(""), "")
+        self.assertEqual(opener.requests, [])
+
+    def test_the_provider_is_announced_before_anything_is_sent(self) -> None:
+        announced: list[str] = []
+        opener = Recorder(reply("Hola, mundo."))
+
+        build(opener, announced=announced).clean("hola mundo")
+
+        self.assertEqual(len(announced), 1)
+        self.assertIn("gemini", announced[0])
+        self.assertIn(DEFAULT_MODEL, announced[0])
+        self.assertIn("No audio is sent", announced[0])
+
+    def test_the_key_travels_in_the_header_and_not_in_the_url_or_body(self) -> None:
+        opener = Recorder(reply("Hola."))
+
+        build(opener).clean("hola")
+
+        request = opener.requests[0]
+        self.assertEqual(request.get_header("X-goog-api-key"), SECRET)
+        self.assertNotIn(SECRET, request.full_url)
+        self.assertNotIn(SECRET, request.data.decode("utf-8"))
+
+    def test_only_transcript_text_is_sent(self) -> None:
+        opener = Recorder(reply("Hola."))
+
+        build(opener).clean("hola mundo", language_hint="es")
+
+        request = opener.requests[0]
+        self.assertIn(f"models/{DEFAULT_MODEL}:generateContent", request.full_url)
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(
+            sorted(payload),
+            [
+                "contents",
+                "generationConfig",
+                "systemInstruction",
+            ],
+        )
+        content_text = payload["contents"][0]["parts"][0]["text"]
+        self.assertIn("hola mundo", content_text)
+        self.assertIn("es", content_text)
+        self.assertEqual(payload["generationConfig"]["responseMimeType"], "application/json")
+        self.assertIn("cleaned_text", payload["generationConfig"]["responseSchema"]["properties"])
+        self.assertIn("Edit a voice transcript", payload["systemInstruction"]["parts"][0]["text"])
+        self.assertEqual(opener.timeouts, [DEFAULT_TIMEOUT_SECONDS])
+
+    def test_translate_mode_uses_translation_system_prompt_and_announcement(self) -> None:
+        announced: list[str] = []
+        opener = Recorder(reply("Hello world."))
+
+        result = build(opener, mode="translate", announced=announced).clean(
+            "hola mundo", language_hint="es"
+        )
+
+        self.assertEqual(result, "Hello world.")
+        self.assertEqual(len(announced), 1)
+        self.assertIn("translate", announced[0])
+        request = opener.requests[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertIn("Translate a spoken voice transcript", payload["systemInstruction"]["parts"][0]["text"])
+
+    def test_meeting_mode_uses_meeting_system_prompt_and_announcement(self) -> None:
+        announced: list[str] = []
+        opener = Recorder(reply("### Action Items\n- [ ] Task 1"))
+
+        result = build(opener, mode="meeting", announced=announced).clean(
+            "Juan revisa el código", language_hint="es"
+        )
+
+        self.assertEqual(result, "### Action Items\n- [ ] Task 1")
+        self.assertEqual(len(announced), 1)
+        self.assertIn("meeting", announced[0])
+        request = opener.requests[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertIn("Format a spoken voice dictation into clear, structured Markdown meeting notes", payload["systemInstruction"]["parts"][0]["text"])
+
+
+class ResponseTests(unittest.TestCase):
+    def test_the_cleaned_text_is_returned(self) -> None:
+        self.assertEqual(
+            build(Recorder(reply("Hola, mundo."))).clean("hola mundo"),
+            "Hola, mundo.",
+        )
+
+    def test_a_response_with_candidates_array_extracts_text(self) -> None:
+        body = json.dumps({
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": '{"cleaned_text": "Buenos días."}'}
+                        ]
+                    }
+                }
+            ]
+        })
+        self.assertEqual(build(Recorder(body)).clean("buenos dias"), "Buenos días.")
+
+    def test_a_response_wrapped_in_markdown_code_fences_is_parsed(self) -> None:
+        body = json.dumps({
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": '```json\n{"cleaned_text": "Buenos días."}\n```'}
+                        ]
+                    }
+                }
+            ]
+        })
+        self.assertEqual(build(Recorder(body)).clean("buenos dias"), "Buenos días.")
+
+    def test_a_response_without_output_text_falls_back_to_the_last_step(self) -> None:
+        body = json.dumps(
+            {
+                "steps": [
+                    {"type": "thought", "content": [{"type": "text", "text": "ignored"}]},
+                    {
+                        "type": "model_output",
+                        "content": [
+                            {"type": "text", "text": json.dumps({"cleaned_text": "Hola."})}
+                        ],
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(build(Recorder(body)).clean("hola"), "Hola.")
+
+    def test_split_text_parts_are_reassembled_before_parsing(self) -> None:
+        body = json.dumps(
+            {
+                "steps": [
+                    {
+                        "type": "model_output",
+                        "content": [
+                            {"type": "text", "text": '{"cleaned_'},
+                            {"type": "text", "text": 'text":"Hola."}'},
+                        ],
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(build(Recorder(body)).clean("hola"), "Hola.")
+
+    def test_invalid_json_is_reported_as_a_cleanup_error(self) -> None:
+        with self.assertRaises(CleanupError):
+            build(Recorder("not json at all")).clean("hola")
+
+    def test_a_reply_without_cleaned_text_is_refused(self) -> None:
+        body = json.dumps({"output_text": json.dumps({"text": "Hola."})})
+
+        with self.assertRaises(CleanupError):
+            build(Recorder(body)).clean("hola")
+
+    def test_empty_cleaned_text_is_refused(self) -> None:
+        with self.assertRaises(CleanupError):
+            build(Recorder(reply("   "))).clean("hola")
+
+
+class FailureTests(unittest.TestCase):
+    def test_an_http_error_reports_the_status_without_the_key(self) -> None:
+        error = HTTPError("https://example.invalid", 429, "Too Many Requests", {}, None)
+
+        with self.assertRaises(CleanupError) as raised:
+            build(Recorder(error=error)).clean("hola")
+
+        self.assertIn("429", str(raised.exception))
+        self.assertNotIn(SECRET, str(raised.exception))
+
+    def test_an_unreachable_provider_becomes_a_cleanup_error(self) -> None:
+        with self.assertRaises(CleanupError):
+            build(Recorder(error=URLError("offline"))).clean("hola")
+
+    def test_a_timeout_becomes_a_cleanup_error(self) -> None:
+        with self.assertRaises(CleanupError):
+            build(Recorder(error=TimeoutError("slow"))).clean("hola")
+
+
+class TransientCapacityTests(unittest.TestCase):
+    """A 503 is Google reporting capacity, not a rejected request.
+
+    Measured live on 2026-08-31: 6 of 9 calls to `gemini-3.7-flash` and 2 of 6 to
+    `gemini-3.6-flash` returned 503, while every successful reply took longer than the
+    former 20-second ceiling.
+    """
+
+    def test_the_default_budget_outlasts_the_slowest_measured_reply(self) -> None:
+        self.assertGreater(DEFAULT_TIMEOUT_SECONDS, 34.55)
+
+    def test_a_503_is_retried_once_and_the_second_reply_is_delivered(self) -> None:
+        opener = SequenceRecorder([unavailable(), reply("Hola.")])
+        announced: list[str] = []
+
+        result = build(opener, announced=announced).clean("hola")
+
+        self.assertEqual(result, "Hola.")
+        self.assertEqual(len(opener.requests), 2)
+        self.assertTrue(any("Retrying once" in message for message in announced))
+
+    def test_a_second_503_is_not_retried_again(self) -> None:
+        opener = SequenceRecorder([unavailable(), unavailable()])
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener).clean("hola")
+
+        self.assertEqual(len(opener.requests), 2)
+        self.assertIn("capacity", str(raised.exception))
+
+    def test_a_rejected_request_is_never_sent_twice(self) -> None:
+        for status in (400, 401, 403, 429):
+            with self.subTest(status=status):
+                opener = SequenceRecorder([unavailable(status), reply("Hola.")])
+
+                with self.assertRaises(CleanupError):
+                    build(opener).clean("hola")
+
+                self.assertEqual(len(opener.requests), 1)
+
+    def test_the_retry_shares_one_budget_instead_of_doubling_the_wait(self) -> None:
+        clock = Clock()
+        opener = SequenceRecorder([unavailable(), reply("Hola.")])
+
+        build(opener, clock=clock).clean("hola")
+
+        first, second = opener.timeouts
+        self.assertEqual(first, DEFAULT_TIMEOUT_SECONDS)
+        self.assertEqual(second, DEFAULT_TIMEOUT_SECONDS - clock.slept[0])
+        self.assertLessEqual(first + second, 2 * DEFAULT_TIMEOUT_SECONDS)
+
+    def test_a_slow_503_falls_back_rather_than_making_the_speaker_wait_twice(self) -> None:
+        # Each clock read advances 22 seconds, so the failure consumed most of the
+        # budget and no retry can finish inside it.
+        clock = Clock(step=22.0)
+        opener = SequenceRecorder([unavailable(), reply("Hola.")])
+
+        with self.assertRaises(CleanupError):
+            build(opener, clock=clock).clean("hola")
+
+        self.assertEqual(len(opener.requests), 1)
+
+
+class ModelChainTests(unittest.TestCase):
+    """A 503 is one model being busy, so the next measured model gets the text.
+
+    Falling back exists to save the cleanup, never to make the speaker wait longer than
+    the single timeout budget the whole call already has.
+    """
+
+    def test_the_chain_puts_the_preferred_model_first(self) -> None:
+        self.assertEqual(model_chain("gemini-3.6-flash")[0], "gemini-3.6-flash")
+        self.assertEqual(
+            set(model_chain("gemini-3.6-flash")), set(MODEL_CHAIN)
+        )
+
+    def test_an_unknown_preferred_model_still_leads_its_own_chain(self) -> None:
+        chain = model_chain("gemini-9-flash")
+        self.assertEqual(chain[0], "gemini-9-flash")
+        self.assertEqual(chain[1:], MODEL_CHAIN)
+
+    def test_a_busy_model_hands_the_text_to_the_next_one(self) -> None:
+        opener = SequenceRecorder([unavailable(), unavailable(), reply("Hola.")])
+        announced: list[str] = []
+
+        cleaner = build(opener, announced=announced, fallback=True)
+        self.assertEqual(cleaner.clean("hola"), "Hola.")
+
+        # Two requests for the preferred model (first try plus its retry), then the second.
+        self.assertEqual(len(opener.requests), 3)
+        self.assertIn(MODEL_CHAIN[1], opener.requests[2].full_url)
+
+    def test_the_model_that_answered_is_reported(self) -> None:
+        opener = SequenceRecorder([unavailable(), unavailable(), reply("Hola.")])
+        cleaner = build(opener, fallback=True)
+
+        cleaner.clean("hola")
+
+        self.assertEqual(cleaner.answered_with, MODEL_CHAIN[1])
+
+    def test_no_fallback_means_the_answer_names_the_preferred_model(self) -> None:
+        opener = SequenceRecorder([reply("Hola.")])
+        cleaner = build(opener, fallback=True)
+
+        cleaner.clean("hola")
+
+        self.assertEqual(cleaner.answered_with, DEFAULT_MODEL)
+
+    def test_a_rejected_request_stops_the_chain_instead_of_walking_it(self) -> None:
+        opener = SequenceRecorder([unavailable(400), reply("Hola.")])
+
+        with self.assertRaises(CleanupError):
+            build(opener, fallback=True).clean("hola")
+
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_the_whole_chain_is_announced_before_anything_is_sent(self) -> None:
+        announced: list[str] = []
+
+        build(SequenceRecorder([reply("Hola.")]), announced=announced,
+              fallback=True).clean("hola")
+
+        for model in MODEL_CHAIN:
+            self.assertIn(model, announced[0])
+        self.assertIn("No audio is sent", announced[0])
+
+    def test_an_exhausted_budget_stops_the_chain_early(self) -> None:
+        # Each clock read advances 20 seconds, so after the first model there is not
+        # enough budget left for another to be worth trying.
+        clock = Clock(step=20.0)
+        opener = SequenceRecorder([unavailable(), reply("Hola.")])
+
+        with self.assertRaises(CleanupError):
+            build(opener, clock=clock, fallback=True).clean("hola")
+
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_every_model_busy_falls_back_to_the_local_transcript(self) -> None:
+        opener = SequenceRecorder([unavailable()] * 6)
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, fallback=True).clean("hola")
+
+        self.assertIn("capacity", str(raised.exception))
+        for model in MODEL_CHAIN:
+            self.assertIn(model, str(raised.exception))
+
+
+class PerModelBudgetTests(unittest.TestCase):
+    """No single model may spend the whole budget and starve the rest of the chain.
+
+    Measured live on 2026-08-31: a busy `gemini-3.7-flash` consumed all 45 seconds, so
+    `gemini-3.5-flash`, which answered the same prompt in 5 seconds, was never reached.
+    """
+
+    def test_an_earlier_model_gets_only_its_slice(self) -> None:
+        opener = SequenceRecorder([reply("Hola.")])
+
+        build(opener, fallback=True).clean("hola")
+
+        self.assertEqual(opener.timeouts, [PER_MODEL_TIMEOUT_SECONDS])
+
+    def test_the_last_model_may_use_whatever_is_left(self) -> None:
+        opener = SequenceRecorder([reply("Hola.")])
+
+        build(opener, fallback=False).clean("hola")
+
+        self.assertEqual(opener.timeouts, [DEFAULT_TIMEOUT_SECONDS])
+
+    def test_a_slice_running_out_hands_over_instead_of_giving_up(self) -> None:
+        # The first model's read times out inside its own slice, with budget to spare.
+        opener = SequenceRecorder([TimeoutError("slow"), reply("Hola.")])
+        announced: list[str] = []
+
+        cleaner = build(opener, announced=announced, fallback=True)
+        self.assertEqual(cleaner.clean("hola"), "Hola.")
+
+        self.assertEqual(cleaner.answered_with, MODEL_CHAIN[1])
+        self.assertTrue(any("ran out of its share" in m for m in announced))
+
+    def test_the_slice_never_exceeds_the_whole_budget(self) -> None:
+        self.assertLessEqual(
+            PER_MODEL_TIMEOUT_SECONDS * len(MODEL_CHAIN), DEFAULT_TIMEOUT_SECONDS
+        )
+
+    def test_the_slice_adapts_to_a_longer_chain(self) -> None:
+        # `--gemini-model` accepts any identifier, so an unlisted model makes the chain
+        # longer than MODEL_CHAIN. A fixed slice would spend the budget before reaching
+        # a healthy model.
+        self.assertEqual(per_model_slice(45.0, 3), 15.0)
+        self.assertEqual(per_model_slice(45.0, 4), 11.25)
+        self.assertLessEqual(per_model_slice(45.0, 4) * 4, 45.0)
+
+    def test_the_slice_never_falls_below_the_floor(self) -> None:
+        self.assertEqual(per_model_slice(9.0, 9), MINIMUM_RETRY_BUDGET_SECONDS)
+
+    def test_a_single_model_keeps_the_whole_budget(self) -> None:
+        self.assertEqual(per_model_slice(45.0, 1), 45.0)
+
+    def test_the_announcement_never_names_a_model_it_did_not_contact(self) -> None:
+        # The budget runs out after the first model, so only that one may be named as
+        # contacted and no promise may be made about the next.
+        clock = Clock(step=20.0)
+        opener = SequenceRecorder([unavailable(), reply("Hola.")])
+        announced: list[str] = []
+
+        with self.assertRaises(CleanupError):
+            build(opener, announced=announced, clock=clock, fallback=True).clean("hola")
+
+        self.assertEqual(len(opener.requests), 1)
+        self.assertFalse(
+            any("Trying" in m for m in announced),
+            f"promised a model it never contacted: {announced}",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
