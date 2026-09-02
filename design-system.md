@@ -143,6 +143,14 @@ the one surface that does not use the sage canvas.
   on-air red `rgb(255, 69, 59)`. Inactive bars sit at white 10%.
 - State badges: `ON AIR` red, processing dot blue, completed green, error red. The
   recording badge names the mode — `ON AIR`, `ON AIR • ES➔EN`, `ON AIR • MEETING`.
+- Mode confirmation replaces the twelve bars with four segments, one per mode, at
+  `14px` high with `3px` gaps and radius `2px`. The selected segment is filled and the
+  rest sit at white 10%, so the confirmation also says what the other modes are. The
+  microphone disc carries the mode's glyph while it is shown, and the capsule springs
+  between states rather than cutting.
+- One accent rule for that strip: every mode lights brand gold `#EFC15E`, except
+  `ACTION`, which lights the approved coral `#FF7B6B`. The mode that can act on the
+  machine is the only one that reads as live, and no new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
 ## Dev-Station Tabbed Console contract

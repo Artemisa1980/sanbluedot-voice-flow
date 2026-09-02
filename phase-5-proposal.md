@@ -23,6 +23,7 @@ reference mockup is kept at `assets/retro-mic-ui-mockup.jpg`.
 | 4 | Recent-dictation menu-bar tray | `DictationHistory.swift` · README |
 | 5 | Gemini-to-Ollama distillation, opt-in | R5c · `distill.py` · `./vf distill` |
 | 7 | Voice snippets and spoken macros | R5b · `snippets.py`, `VoiceSnippet.swift` · `./vf snippet` |
+| 9 | Morphing HUD and in-flight mode toggle | R3c · `RetroMicHUDView.swift`, `HotkeyMonitor.swift` · README |
 
 ## Ahead
 
@@ -45,16 +46,6 @@ improve recognition of `sanblueᵈᵒᵗ`, proper names and custom jargon.
 Measure before adopting: the vocabulary prompt already suppresses the engine's own
 punctuation, which cost punctuation F1 34.8% against 93.8% until it was found. Any
 richer prompt is measured on the fixed corpus, punctuation included, before it ships.
-
-### 9 — Morphing floating HUD and in-flight mode toggle
-
-Cycle modes — `[CLEAN]`, `[ES➔EN]`, `[NOTES]`, `[ACTION]` — from the HUD with a hotkey,
-without opening the station window, and animate the capsule between rest, live meter,
-and mode confirmation.
-
-This is also the answer to an open defect: voice actions are currently parsed on every
-dictation, so a sentence that begins like an instruction is executed instead of pasted.
-An `[ACTION]` mode makes that an explicit choice.
 
 ### 10 — Live latency and speed badge
 

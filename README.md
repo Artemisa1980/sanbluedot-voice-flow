@@ -124,9 +124,26 @@ document is never polluted by the command that opened a browser. If the action f
 the dictation is pasted normally, so speech is never lost. Conversational phrases that
 merely start with "abre" or "open" are rejected rather than treated as an app name.
 
-Actions are parsed on every dictation. A sentence that begins like an instruction is
-treated as one; an in-flight mode toggle that would make this an explicit choice is
-still open work.
+Only the `ACTION` mode looks for a command. Every other mode writes what was said, so a
+sentence that merely opens like an instruction is dictated rather than executed.
+
+## Switching mode
+
+Four modes decide what happens to a dictation: `CLEAN` writes it, `ES➔EN` translates it,
+`NOTES` structures it, and `ACTION` runs it as a spoken command. Press `⌃⌥M` anywhere to
+advance to the next one; the floating capsule names the new mode and shows the other
+three, so the station window does not have to be open. The same choice sits in the
+menu bar under **Mode**, and in the window's mode switch.
+
+The chord is configurable, and cannot be the push-to-talk trigger:
+
+```bash
+open -n 'dist/sanblueᵈᵒᵗ VoiceFlow.app' --args \
+  --mode-shortcut control+option+p
+```
+
+A mode change applies to the next dictation. Pressing the chord while the engine is
+still working is ignored and logged, because that run already received its mode.
 
 ## Recent dictations
 
@@ -359,7 +376,8 @@ open -n 'dist/sanblueᵈᵒᵗ VoiceFlow.app' --args \
 
 `Fn/Globe` is the only modifier accepted by itself. Configured combinations may use
 `command`, `control`, `option`, `shift`, or `fn` plus a letter, `Space`, `Escape`, or
-`F1` through `F20`.
+`F1` through `F20`. The mode switch (`--mode-shortcut`) takes the same combinations but
+never a modifier alone: it is tapped, not held.
 
 ## Run the Phase 2 acceptance matrix
 

@@ -12,16 +12,30 @@ enum HotkeyMonitorError: LocalizedError {
 
 final class HotkeyMonitor {
     private let shortcut: Shortcut
+    /// The chord that advances the processing mode. It shares this tap rather than
+    /// opening a second one, so the app asks for Input Monitoring once.
+    private let modeShortcut: Shortcut?
     private let onPressed: () -> Void
     private let onReleased: () -> Void
+    private let onModeCycle: () -> Void
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var keyIsDown = false
 
-    init(shortcut: Shortcut, onPressed: @escaping () -> Void, onReleased: @escaping () -> Void) {
+    init(
+        shortcut: Shortcut,
+        modeShortcut: Shortcut? = nil,
+        onPressed: @escaping () -> Void,
+        onReleased: @escaping () -> Void,
+        onModeCycle: @escaping () -> Void = {}
+    ) {
         self.shortcut = shortcut
+        // A modifier-only chord is a hold, and the mode switch is a tap. Accepting one
+        // here would fire the switch on every press of that modifier.
+        self.modeShortcut = modeShortcut?.keyCode == nil ? nil : modeShortcut
         self.onPressed = onPressed
         self.onReleased = onReleased
+        self.onModeCycle = onModeCycle
     }
 
     func start() throws {
@@ -76,6 +90,14 @@ final class HotkeyMonitor {
             // The tap observed nothing while it was disabled. A release inside that
             // window is lost, which would otherwise leave a recording running forever.
             resyncHeldState()
+            return Unmanaged.passUnretained(event)
+        }
+
+        // The mode switch is checked first: with a modifier-only trigger the record
+        // path only ever looks at `.flagsChanged`, so a plain key press would never
+        // reach a check placed after it.
+        if type == .keyDown, cycleModeRequested(event) {
+            onModeCycle()
             return Unmanaged.passUnretained(event)
         }
 
@@ -151,9 +173,23 @@ final class HotkeyMonitor {
         onReleased()
     }
 
+    /// Whether this key-down is the mode chord: the right key, held with exactly the
+    /// right modifiers, and not the keyboard repeating a key already held down.
+    private func cycleModeRequested(_ event: CGEvent) -> Bool {
+        guard let modeShortcut, let expectedKey = modeShortcut.keyCode else { return false }
+        guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return false }
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        guard keyCode == expectedKey else { return false }
+        return flagsMatch(event.flags, modeShortcut.modifiers)
+    }
+
     private func modifiersMatch(_ flags: CGEventFlags) -> Bool {
+        flagsMatch(flags, shortcut.modifiers)
+    }
+
+    private func flagsMatch(_ flags: CGEventFlags, _ modifiers: Set<ShortcutModifier>) -> Bool {
         var expected = CGEventFlags()
-        for modifier in shortcut.modifiers {
+        for modifier in modifiers {
             switch modifier {
             case .command: expected.insert(.maskCommand)
             case .control: expected.insert(.maskControl)

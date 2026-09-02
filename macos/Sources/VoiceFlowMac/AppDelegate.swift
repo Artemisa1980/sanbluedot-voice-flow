@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var statusMenuItem: NSMenuItem!
     private var shortcutMenuItem: NSMenuItem!
+    private var modeMenuItem: NSMenuItem!
     private var retryMenuItem: NSMenuItem!
     private var controlWindow: ControlWindowController!
     private var configuration: VoiceFlowConfiguration?
@@ -80,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateStatus(.failed(launchError.localizedDescription))
         } else if let configuration {
             shortcutMenuItem.title = "Shortcut: \(configuration.shortcut.displayName)"
+            updateModeMenuItem()
             authorizeAndStart()
         }
     }
@@ -115,9 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshProvider(cleaner)
         }
         controlWindow.onModeChange = { [weak self] mode in
-            guard let self else { return }
-            self.selectedMode = mode
-            self.controller?.selectMode(mode)
+            // The window already shows the new mode and wrote its own log line, so this
+            // path only carries the choice outward.
+            self?.applyProcessingMode(mode, confirmInHUD: false, syncWindow: false)
         }
         controlWindow.onGeminiModelChange = { [weak self] model in
             guard let self else { return }
@@ -301,6 +303,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcutMenuItem = NSMenuItem(title: "Shortcut", action: nil, keyEquivalent: "")
         shortcutMenuItem.isEnabled = false
         menu.addItem(shortcutMenuItem)
+
+        // The mode switch is a hotkey, so it needs somewhere to be discovered. This row
+        // both names the chord and performs the switch when it is clicked.
+        modeMenuItem = NSMenuItem(
+            title: "Mode",
+            action: #selector(cycleProcessingMode),
+            keyEquivalent: ""
+        )
+        modeMenuItem.target = self
+        menu.addItem(modeMenuItem)
+        updateModeMenuItem()
         menu.addItem(.separator())
 
         historyMenuItem = NSMenuItem(title: "Recent Dictations (0)", action: nil, keyEquivalent: "")
@@ -480,6 +493,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         authorizeAndStart()
     }
 
+    /// Advance to the next processing mode from anywhere, without opening the station
+    /// window.
+    ///
+    /// Refused while a dictation is in flight: the engine already received the mode it
+    /// was given, so switching here would only mislabel a run that cannot change.
+    @objc private func cycleProcessingMode() {
+        guard controller?.isIdle ?? true else {
+            controlWindow.addLog("mode switch ignored · a dictation is still running")
+            return
+        }
+        applyProcessingMode(selectedMode.next, confirmInHUD: true, syncWindow: true)
+    }
+
+    /// Put one mode choice everywhere the speaker might look for it: the engine's next
+    /// run, the station window, the menu bar, and — when the switch came from the
+    /// hotkey — the floating capsule, which is the only surface visible at the time.
+    private func applyProcessingMode(
+        _ mode: ProcessingMode,
+        confirmInHUD: Bool,
+        syncWindow: Bool
+    ) {
+        selectedMode = mode
+        controller?.selectMode(mode)
+        if syncWindow {
+            controlWindow.configureMode(selected: mode)
+            controlWindow.addLog("mode switched to: \(mode.rawValue)", isHighlight: true)
+        }
+        updateModeMenuItem()
+        if confirmInHUD {
+            floatingHUD.showModeChanged(mode)
+        }
+    }
+
+    private func updateModeMenuItem() {
+        let chord = configuration?.modeShortcut.displayName ?? "⌃⌥M"
+        modeMenuItem?.title = "Mode: \(selectedMode.badgeName) — \(chord) to cycle"
+    }
+
     @objc private func toggleDistillationRecording() {
         recordDistillationPairs.toggle()
         UserDefaults.standard.set(
@@ -585,8 +636,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CGPreflightListenEventAccess() {
             let monitor = HotkeyMonitor(
                 shortcut: configuration.shortcut,
+                modeShortcut: configuration.modeShortcut,
                 onPressed: { [weak controller] in controller?.shortcutPressed() },
-                onReleased: { [weak controller] in controller?.shortcutReleased() }
+                onReleased: { [weak controller] in controller?.shortcutReleased() },
+                onModeCycle: { [weak self] in
+                    DispatchQueue.main.async { self?.cycleProcessingMode() }
+                }
             )
             do {
                 try monitor.start()
@@ -667,6 +722,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let acceptanceError,
             let audioCleanupError,
             let model,
+            let runMode,
             let result,
             let spokenSeconds
         ):
@@ -675,8 +731,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.title = "✓"
             playCompletionSound()
 
-            // Check if spoken text matches a Voice Action
-            let detectedAction = VoiceActionParser.parse(text: result.finalText) ?? VoiceActionParser.parse(text: result.rawText)
+            // R3c: a dictation is examined for a spoken command only in the mode the
+            // speaker selected for it. Parsing every dictation meant a sentence that
+            // merely opened like an instruction was executed instead of written, and
+            // the speaker had no way to say which one they meant.
+            let detectedAction = runMode.parsesVoiceActions
+                ? (VoiceActionParser.parse(text: result.finalText)
+                    ?? VoiceActionParser.parse(text: result.rawText))
+                : nil
             if let action = detectedAction {
                 let execution = VoiceActionExecutor.execute(action)
                 if execution.isSuccess {
@@ -733,7 +795,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     personalizedText: result.personalizedText,
                     finalText: deliveredText,
                     cleaner: self.selectedCleaner.rawValue,
-                    mode: self.selectedMode.rawValue,
+                    mode: runMode.rawValue,
                     model: model,
                     latencySeconds: elapsed,
                     usedFallback: usedFallback,

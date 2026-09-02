@@ -7,6 +7,22 @@ enum HUDMode {
     case completed(didAutoPaste: Bool, usedFallback: Bool)
     case actionExecuted(description: String)
     case failed(String)
+    /// The mode switch was used while nothing was being dictated. The capsule appears
+    /// on its own to confirm the new mode, then leaves.
+    case modeChanged(ProcessingMode)
+
+    /// A stable name for the current state, used as the animation value so the capsule
+    /// morphs between states instead of cutting.
+    var stateKey: String {
+        switch self {
+        case .recording: return "recording"
+        case .processing: return "processing"
+        case .completed: return "completed"
+        case .actionExecuted: return "actionExecuted"
+        case .failed: return "failed"
+        case .modeChanged(let mode): return "modeChanged.\(mode.rawValue)"
+        }
+    }
 }
 
 final class HUDViewModel: ObservableObject {
@@ -45,9 +61,11 @@ struct RetroMicHUDView: View {
                             ), lineWidth: 1.5)
                     )
                 
-                Image(systemName: "mic.fill")
+                Image(systemName: glyphName)
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(iconColor)
+                    .transition(.scale.combined(with: .opacity))
+                    .id(glyphName)
             }
             .shadow(color: iconGlowColor, radius: 6)
 
@@ -73,8 +91,15 @@ struct RetroMicHUDView: View {
                     }
                 }
                 
-                // LED VU-Meter equalizer or processing wave
-                vuMeterView
+                // LED VU-Meter equalizer, processing wave, or — while the mode switch
+                // is confirming — the four modes with the selected one lit.
+                if case .modeChanged(let mode) = viewModel.mode {
+                    modeStripView(active: mode)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                } else {
+                    vuMeterView
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                }
             }
             .frame(width: 195)
         }
@@ -105,6 +130,39 @@ struct RetroMicHUDView: View {
                 )
         )
         .shadow(color: .black.opacity(0.5), radius: 15, x: 0, y: 8)
+        .animation(
+            .spring(response: 0.30, dampingFraction: 0.82),
+            value: viewModel.mode.stateKey
+        )
+    }
+
+    /// The mode's own accent. One rule, so the strip cannot drift into a palette of its
+    /// own: every mode lights the brand gold, except the one that can act on the
+    /// machine, which lights the approved coral the station already uses for live state.
+    static func accent(for mode: ProcessingMode) -> Color {
+        switch mode {
+        case .clean, .translate, .meeting:
+            return Color(red: 0xEF / 255.0, green: 0xC1 / 255.0, blue: 0x5E / 255.0)
+        case .actions:
+            return VoiceStationTokens.rec
+        }
+    }
+
+    /// One glyph per mode, so the confirmation reads before the word does.
+    static func glyph(for mode: ProcessingMode) -> String {
+        switch mode {
+        case .clean: return "sparkles"
+        case .translate: return "character.bubble.fill"
+        case .meeting: return "list.bullet.rectangle.fill"
+        case .actions: return "bolt.fill"
+        }
+    }
+
+    private var glyphName: String {
+        if case .modeChanged(let mode) = viewModel.mode {
+            return Self.glyph(for: mode)
+        }
+        return "mic.fill"
     }
 
     private var iconColor: Color {
@@ -119,6 +177,8 @@ struct RetroMicHUDView: View {
             return vintageGold
         case .failed:
             return onAirRed
+        case .modeChanged(let mode):
+            return Self.accent(for: mode)
         }
     }
 
@@ -134,6 +194,8 @@ struct RetroMicHUDView: View {
             return vintageGold.opacity(0.8)
         case .failed:
             return onAirRed.opacity(0.8)
+        case .modeChanged(let mode):
+            return Self.accent(for: mode).opacity(0.7)
         }
     }
 
@@ -222,6 +284,15 @@ struct RetroMicHUDView: View {
                     .font(.system(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(onAirRed)
             }
+        case .modeChanged(let mode):
+            HStack(spacing: 5) {
+                Text("MODE")
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.55))
+                Text(mode.badgeName)
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundColor(Self.accent(for: mode))
+            }
         }
     }
 
@@ -231,6 +302,30 @@ struct RetroMicHUDView: View {
         model
             .replacingOccurrences(of: "gemini-", with: "")
             .replacingOccurrences(of: "-flash", with: "")
+    }
+
+    /// The mode switch as it appears in the HUD: all four modes at once, so the
+    /// confirmation also says what the other three are and which way the toggle runs.
+    private func modeStripView(active: ProcessingMode) -> some View {
+        HStack(spacing: 3) {
+            ForEach(ProcessingMode.allCases, id: \.self) { mode in
+                let isOn = mode == active
+                Text(mode.badgeName)
+                    .font(.system(size: 7, weight: .heavy, design: .monospaced))
+                    .foregroundColor(isOn ? .black.opacity(0.85) : .white.opacity(0.45))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(isOn ? Self.accent(for: mode) : Color.white.opacity(0.1))
+                    )
+                    .shadow(
+                        color: isOn ? Self.accent(for: mode).opacity(0.8) : .clear,
+                        radius: 3
+                    )
+            }
+        }
+        .frame(height: 14)
     }
 
     private var vuMeterView: some View {
@@ -256,6 +351,9 @@ struct RetroMicHUDView: View {
         case .completed, .actionExecuted:
             activeCount = 12
         case .failed:
+            activeCount = 0
+        case .modeChanged:
+            // The strip replaces the meter in this state; the bars are never drawn.
             activeCount = 0
         }
 

@@ -120,6 +120,34 @@ final class FloatingHUDController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
     }
 
+    /// Confirm a mode change while nothing is being dictated.
+    ///
+    /// The capsule is summoned by the switch itself, so it raises the generation and
+    /// resets the alpha: without that, a fade already running from the last dictation
+    /// would carry on and order the panel out a moment after it appeared.
+    func showModeChanged(_ mode: ProcessingMode) {
+        animationGeneration += 1
+        meterTimer?.invalidate()
+        meterTimer = nil
+        processingTimer?.invalidate()
+        processingTimer = nil
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+
+        viewModel.processingMode = mode
+        viewModel.mode = .modeChanged(mode)
+
+        positionPanel()
+        panel.alphaValue = 1.0
+        panel.orderFrontRegardless()
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.fadeOut()
+        }
+        dismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
+    }
+
     func showFailed(message: String) {
         meterTimer?.invalidate()
         meterTimer = nil

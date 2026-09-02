@@ -14,6 +14,10 @@ enum VoiceFlowStatus {
         audioCleanupError: String?,
         /// The cloud model that produced the text. `nil` for local cleanup.
         model: String?,
+        /// The mode this dictation actually ran in, captured when the shortcut was
+        /// pressed. Reading the current selection instead would apply a mode the
+        /// speaker switched to while the engine was still working.
+        mode: ProcessingMode,
         result: EngineResult,
         /// How long the speaker actually held the shortcut and spoke. Speaking rate is
         /// words over this, never words over the processing time, which measures the
@@ -57,6 +61,12 @@ final class VoiceFlowController {
 
     var currentAudioLevel: Float {
         recorder.currentAudioLevel()
+    }
+
+    /// True only between dictations. The mode switch reads this: changing mode while
+    /// the engine is mid-run would show one mode and deliver another.
+    var isIdle: Bool {
+        state == .idle
     }
 
     private enum State {
@@ -174,6 +184,7 @@ final class VoiceFlowController {
                             acceptanceError: acceptanceError,
                             audioCleanupError: audioCleanupError,
                             model: result.model,
+                            mode: mode,
                             result: result,
                             spokenSeconds: spokenSeconds
                         )

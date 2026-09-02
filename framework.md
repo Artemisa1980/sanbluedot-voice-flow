@@ -62,6 +62,17 @@ modes, and the distinction is normative rather than cosmetic.
 ### R3c — Voice actions & system automation
 
 - Spoken natural language intents (Google, YouTube, GitHub search, app launch, URL navigation) in Spanish or English are parsed deterministically.
+- A dictation is examined for a command only in the mode selected for it. Parsing every
+  dictation made the decision for the speaker: a sentence that merely opened like an
+  instruction was executed instead of written, and nothing on screen said which reading
+  the application had taken. The selected mode is the answer, and it is visible before
+  the speaker starts talking.
+- The mode is changeable without opening the station window, and the surface that
+  announces the change is the one visible at the time. A change applies to the next
+  dictation; a run already handed to the engine keeps the mode it was given, and is
+  reported under that mode.
+- `actions` is an application mode, not an engine mode. The engine transcribes and cleans
+  as usual, and the command is recognized from the text it returns.
 - Executed actions suppress auto-paste into the prior application to prevent document pollution.
 - Action execution failure falls through to standard dictation paste so user speech is never discarded.
 - Conversational phrases with non-app keywords are rejected to prevent accidental app launches.

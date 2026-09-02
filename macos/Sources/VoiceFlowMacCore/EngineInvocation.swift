@@ -13,6 +13,10 @@ public struct EngineInvocation: Equatable, Sendable {
     /// environment and only for a cloud cleaner, so a local run never carries a secret
     /// it has no use for.
     ///
+    /// `mode` reaches the engine as `engineMode`, not as its own name. `actions` is an
+    /// application mode: the engine cleans the transcript as usual and the spoken command
+    /// is recognized here, from the text it returns.
+    ///
     /// `recordDistillationPair` defaults to false and adds `--distill` only when the
     /// speaker turned the setting on. Keeping dictated text on disk is a decision, so
     /// the flag is absent from an ordinary run rather than implied by cloud cleanup.
@@ -69,7 +73,7 @@ public struct EngineInvocation: Equatable, Sendable {
             "--whisper-model", configuration.whisperModel.path,
             "--language", configuration.language.rawValue,
             "--cleaner", selectedCleaner.rawValue,
-            "--mode", selectedMode.rawValue,
+            "--mode", selectedMode.engineMode,
             "--ollama-url", configuration.ollamaURL,
             "--ollama-model", configuration.ollamaModel,
             "--gemini-model", selectedGeminiModel,

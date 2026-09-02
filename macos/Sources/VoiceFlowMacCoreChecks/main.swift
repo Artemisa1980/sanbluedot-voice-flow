@@ -576,6 +576,105 @@ do {
         "The distillation flag must be appended after the fixed argument list."
     )
 
+    // --- Processing modes and the mode switch (Feature 9) ---
+
+    // The engine's own vocabulary. `--mode actions` was sent verbatim and argparse
+    // rejected the whole run, so every dictation failed while ACTION was selected.
+    // This list is what `cli.py` accepts; a mode that maps outside it fails here first.
+    let engineModes: Set<String> = ["clean", "translate", "meeting"]
+    for mode in ProcessingMode.allCases {
+        try check(
+            engineModes.contains(mode.engineMode),
+            "Mode \(mode.rawValue) maps to '\(mode.engineMode)', which the engine rejects."
+        )
+    }
+    try check(
+        ProcessingMode.actions.engineMode == "clean",
+        "Voice actions are parsed in the app, so the engine should run an ordinary cleanup."
+    )
+
+    // R3c: exactly one mode looks for a spoken command.
+    let parsingModes = ProcessingMode.allCases.filter(\.parsesVoiceActions)
+    try check(
+        parsingModes == [.actions],
+        "Voice-action parsing is not confined to the ACTION mode: \(parsingModes)."
+    )
+
+    // The toggle visits every mode once and comes back.
+    var visited: [ProcessingMode] = [.clean]
+    var cursor = ProcessingMode.clean
+    for _ in 1..<ProcessingMode.allCases.count {
+        cursor = cursor.next
+        visited.append(cursor)
+    }
+    try check(
+        Set(visited).count == ProcessingMode.allCases.count,
+        "Cycling the mode did not reach every mode."
+    )
+    try check(
+        cursor.next == .clean,
+        "Cycling past the last mode did not return to the first."
+    )
+    try check(
+        Set(ProcessingMode.allCases.map(\.badgeName)).count == ProcessingMode.allCases.count,
+        "Two modes share a badge, so the HUD cannot say which one is on."
+    )
+
+    try check(
+        defaults.modeShortcut.displayName == "⌃⌥M",
+        "Default mode shortcut is incorrect."
+    )
+    try check(
+        defaults.modeShortcut.keyCode != nil,
+        "The mode switch is a tap, so it needs a key and not modifiers alone."
+    )
+    try check(
+        defaults.modeShortcut != defaults.shortcut,
+        "The mode switch and the push-to-talk trigger are the same chord."
+    )
+
+    let customModeShortcut = try VoiceFlowConfiguration.parse(
+        arguments: ["--mode-shortcut", "control+option+p"],
+        currentDirectory: root
+    )
+    try check(
+        customModeShortcut.modeShortcut.displayName == "⌃⌥P",
+        "An explicit mode shortcut was not applied."
+    )
+
+    var conflictRejected = false
+    do {
+        _ = try VoiceFlowConfiguration.parse(
+            arguments: ["--mode-shortcut", "fn"],
+            currentDirectory: root
+        )
+    } catch ConfigurationError.shortcutConflict {
+        conflictRejected = true
+    }
+    try check(
+        conflictRejected,
+        "A mode shortcut equal to the push-to-talk trigger was accepted."
+    )
+
+    let actionsRun = EngineInvocation.make(
+        configuration: defaults,
+        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
+        baseEnvironment: [:],
+        mode: .actions
+    )
+    try check(
+        !actionsRun.arguments.contains("actions"),
+        "The engine was asked for a mode it does not define."
+    )
+    if let modeIndex = actionsRun.arguments.firstIndex(of: "--mode") {
+        try check(
+            actionsRun.arguments[modeIndex + 1] == "clean",
+            "The ACTION mode did not run an ordinary cleanup in the engine."
+        )
+    } else {
+        throw CheckFailure.failed("The engine run carries no --mode argument.")
+    }
+
     print("VoiceFlowMacCore checks passed.")
 } catch {
     FileHandle.standardError.write(Data("Check failed: \(error.localizedDescription)\n".utf8))

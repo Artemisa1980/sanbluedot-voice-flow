@@ -14,6 +14,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
     case invalidMode(String)
     case invalidLanguage(String)
     case invalidShortcut(String)
+    case shortcutConflict(String)
 
     public var errorDescription: String? {
         switch self {
@@ -29,6 +30,8 @@ public enum ConfigurationError: LocalizedError, Equatable {
             return "Unsupported language: \(language)."
         case .invalidShortcut(let shortcut):
             return "Invalid shortcut: \(shortcut). Use fn alone or a modifier plus a supported key."
+        case .shortcutConflict(let shortcut):
+            return "\(shortcut) is already the push-to-talk shortcut. Give --mode-shortcut a different chord."
         }
     }
 }
@@ -136,6 +139,49 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
             return "Voice Actions (macOS)"
         }
     }
+
+    /// The badge the HUD and the mode switch show. Short enough to read at a glance
+    /// while the speaker is already talking.
+    public var badgeName: String {
+        switch self {
+        case .clean: return "CLEAN"
+        case .translate: return "ES➔EN"
+        case .meeting: return "NOTES"
+        case .actions: return "ACTION"
+        }
+    }
+
+    /// The value the Python engine accepts for `--mode`.
+    ///
+    /// `actions` is an application mode, not an engine mode: the engine transcribes and
+    /// cleans as usual and the parsing happens here, against the returned text. Sending
+    /// the raw name instead made the engine reject the whole run with an argparse error,
+    /// so every dictation failed while ACTION was selected.
+    public var engineMode: String {
+        switch self {
+        case .clean, .actions: return "clean"
+        case .translate: return "translate"
+        case .meeting: return "meeting"
+        }
+    }
+
+    /// Whether a dictation in this mode is examined for a spoken system command.
+    ///
+    /// R3c: only the mode the speaker selected for it. Parsing every dictation meant a
+    /// sentence that merely began like an instruction was executed instead of written.
+    public var parsesVoiceActions: Bool {
+        switch self {
+        case .actions: return true
+        case .clean, .translate, .meeting: return false
+        }
+    }
+
+    /// The next mode in the HUD toggle, wrapping at the end of `allCases`.
+    public var next: ProcessingMode {
+        let all = ProcessingMode.allCases
+        guard let index = all.firstIndex(of: self) else { return .clean }
+        return all[(index + 1) % all.count]
+    }
 }
 
 public enum LanguageMode: String, Sendable {
@@ -240,6 +286,9 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
     public let ollamaModel: String
     public let geminiModel: String
     public let shortcut: Shortcut
+    /// The chord that advances the processing mode from the HUD, without opening the
+    /// station window. Tapped rather than held: it is a switch, not a trigger.
+    public let modeShortcut: Shortcut
     public let acceptanceLog: URL?
 
     public static func parse(
@@ -256,6 +305,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
         var ollamaModel = "qwen3:4b"
         var geminiModel = "gemini-3.5-flash"
         var shortcut = try Shortcut(specification: "fn")
+        var modeShortcut = try Shortcut(specification: "control+option+m")
         var acceptanceLogValue: String?
 
         var index = 0
@@ -296,12 +346,21 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
                 geminiModel = value
             case "--shortcut":
                 shortcut = try Shortcut(specification: value)
+            case "--mode-shortcut":
+                modeShortcut = try Shortcut(specification: value)
             case "--acceptance-log":
                 acceptanceLogValue = value
             default:
                 throw ConfigurationError.unknownOption(option)
             }
             index += 2
+        }
+
+        // Two shortcuts on one keyboard. A chord that is both the trigger and the mode
+        // switch would start a recording every time the speaker changed mode, so the
+        // collision is refused at launch rather than discovered mid-dictation.
+        guard modeShortcut != shortcut else {
+            throw ConfigurationError.shortcutConflict(modeShortcut.displayName)
         }
 
         let projectRoot = resolve(
@@ -327,6 +386,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
             ollamaModel: ollamaModel,
             geminiModel: geminiModel,
             shortcut: shortcut,
+            modeShortcut: modeShortcut,
             acceptanceLog: acceptanceLog
         )
     }
@@ -345,6 +405,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
       --ollama-model NAME    Ollama model; defaults to qwen3:4b.
       --gemini-model NAME    Gemini model; defaults to gemini-3.5-flash.
       --shortcut CHORD       Defaults to fn (the Fn/Globe key alone).
+      --mode-shortcut CHORD  Cycles the mode from the HUD; defaults to control+option+m.
       --acceptance-log PATH  Append private Phase 2 results as JSON Lines.
     """
 
