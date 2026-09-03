@@ -5,7 +5,12 @@ import VoiceFlowMacCore
 final class FloatingHUDPanel: NSPanel {
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 74),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: HUDLayout.panelWidth,
+                height: HUDLayout.panelHeight
+            ),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -31,6 +36,15 @@ final class FloatingHUDController {
     init() {
         let hostingView = NSHostingView(rootView: RetroMicHUDView(viewModel: viewModel))
         hostingView.frame = panel.contentRect(forFrameRect: panel.frame)
+        // The panel asks for transparency; the view that fills it has to agree. Its layer
+        // takes a background from the effective appearance otherwise, and that background
+        // is the whole window rectangle — square corners around a rounded capsule.
+        //
+        // This was invisible until the window was corrected to `330 × 88`: while it was
+        // being resized to `295 × 74`, the capsule was wider than the window it sat in and
+        // covered every pixel of it. Fixing the clipping is what exposed the ground behind.
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = hostingView
     }
 
@@ -43,6 +57,8 @@ final class FloatingHUDController {
     func showRecording(
         cleanerName: String,
         mode: ProcessingMode = .clean,
+        context: AppContext? = nil,
+        selectionCharacters: Int? = nil,
         levelProvider: @escaping () -> Float
     ) {
         animationGeneration += 1
@@ -54,6 +70,8 @@ final class FloatingHUDController {
         viewModel.mode = .recording
         viewModel.cleanerName = cleanerName
         viewModel.processingMode = mode
+        viewModel.targetContext = context
+        viewModel.selectionCharacters = selectionCharacters
         viewModel.audioLevel = 0.0
 
         positionPanel()
@@ -87,6 +105,9 @@ final class FloatingHUDController {
         didAutoPaste: Bool,
         usedFallback: Bool,
         model: String? = nil,
+        latencySeconds: Double? = nil,
+        wpm: Int? = nil,
+        targetContext: AppContext? = nil,
         unrecognizedCommand: Bool = false
     ) {
         meterTimer?.invalidate()
@@ -97,20 +118,31 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.answeredModel = model
+        viewModel.measuredWPM = wpm
+        viewModel.latencySeconds = latencySeconds
+        if let targetContext {
+            viewModel.targetContext = targetContext
+        }
         viewModel.mode = .completed(
             didAutoPaste: didAutoPaste,
             usedFallback: usedFallback,
             unrecognizedCommand: unrecognizedCommand
         )
 
-        // A notice needs longer on screen than a plain confirmation the speaker already
-        // expects, so an unrecognized command holds the capsule for a full second.
+        // Two reasons to hold the capsule, and the longer one wins. Telemetry needs time
+        // to be read; a notice needs longer than a confirmation the speaker already
+        // expects. Written as a single ternary chain, the telemetry branch matched first
+        // and always — `latencySeconds` is passed on every completion — so the notice
+        // silently lost the extra time that was given to it on purpose.
+        let telemetryHold: Double = (wpm != nil || latencySeconds != nil) ? 1.25 : 0.6
+        let noticeHold: Double = unrecognizedCommand ? 1.4 : 0.0
+        let holdDuration = max(telemetryHold, noticeHold)
         let work = DispatchWorkItem { [weak self] in
             self?.fadeOut()
         }
         dismissWorkItem = work
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + (unrecognizedCommand ? 1.4 : 0.6),
+            deadline: .now() + holdDuration,
             execute: work
         )
     }
@@ -237,9 +269,12 @@ final class FloatingHUDController {
     private func positionPanel() {
         guard let screen = NSScreen.main else { return }
         let screenRect = screen.visibleFrame
-        let panelWidth: CGFloat = 295
-        let panelHeight: CGFloat = 74
-        
+        // From `HUDLayout`, the same values the panel is created with. Written out here
+        // as literals, this method quietly resized the capsule back to the previous
+        // design on every show and clipped the new one.
+        let panelWidth = HUDLayout.panelWidth
+        let panelHeight = HUDLayout.panelHeight
+
         // Position at bottom center of the screen, floating nicely above the dock
         let x = screenRect.midX - (panelWidth / 2.0)
         let y = screenRect.minY + 60.0

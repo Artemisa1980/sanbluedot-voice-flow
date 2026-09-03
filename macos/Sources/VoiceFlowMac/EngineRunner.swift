@@ -152,6 +152,8 @@ final class EngineRunner {
         mode: ProcessingMode? = nil,
         geminiModel: GeminiModel? = nil,
         apiKey: String? = nil,
+        contextText: String? = nil,
+        appName: String? = nil,
         recordDistillationPair: Bool = false
     ) throws -> EngineResult {
         let invocation = EngineInvocation.make(
@@ -163,6 +165,8 @@ final class EngineRunner {
             geminiModel: geminiModel,
             providerAPIKey: apiKey,
             engineSourceRoot: engineSourceRoot,
+            contextText: contextText,
+            appName: appName,
             recordDistillationPair: recordDistillationPair
         )
         let process = Process()
@@ -175,10 +179,28 @@ final class EngineRunner {
         process.standardOutput = standardOutput
         process.standardError = standardError
 
+        // The selection to transform is handed over on stdin, never as an argument, and
+        // written on its own queue: a selection larger than the pipe buffer would block
+        // the parent here while the child waits for output nobody is draining yet.
+        let standardInput = Pipe()
+        if invocation.standardInput != nil {
+            process.standardInput = standardInput
+        }
+
         do {
             try process.run()
         } catch {
             throw EngineRunnerError.launchFailed
+        }
+
+        if let selection = invocation.standardInput {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let handle = standardInput.fileHandleForWriting
+                if let data = selection.data(using: .utf8) {
+                    try? handle.write(contentsOf: data)
+                }
+                try? handle.close()
+            }
         }
 
         // Drain both pipes while the child is still running. Waiting for exit first

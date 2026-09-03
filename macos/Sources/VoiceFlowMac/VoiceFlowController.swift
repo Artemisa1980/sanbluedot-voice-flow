@@ -110,6 +110,19 @@ final class VoiceFlowController {
     private var recordingCleaner: CleanerMode?
     private var recordingMode: ProcessingMode?
     private var recordingGeminiModel: GeminiModel?
+    private var recordingContextText: String?
+
+    /// How much text the pending run captured from the screen, or `nil` when it captured
+    /// none.
+    ///
+    /// Transform is the one mode whose payload the speaker did not dictate, so it is the
+    /// one payload she cannot check by remembering what she just said. A `⌘A` nobody
+    /// meant, or a file that was open behind the editor, leaves no trace in the capsule
+    /// unless the size is on it — and the size is the part that says whether the
+    /// selection is the sentence she highlighted or the whole document.
+    var capturedSelectionCharacters: Int? {
+        recordingContextText?.count
+    }
 
     init(configuration: VoiceFlowConfiguration, engineSourceRoot: URL) {
         engineRunner = EngineRunner(
@@ -126,6 +139,13 @@ final class VoiceFlowController {
 
     func shortcutPressed(from source: RecordingSource = .hotkey) {
         guard state == .idle else { return }
+        // Capture highlighted text immediately upon press while the target application
+        // window is guaranteed to be the active focused element.
+        if selectedMode == .transform {
+            recordingContextText = SelectionReader.getSelectedText()
+        } else {
+            recordingContextText = nil
+        }
         // The microphone does not open on the press. It opens once the trigger has been
         // held, so a hand brushing the Fn key costs no recording and no indicator light.
         recordingSource = source
@@ -146,6 +166,11 @@ final class VoiceFlowController {
             recordingCleaner = selectedCleaner
             recordingMode = selectedMode
             recordingGeminiModel = selectedGeminiModel
+            // The selection is read once, at the press. A retry here fired a second
+            // synthetic copy half a second later, by which time the frontmost window is
+            // whatever the speaker moved to — so it could capture from an application the
+            // press never pointed at, and it only ever ran when the first read had already
+            // decided there was nothing selected.
             state = .recording
             onStatusChange?(.recording)
         } catch {
@@ -182,6 +207,9 @@ final class VoiceFlowController {
         recordingCleaner = nil
         recordingMode = nil
         recordingGeminiModel = nil
+        // Cleared with the rest of the run's state. Leaving it behind relied on the next
+        // press overwriting it, which is an invariant of a different method.
+        recordingContextText = nil
         if let audioURL = try? recorder.stop() {
             try? removeTemporaryAudio(at: audioURL)
         }
@@ -225,10 +253,15 @@ final class VoiceFlowController {
         let cleaner = recordingCleaner ?? selectedCleaner
         let mode = recordingMode ?? selectedMode
         let geminiModel = recordingGeminiModel ?? selectedGeminiModel
+        let contextText = recordingContextText
+        // The `{app}` snippet macro names where the text is going, so it is read here,
+        // while the target application is still the frontmost one.
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName
         recordingSource = nil
         recordingCleaner = nil
         recordingMode = nil
         recordingGeminiModel = nil
+        recordingContextText = nil
         let apiKey = cleaner.isCloud ? Keychain.read(account: cleaner.rawValue) : nil
         let recordDistillationPair = recordDistillationPairs
 
@@ -240,6 +273,8 @@ final class VoiceFlowController {
                     mode: mode,
                     geminiModel: geminiModel,
                     apiKey: apiKey,
+                    contextText: contextText,
+                    appName: appName,
                     recordDistillationPair: recordDistillationPair
                 )
                 let elapsed = Date().timeIntervalSince(startedAt)
@@ -310,6 +345,12 @@ final class VoiceFlowController {
         recordingSource = nil
         recordingStartedAt = nil
         recordingCleaner = nil
+        // The rest of the run's state, cleared here too. Three of these were dropped on
+        // the failure path while the success and cancellation paths cleared all of them,
+        // which left a captured selection alive after a run that never used it.
+        recordingMode = nil
+        recordingGeminiModel = nil
+        recordingContextText = nil
         state = .idle
         let suffix = additionalMessage.map { " \($0)" } ?? ""
         onStatusChange?(.failed(error.localizedDescription + suffix))

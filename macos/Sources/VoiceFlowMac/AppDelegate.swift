@@ -742,6 +742,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let shortcut = configuration?.shortcut.displayName ?? "Fn/Globe"
             let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop"
             let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            let targetContext = AppContext.resolve(bundleIdentifier: frontBundle, localizedName: frontApp)
             controlWindow.updateTelemetry(targetApp: frontApp, targetBundleId: frontBundle)
             controlWindow.update(
                 title: "Recording…",
@@ -749,7 +750,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             floatingHUD.showRecording(
                 cleanerName: selectedCleaner.rawValue,
-                mode: selectedMode
+                mode: selectedMode,
+                context: targetContext,
+                selectionCharacters: controller?.capturedSelectionCharacters
             ) { [weak self] in
                 let level = self?.controller?.currentAudioLevel ?? 0.0
                 self?.controlWindow.updateAudioLevel(Double(level))
@@ -874,10 +877,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // inside the completion rather than guessed beforehand.
             AutoPaste.paste { [weak self] didAutoPaste in
                 guard let self else { return }
+                let wordCount = deliveredText.split(whereSeparator: \.isWhitespace).count
+                let measuredWPM: Int? = spokenSeconds >= 0.5 && wordCount > 0
+                    ? Int((Double(wordCount) / spokenSeconds) * 60.0)
+                    : nil
+                let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop"
+                let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                let targetContext = AppContext.resolve(bundleIdentifier: frontBundle, localizedName: frontApp)
+
                 self.floatingHUD.showCompleted(
                     didAutoPaste: didAutoPaste,
                     usedFallback: usedFallback,
                     model: model,
+                    latencySeconds: elapsed,
+                    wpm: measuredWPM,
+                    targetContext: targetContext,
                     unrecognizedCommand: unrecognizedCommand
                 )
                 let record = DictationRecord(
@@ -896,16 +910,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.rebuildHistoryMenu()
                 self.controlWindow.updateRecentDictations(self.historyStore.records)
 
-                // Telemetry carries only what was measured. The engine reports the
-                // seconds each stage actually spent; when it reports none the chip is
-                // left empty rather than filled with a plausible number, and the rate
-                // is words over the time the speaker spoke, not over processing time.
-                let wordCount = deliveredText.split(whereSeparator: \.isWhitespace).count
-                let measuredWPM: Int? = spokenSeconds >= 0.5 && wordCount > 0
-                    ? Int((Double(wordCount) / spokenSeconds) * 60.0)
-                    : nil
-                let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop"
-                let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 self.controlWindow.updateTelemetry(
                     sttLatency: result.transcribeSeconds,
                     llmLatency: self.selectedCleaner == .literal ? nil : result.cleanupSeconds,

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import VoiceFlowMacCore
 
@@ -182,6 +183,52 @@ do {
         "Homebrew paths are missing."
     )
     try check(invocation.arguments.contains("--copy"), "Clipboard output is missing.")
+    try check(
+        invocation.standardInput == nil
+            && !invocation.arguments.contains("--context-text-stdin"),
+        "An ordinary dictation announced a selection it does not have."
+    )
+
+    // The selection to transform travels on stdin. As an argument it was printed in full
+    // by `ps -ww -ax` to every process the speaker runs, and a selection that was itself
+    // a flag — ordinary in an editor — was parsed as an option and failed the run.
+    let transformRun = EngineInvocation.make(
+        configuration: defaults,
+        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
+        baseEnvironment: ["PATH": "/usr/bin"],
+        mode: .transform,
+        contextText: "--verbose  # the highlighted line",
+        appName: "VS Code"
+    )
+    try check(
+        transformRun.standardInput == "--verbose  # the highlighted line",
+        "The selection did not reach the engine on standard input."
+    )
+    try check(
+        transformRun.arguments.contains("--context-text-stdin"),
+        "The engine was not told to read the selection from standard input."
+    )
+    try check(
+        !transformRun.arguments.contains(where: { $0.contains("highlighted line") }),
+        "The speaker's selection is still readable in the process arguments."
+    )
+    try check(
+        transformRun.arguments.contains("--app-name")
+            && transformRun.arguments.contains("VS Code"),
+        "The frontmost application never reached the {app} snippet macro."
+    )
+    let emptySelectionRun = EngineInvocation.make(
+        configuration: defaults,
+        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
+        baseEnvironment: ["PATH": "/usr/bin"],
+        mode: .transform,
+        contextText: ""
+    )
+    try check(
+        emptySelectionRun.standardInput == nil
+            && !emptySelectionRun.arguments.contains("--context-text-stdin"),
+        "An empty selection still opened a standard-input handshake."
+    )
     try check(invocation.arguments.contains("--json"), "Structured engine output is missing.")
     try check(invocation.arguments.contains("/tmp/input.wav"), "Audio path is missing.")
     try check(
@@ -909,6 +956,170 @@ do {
         HUDBadge.shortModelName("gemini-3.6-flash") == "3.6",
         "The capsule's short model name is wrong."
     )
+
+    // App context awareness resolution and context-aware HUD badges.
+    let vscodeCtx = AppContext.resolve(bundleIdentifier: "com.microsoft.VSCode", localizedName: "Code")
+    try check(vscodeCtx.shortName == "VSCODE" && vscodeCtx.category == .code, "VS Code failed to resolve to CODE category.")
+    let cursorCtx = AppContext.resolve(bundleIdentifier: "com.todesktop.230313mzl4w4u92", localizedName: "Cursor")
+    try check(cursorCtx.shortName == "CURSOR" && cursorCtx.category == .code, "Cursor failed to resolve to CODE category.")
+    let terminalCtx = AppContext.resolve(bundleIdentifier: "com.apple.Terminal", localizedName: "Terminal")
+    try check(terminalCtx.shortName == "TERMINAL" && terminalCtx.category == .code, "Terminal failed to resolve to CODE category.")
+    let claudeCtx = AppContext.resolve(bundleIdentifier: "com.anthropic.claudefordesktop", localizedName: "Claude")
+    try check(claudeCtx.shortName == "CLAUDE" && claudeCtx.category == .aiPrompt, "Claude desktop failed to resolve to PROMPT category.")
+    let chatgptCtx = AppContext.resolve(bundleIdentifier: "com.openai.chat", localizedName: "ChatGPT")
+    try check(chatgptCtx.shortName == "CHATGPT" && chatgptCtx.category == .aiPrompt, "ChatGPT failed to resolve to PROMPT category.")
+    let slackCtx = AppContext.resolve(bundleIdentifier: "com.tinyspeck.slackmacgap", localizedName: "Slack")
+    try check(slackCtx.shortName == "SLACK" && slackCtx.category == .chat, "Slack failed to resolve to CHAT category.")
+    let mailCtx = AppContext.resolve(bundleIdentifier: "com.apple.mail", localizedName: "Mail")
+    try check(mailCtx.shortName == "MAIL" && mailCtx.category == .document, "Mail failed to resolve to DOCS category.")
+    let desktopCtx = AppContext.resolve(bundleIdentifier: nil, localizedName: nil)
+    try check(desktopCtx.category == .general, "Nil bundle failed to default to general category.")
+
+    try check(
+        HUDBadge.recording(mode: .clean, context: vscodeCtx) == "ON AIR • VSCODE",
+        "Clean mode in VS Code did not display ON AIR • VSCODE: \(HUDBadge.recording(mode: .clean, context: vscodeCtx))."
+    )
+    try check(
+        HUDBadge.recording(mode: .translate, context: slackCtx) == "ES➔EN • SLACK",
+        "Translate mode in Slack did not display ES➔EN • SLACK: \(HUDBadge.recording(mode: .translate, context: slackCtx))."
+    )
+    try check(
+        HUDBadge.recording(mode: .clean, context: desktopCtx) == "ON AIR",
+        "General desktop context modified standard ON AIR badge unexpectedly."
+    )
+
+    // An unlisted application falls back to its full localized name. The recording badge
+    // is drawn with `fixedSize()`, so a long one does not truncate: it pushes the
+    // wordmark out of the row. Measured budget is 24 characters, and `TRANSFORM • `
+    // already spends 12 of them.
+    let longNameCtx = AppContext.resolve(
+        bundleIdentifier: "com.example.unlisted",
+        localizedName: "Microsoft Outlook Preview"
+    )
+    try check(
+        longNameCtx.shortName.count <= AppContext.shortNameLimit,
+        "An unlisted application's short name exceeds what the capsule can draw: \(longNameCtx.shortName)."
+    )
+    try check(
+        HUDBadge.recording(mode: .transform, context: longNameCtx).count <= 24,
+        "The recording badge is wider than the row it is drawn in: \(HUDBadge.recording(mode: .transform, context: longNameCtx))."
+    )
+
+    // A transform dictation was filed in the history menu as CLEAN, because the label
+    // switch never learned the mode.
+    let transformRecord = DictationRecord(
+        rawText: "hazlo formal",
+        personalizedText: "hazlo formal",
+        finalText: "Estimado equipo",
+        cleaner: "gemini",
+        mode: ProcessingMode.transform.rawValue,
+        model: nil,
+        latencySeconds: 1.0,
+        usedFallback: false,
+        didAutoPaste: true
+    )
+    try check(
+        transformRecord.menuTitle.contains("(TRANSFORM)"),
+        "A transform dictation is filed under another mode: \(transformRecord.menuTitle)."
+    )
+
+    // The size of a captured selection is what tells the speaker whether the run is about
+    // to send the sentence she highlighted or the file behind it, while Escape still works.
+    try check(
+        !HUDBadge.selectionIsLarge(HUDBadge.largeSelectionCharacters),
+        "The large-selection warning fires at the boundary instead of past it."
+    )
+    try check(
+        HUDBadge.selectionIsLarge(HUDBadge.largeSelectionCharacters + 1),
+        "A selection past the boundary is not reported as large."
+    )
+    try check(
+        !HUDBadge.selectionIsLarge(280),
+        "A highlighted sentence is reported as a large selection."
+    )
+
+    // The window must be able to hold what is drawn in it. Two places sized the capsule
+    // and only one was updated by the redesign, so the window kept being resized back to
+    // the previous design and clipped the new one by 17pt on every show. Nothing failed,
+    // because both numbers were correct on the day they were written.
+    try check(
+        HUDLayout.panelWidth >= HUDLayout.contentWidth,
+        "The HUD window is narrower than its content: \(HUDLayout.panelWidth) < \(HUDLayout.contentWidth)."
+    )
+    try check(
+        HUDLayout.panelHeight >= HUDLayout.contentHeight,
+        "The HUD window is shorter than its content: \(HUDLayout.panelHeight) < \(HUDLayout.contentHeight)."
+    )
+
+    // Escape has to work in the state a recording is actually in. Requiring no modifiers
+    // at all meant it was accepted only while nothing was being recorded: the trigger is
+    // `Fn`, so every key pressed during a recording carries `maskSecondaryFn`, and the
+    // capsule advertised a way out for the whole window in which it could not be taken.
+    let escape = ShortcutMatch.escapeKeyCode
+    try check(
+        ShortcutMatch.isCancel(keyCode: escape, flags: [], trigger: [.fn]),
+        "A bare Escape no longer cancels."
+    )
+    try check(
+        ShortcutMatch.isCancel(keyCode: escape, flags: [.maskSecondaryFn], trigger: [.fn]),
+        "Escape does not cancel while the Fn trigger is held — the only state a recording is in."
+    )
+    try check(
+        ShortcutMatch.isCancel(
+            keyCode: escape,
+            flags: [.maskControl, .maskAlternate],
+            trigger: [.control, .option]
+        ),
+        "Escape does not cancel while a chord trigger is held."
+    )
+    try check(
+        !ShortcutMatch.isCancel(keyCode: escape, flags: [.maskCommand], trigger: [.fn]),
+        "Command-Escape was read as a cancellation; it belongs to another application."
+    )
+    try check(
+        !ShortcutMatch.isCancel(keyCode: 8, flags: [.maskSecondaryFn], trigger: [.fn]),
+        "A key that is not Escape cancelled the recording."
+    )
+
+    // The capsule's text has to fit the rows it is drawn in, and "it fits" is a
+    // measurement or it is nothing. `design-system.md` quotes these figures; they are
+    // computed here from the same layout constants and the same fonts the views use, so
+    // the contract is checked rather than asserted. The numbers were previously taken
+    // from throwaway scripts against an assumed row width — right arithmetic on a wrong
+    // premise, which is how a clipped capsule measured as fitting.
+    func width(_ text: String, size: CGFloat, weight: NSFont.Weight) -> CGFloat {
+        (text as NSString).size(
+            withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: size, weight: weight)]
+        ).width
+    }
+
+    let wordmark = width("sanblue", size: 10, weight: .bold) + width("dot", size: 7, weight: .heavy)
+    // Row 1: on-air dot, its spacing, the minimum spacer, and the wordmark.
+    let badgeBudget = HUDLayout.contentColumn - 7 - 5 - 4 - wordmark
+    let widestBadge = HUDBadge.recording(
+        mode: .transform,
+        context: AppContext(
+            bundleIdentifier: "com.example.unlisted",
+            localizedName: "Twelve Chars",
+            shortName: String(repeating: "M", count: AppContext.shortNameLimit),
+            category: .code
+        )
+    )
+    try check(
+        width(widestBadge, size: 10, weight: .heavy) <= badgeBudget,
+        "The widest recording badge overruns its row: \(width(widestBadge, size: 10, weight: .heavy)) > \(badgeBudget)."
+    )
+
+    // The mode strip divides the row evenly between every mode, so adding one narrows
+    // all of them. The widest label has to survive that division.
+    let modeCount = CGFloat(ProcessingMode.allCases.count)
+    let perSegment = (HUDLayout.contentColumn - (modeCount - 1) * 3) / modeCount
+    for mode in ProcessingMode.allCases {
+        try check(
+            width(mode.badgeName, size: 7, weight: .heavy) <= perSegment,
+            "Mode segment \(mode.badgeName) overruns its \(perSegment)pt share of the strip."
+        )
+    }
 
     // The order a spoken application name is looked for.
     let searched = ApplicationSearch.candidatePaths(for: "Notes", home: "/Users/fixture")

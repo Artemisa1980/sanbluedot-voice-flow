@@ -458,6 +458,7 @@ public struct VoiceStationWindowView: View {
         case .translate: return "ES ➔ EN"
         case .meeting: return "NOTES"
         case .actions: return "ACTIONS"
+        case .transform: return "TRANSFORM"
         }
     }
 
@@ -1103,7 +1104,11 @@ public struct VoiceStationWindowView: View {
     // MARK: - Left Control Card (Light Amber / Paper #F8ECCF)
     private var leftControlCard: some View {
         VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: false) {
+            // The indicator is shown. This panel grows with the mode list and with a
+            // held-back cleanup, so it can overflow — and with the indicator hidden the
+            // overflow did not read as "there is more below", it read as a card cut in
+            // half by the panel edge. A surface that can scroll says so.
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 14) {
                     // The microphone is the protagonist: it is the only element at
                     // this size, so the eye knows where the app begins. The capsule is
@@ -1137,9 +1142,24 @@ public struct VoiceStationWindowView: View {
                     }
                     .frame(maxWidth: .infinity)
 
+                    // A cleanup the guard refused, offered rather than discarded.
+                    //
+                    // It sits above the mode switch because it is the only thing in this
+                    // panel that asks for an answer, and it must not be the thing that
+                    // scrolls away. Below the switch it was: the grid is two columns over
+                    // every mode, so a fifth mode turned two rows into three and pushed
+                    // the card past the bottom of a scroll view that shows no indicator.
+                    // The two buttons that answer it were cut by the panel edge, and the
+                    // panel gave no sign there was anything below to reach.
+                    if let rejected = viewModel.rejectedCleanup {
+                        rejectedCleanupCard(rejected)
+                    }
+
                     // Modes moved here from the top bar, which the signal chain now
-                    // occupies. A two-by-two switch shows the active mode at a glance
-                    // instead of four buttons of identical weight.
+                    // occupies. The switch shows the active mode at a glance instead of
+                    // buttons of identical weight. It is built from the mode list, so it
+                    // grows a row whenever a mode is added — four modes filled two rows,
+                    // five fill three.
                     VStack(alignment: .leading, spacing: 8) {
                         Text("MODE")
                             .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
@@ -1154,11 +1174,6 @@ public struct VoiceStationWindowView: View {
                                 modeTile(for: mode)
                             }
                         }
-                    }
-
-                    // A cleanup the guard refused, offered rather than discarded.
-                    if let rejected = viewModel.rejectedCleanup {
-                        rejectedCleanupCard(rejected)
                     }
 
                     // Permissions section (only visible when needed)

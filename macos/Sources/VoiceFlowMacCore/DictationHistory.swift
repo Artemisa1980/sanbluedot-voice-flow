@@ -73,6 +73,8 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
             modeTag = "NOTES"
         case "action", "actions":
             modeTag = "ACTION"
+        case "transform":
+            modeTag = "TRANSFORM"
         default:
             modeTag = "CLEAN"
         }

@@ -27,7 +27,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
         case .invalidCleaner(let cleaner):
             return "Unsupported cleaner: \(cleaner)."
         case .invalidMode(let mode):
-            return "Unsupported mode: \(mode). Use clean, translate, meeting, or actions."
+            return "Unsupported mode: \(mode). Use clean, translate, meeting, actions, or transform."
         case .invalidLanguage(let language):
             return "Unsupported language: \(language)."
         case .invalidShortcut(let shortcut):
@@ -141,6 +141,7 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
     case translate
     case meeting
     case actions
+    case transform
 
     public var displayName: String {
         switch self {
@@ -152,6 +153,8 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
             return "Meeting Notes & Action Items"
         case .actions:
             return "Voice Actions (macOS)"
+        case .transform:
+            return "Transform Selection"
         }
     }
 
@@ -163,6 +166,7 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
         case .translate: return "ES➔EN"
         case .meeting: return "NOTES"
         case .actions: return "ACTION"
+        case .transform: return "TRANSFORM"
         }
     }
 
@@ -177,6 +181,7 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
         case .clean, .actions: return "clean"
         case .translate: return "translate"
         case .meeting: return "meeting"
+        case .transform: return "transform"
         }
     }
 
@@ -187,7 +192,7 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
     public var parsesVoiceActions: Bool {
         switch self {
         case .actions: return true
-        case .clean, .translate, .meeting: return false
+        case .clean, .translate, .meeting, .transform: return false
         }
     }
 

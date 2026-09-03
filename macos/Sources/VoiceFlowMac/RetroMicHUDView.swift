@@ -26,6 +26,15 @@ enum HUDMode {
         case .cancelled: return "cancelled"
         }
     }
+
+    var showsTelemetry: Bool {
+        switch self {
+        case .recording, .processing, .completed, .actionExecuted:
+            return true
+        case .failed, .modeChanged, .cancelled:
+            return false
+        }
+    }
 }
 
 final class HUDViewModel: ObservableObject {
@@ -37,6 +46,14 @@ final class HUDViewModel: ObservableObject {
     /// The cloud model that answered, shown on completion so a capacity fallback to a
     /// different model is visible rather than silent.
     @Published var answeredModel: String? = nil
+    /// The target application context detected when recording began.
+    @Published var targetContext: AppContext? = nil
+    /// Measured speaking rate in words per minute.
+    @Published var measuredWPM: Int? = nil
+    /// Total turnaround latency in seconds.
+    @Published var latencySeconds: Double? = nil
+    /// Characters captured from the screen for a transform run, `nil` when none.
+    @Published var selectionCharacters: Int? = nil
 }
 
 struct RetroMicHUDView: View {
@@ -55,12 +72,12 @@ struct RetroMicHUDView: View {
     private let onAirRed = VoiceStationTokens.onAir
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: HUDLayout.discToColumn) {
             // Vintage Microphone Graphic
             ZStack {
                 Circle()
-                    .fill(retroNavy.opacity(0.8))
-                    .frame(width: 44, height: 44)
+                    .fill(retroNavy.opacity(0.85))
+                    .frame(width: HUDLayout.micDisc, height: HUDLayout.micDisc)
                     .overlay(
                         Circle()
                             .stroke(LinearGradient(
@@ -70,67 +87,68 @@ struct RetroMicHUDView: View {
                             ), lineWidth: 1.5)
                     )
                 
-                Image(systemName: glyphName)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(iconColor)
-                    .transition(.scale.combined(with: .opacity))
-                    .id(glyphName)
+                if glyphName == "mic.fill" {
+                    VintageMicIcon(color: iconColor)
+                        .transition(.scale.combined(with: .opacity))
+                        .id("vintage-mic")
+                } else {
+                    Image(systemName: glyphName)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(iconColor)
+                        .transition(.scale.combined(with: .opacity))
+                        .id(glyphName)
+                }
             }
-            .shadow(color: iconGlowColor, radius: 6)
+            .shadow(color: iconGlowColor, radius: 8)
 
-            VStack(alignment: .leading, spacing: 6) {
-                // Status header (ON AIR + Mode)
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: HUDLayout.rowSpacing) {
+                // Row 1: Status header (Left) + sanbluedot (Right)
+                HStack(alignment: .center, spacing: 6) {
                     statusBadge
+                        .id("status-\(viewModel.mode.stateKey)")
                     
-                    Spacer()
+                    Spacer(minLength: 4)
                     
-                    if isRecording {
-                        // The way out replaces the mark while it exists. The capsule is
-                        // 195pt wide and the badge already names the mode, so the two
-                        // cannot share the row: putting them side by side squeezed the
-                        // mode out and left the speaker reading only "ESC".
-                        Text("ESC ✕")
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.5))
-                            .fixedSize()
-                    } else {
-                        // brand.md: the dot is ALWAYS #7CB3E8 and `sanblue` is gold on a
-                        // dark surface. A single-colour lockup loses the one contrast
-                        // that identifies the mark, so the two words are drawn
-                        // separately here exactly as in the station window.
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            Text("sanblue")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(vintageGold.opacity(0.9))
-                            Text("dot")
-                                .font(.system(size: 7, weight: .heavy, design: .monospaced))
-                                .foregroundColor(skyBlue)
-                                .baselineOffset(5)
-                        }
+                    // sanblueᵈᵒᵗ Wordmark: gold word, dot-blue elevated superscript
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text("sanblue")
+                            .font(VoiceStationTokens.mono(size: 10, weight: .bold))
+                            .foregroundColor(vintageGold)
+
+                        Text("dot")
+                            .font(VoiceStationTokens.mono(size: 7, weight: .heavy))
+                            .foregroundColor(skyBlue)
+                            .baselineOffset(5)
                     }
+                    .fixedSize()
+                    .lineLimit(1)
                 }
                 
-                // LED VU-Meter equalizer, processing wave, or — while the mode switch
-                // is confirming — the four modes with the selected one lit.
+                // Row 2: LED VU-Meter equalizer, processing wave, or mode switcher
                 if case .modeChanged(let mode) = viewModel.mode {
                     modeStripView(active: mode)
-                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                        .id("mode-\(mode.rawValue)")
                 } else {
                     vuMeterView
-                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                        .id("meter-\(viewModel.mode.stateKey)")
+                }
+
+                // Row 3: Live Telemetry Speed Pill (Sandy's unified choice)
+                if viewModel.mode.showsTelemetry {
+                    telemetryStripView
+                        .id("telemetry-\(viewModel.mode.stateKey)")
                 }
             }
-            .frame(width: 195)
+            .frame(width: HUDLayout.contentColumn)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, HUDLayout.horizontalPadding)
+        .padding(.vertical, HUDLayout.verticalPadding)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.black.opacity(0.75))
+                .fill(Color.black.opacity(0.85))
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(retroNavy.opacity(0.35))
+                        .fill(retroNavy.opacity(0.4))
                         .blur(radius: 20)
                 )
                 .overlay(
@@ -139,8 +157,8 @@ struct RetroMicHUDView: View {
                             LinearGradient(
                                 colors: [
                                     .white.opacity(0.25),
-                                    skyBlue.opacity(0.3),
-                                    .white.opacity(0.05)
+                                    skyBlue.opacity(0.35),
+                                    .white.opacity(0.08)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -149,7 +167,7 @@ struct RetroMicHUDView: View {
                         )
                 )
         )
-        .shadow(color: .black.opacity(0.5), radius: 15, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.6), radius: 16, x: 0, y: 8)
         .animation(
             .spring(response: 0.30, dampingFraction: 0.82),
             value: viewModel.mode.stateKey
@@ -165,6 +183,8 @@ struct RetroMicHUDView: View {
             return VoiceStationTokens.gold
         case .actions:
             return VoiceStationTokens.rec
+        case .transform:
+            return VoiceStationTokens.dotBlue
         }
     }
 
@@ -175,6 +195,7 @@ struct RetroMicHUDView: View {
         case .translate: return "character.bubble.fill"
         case .meeting: return "list.bullet.rectangle.fill"
         case .actions: return "bolt.fill"
+        case .transform: return "wand.and.stars"
         }
     }
 
@@ -234,7 +255,7 @@ struct RetroMicHUDView: View {
     // The text itself lives in `HUDBadge`, in the core module, so a check can read what
     // the speaker reads. This view only places it.
     private var recordingBadgeText: String {
-        HUDBadge.recording(mode: viewModel.processingMode)
+        HUDBadge.recording(mode: viewModel.processingMode, context: viewModel.targetContext)
     }
 
     private var processingBadgeText: String {
@@ -282,19 +303,19 @@ struct RetroMicHUDView: View {
                 Image(systemName: didAutoPaste ? "checkmark.circle.fill" : "doc.on.clipboard.fill")
                     .font(.system(size: 10))
                     .foregroundColor(VoiceStationTokens.ok)
-                Text(didAutoPaste ? "PASTED" : "COPIED")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(VoiceStationTokens.ok)
-                // ACTION mode found no command. Said here rather than only in the window,
-                // because the window is the surface the speaker does not have open.
+                if let target = viewModel.targetContext, target.category != .general {
+                    Text(didAutoPaste ? "PASTED ➔ \(target.shortName)" : "COPIED")
+                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VoiceStationTokens.ok)
+                } else {
+                    Text(didAutoPaste ? "PASTED" : "COPIED")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundColor(VoiceStationTokens.ok)
+                }
                 if unrecognizedCommand {
                     Text("NO CMD")
                         .font(.system(size: 8, weight: .heavy, design: .monospaced))
                         .foregroundColor(VoiceStationTokens.rec)
-                } else if let model = viewModel.answeredModel {
-                    Text(HUDBadge.shortModelName(model))
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(vintageGold.opacity(0.85))
                 }
             }
         case .failed:
@@ -327,8 +348,8 @@ struct RetroMicHUDView: View {
         }
     }
 
-    /// The mode switch as it appears in the HUD: all four modes at once, so the
-    /// confirmation also says what the other three are and which way the toggle runs.
+    /// The mode switch as it appears in the HUD: every mode at once, so the
+    /// confirmation also says what the others are and which way the toggle runs.
     private func modeStripView(active: ProcessingMode) -> some View {
         HStack(spacing: 3) {
             ForEach(ProcessingMode.allCases, id: \.self) { mode in
@@ -351,10 +372,151 @@ struct RetroMicHUDView: View {
         .frame(height: 14)
     }
 
+    @ViewBuilder
+    private var telemetryStripView: some View {
+        HStack(spacing: 5) {
+            switch viewModel.mode {
+            case .recording:
+                HStack(spacing: 2) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 7))
+                        .foregroundColor(vintageGold)
+                    Text("LIVE")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(vintageGold)
+                }
+                // How much of the screen this run is about to send. Transform is the one
+                // mode whose payload the speaker did not dictate, so the size is the only
+                // thing on the capsule that can tell her the selection is the sentence
+                // she highlighted and not the whole file — while Escape still works.
+                if let characters = viewModel.selectionCharacters {
+                    Text("·")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.3))
+                    Text("\(characters) CHARS")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(HUDBadge.selectionIsLarge(characters) ? onAirRed : skyBlue)
+                }
+
+                // R9: the capsule showed "44.1 kHz" while `AudioRecorder` opens the
+                // microphone at 16 kHz mono. It was a decoration in the shape of a
+                // reading, and a wrong one. Nothing measures a sample rate per run, so
+                // the row names the stage instead of inventing a figure for it.
+                Text("·")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.3))
+                Text("WHISPER")
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.75))
+
+            case .processing:
+                HStack(spacing: 2) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 7))
+                        .foregroundColor(skyBlue)
+                    Text("CLEANING")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(skyBlue)
+                }
+                Text("·")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.3))
+                Text("INFERENCE...")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundColor(vintageGold)
+                Text("·")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.3))
+                Text(viewModel.cleanerName.uppercased())
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.75))
+
+            case .completed:
+                if let wpm = viewModel.measuredWPM {
+                    HStack(spacing: 2) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 7))
+                            .foregroundColor(vintageGold)
+                        Text("\(wpm) WPM")
+                            .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                            .foregroundColor(vintageGold)
+                    }
+                    Text("·")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+
+                if let latency = viewModel.latencySeconds {
+                    Text(String(format: "%.1fs LATENCY", latency))
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(skyBlue)
+                    Text("·")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+
+                if let model = viewModel.answeredModel {
+                    Text(HUDBadge.shortModelName(model))
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.85))
+                } else if viewModel.cleanerName == "literal" {
+                    Text("LITERAL")
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.85))
+                }
+
+            case .actionExecuted(let desc):
+                HStack(spacing: 2) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 7))
+                        .foregroundColor(vintageGold)
+                    Text("ACTION")
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .foregroundColor(vintageGold)
+                }
+                Text("·")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.3))
+                Text(desc)
+                    .font(.system(size: 7, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.85))
+                    .lineLimit(1)
+
+            case .failed, .cancelled, .modeChanged:
+                EmptyView()
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 14)
+        .background(
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.black.opacity(0.45))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+        )
+    }
+
     private var vuMeterView: some View {
         HStack(spacing: 3) {
             ForEach(0..<12, id: \.self) { index in
                 vuBar(for: index)
+            }
+
+            // The way out, shown only while there is something to take back. It used to
+            // share the header with the wordmark, which could hold one or the other; the
+            // meter is twelve 9pt bars in a 226pt row, so the 85pt it never used is where
+            // the reminder belongs. Escape worked the whole time it was missing — an
+            // undiscoverable way out is still a way out, which is why nothing failed.
+            if isRecording {
+                Spacer(minLength: 4)
+                Text("ESC ✕")
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.5))
+                    .fixedSize()
             }
         }
         .frame(height: 14)
@@ -404,5 +566,64 @@ struct RetroMicHUDView: View {
             .frame(width: 9, height: 12)
             .shadow(color: isActive ? barColor.opacity(0.8) : .clear, radius: 3)
             .animation(.easeOut(duration: 0.08), value: animValue)
+    }
+}
+
+/// A vintage chrome condenser microphone with horizontal ribs (Shure 55 style).
+struct VintageMicIcon: View {
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            // U-shaped metal cradle
+            Path { path in
+                path.addArc(
+                    center: CGPoint(x: 13, y: 13),
+                    radius: 9,
+                    startAngle: .degrees(15),
+                    endAngle: .degrees(165),
+                    clockwise: false
+                )
+            }
+            .stroke(color.opacity(0.85), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            .frame(width: 26, height: 26)
+
+            // Stem and pedestal base
+            Path { path in
+                path.move(to: CGPoint(x: 13, y: 22))
+                path.addLine(to: CGPoint(x: 13, y: 24.5))
+                path.move(to: CGPoint(x: 9, y: 24.5))
+                path.addLine(to: CGPoint(x: 17, y: 24.5))
+            }
+            .stroke(color.opacity(0.85), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            .frame(width: 26, height: 26)
+
+            // Chrome Capsule Body
+            RoundedRectangle(cornerRadius: 4.5)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(0.95),
+                            color.opacity(0.85),
+                            color.opacity(0.65)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 11, height: 15)
+                .offset(y: -2.5)
+
+            // Horizontal Chrome Grille Slits / Ribs
+            VStack(spacing: 1.5) {
+                ForEach(0..<4, id: \.self) { _ in
+                    Rectangle()
+                        .fill(VoiceStationTokens.navy.opacity(0.95))
+                        .frame(width: 9, height: 1.2)
+                }
+            }
+            .offset(y: -2.5)
+        }
+        .frame(width: 26, height: 26)
     }
 }

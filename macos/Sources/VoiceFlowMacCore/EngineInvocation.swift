@@ -6,6 +6,17 @@ public struct EngineInvocation: Equatable, Sendable {
     public let currentDirectoryURL: URL
     public let environment: [String: String]
 
+    /// Text written to the child's standard input, or `nil` when the run sends none.
+    ///
+    /// The selection to transform travels here rather than in `arguments`. A process
+    /// argument is not private: `ps -ww -ax` prints the full command line of every
+    /// process the same user runs, so passing the speaker's highlighted document text
+    /// as an argument published it to anything else running on the machine. It also
+    /// removed a crash — a selection that was itself a flag, `--verbose` or `-x`,
+    /// which is ordinary in the editor and terminal this mode targets, was parsed as an
+    /// option by the engine and the run failed before transcription.
+    public let standardInput: String?
+
     /// Build one engine run.
     ///
     /// `cleaner` overrides the launch configuration so the window's provider choice
@@ -29,6 +40,8 @@ public struct EngineInvocation: Equatable, Sendable {
         geminiModel: GeminiModel? = nil,
         providerAPIKey: String? = nil,
         engineSourceRoot: URL? = nil,
+        contextText: String? = nil,
+        appName: String? = nil,
         recordDistillationPair: Bool = false
     ) -> EngineInvocation {
         let selectedCleaner = cleaner ?? configuration.cleaner
@@ -80,6 +93,13 @@ public struct EngineInvocation: Equatable, Sendable {
             "--copy",
             "--json",
         ]
+        let selection = (contextText?.isEmpty == false) ? contextText : nil
+        if selection != nil {
+            arguments.append("--context-text-stdin")
+        }
+        if let appName, !appName.isEmpty {
+            arguments.append(contentsOf: ["--app-name", appName])
+        }
         if recordDistillationPair {
             arguments.append("--distill")
         }
@@ -88,7 +108,8 @@ public struct EngineInvocation: Equatable, Sendable {
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: arguments,
             currentDirectoryURL: configuration.projectRoot,
-            environment: environment
+            environment: environment,
+            standardInput: selection
         )
     }
 }

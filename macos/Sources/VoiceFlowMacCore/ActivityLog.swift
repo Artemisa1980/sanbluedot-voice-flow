@@ -59,6 +59,21 @@ public enum HUDBadge {
         case .translate: return "ON AIR • ES➔EN"
         case .meeting: return "ON AIR • MEETING"
         case .actions: return "ON AIR • ACTION"
+        case .transform: return "ON AIR • TRANSFORM"
+        }
+    }
+
+    /// While recording, the badge names the mode and the detected target application context.
+    public static func recording(mode: ProcessingMode, context: AppContext?) -> String {
+        guard let context = context, context.category != .general else {
+            return recording(mode: mode)
+        }
+        switch mode {
+        case .clean: return "ON AIR • \(context.shortName)"
+        case .translate: return "ES➔EN • \(context.shortName)"
+        case .meeting: return "MEETING • \(context.shortName)"
+        case .actions: return "ACTION • \(context.shortName)"
+        case .transform: return "TRANSFORM • \(context.shortName)"
         }
     }
 
@@ -71,11 +86,25 @@ public enum HUDBadge {
         case .translate: return "TRANSLATING (\(provider))"
         case .meeting: return "STRUCTURING (\(provider))"
         case .actions: return "PARSING ACTION"
+        case .transform: return "TRANSFORMING (\(provider))"
         }
     }
 
     /// `gemini-3.6-flash` reads as `3.6` in a capsule this narrow. The full identifier
     /// stays in the station window's activity log.
+    /// Above this many captured characters the size reads as a warning rather than a fact.
+    ///
+    /// A highlighted sentence runs to a few hundred characters and a long paragraph to
+    /// about two thousand. Past that the selection is more likely a file than a passage,
+    /// which is the case worth catching: a `⌘A` nobody meant, or an editor that copied
+    /// more than was on screen. It colours the figure and blocks nothing — the speaker
+    /// may well mean to rewrite a long document, and Escape is the way out either way.
+    public static let largeSelectionCharacters = 2_000
+
+    public static func selectionIsLarge(_ characters: Int) -> Bool {
+        characters > largeSelectionCharacters
+    }
+
     public static func shortModelName(_ model: String) -> String {
         model
             .replacingOccurrences(of: "gemini-", with: "")

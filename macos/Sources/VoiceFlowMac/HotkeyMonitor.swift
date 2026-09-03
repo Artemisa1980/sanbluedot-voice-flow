@@ -43,10 +43,6 @@ final class HotkeyMonitor {
         self.onCancel = onCancel
     }
 
-    /// Escape, pressed on its own. The controller ignores it unless a recording is
-    /// running, so the key keeps its ordinary meaning everywhere else.
-    private static let escapeKeyCode: UInt16 = 53
-
     func start() throws {
         let eventMask = (CGEventMask(1) << CGEventType.keyDown.rawValue)
             | (CGEventMask(1) << CGEventType.keyUp.rawValue)
@@ -197,12 +193,15 @@ final class HotkeyMonitor {
         return flagsMatch(event.flags, modeShortcut.modifiers)
     }
 
-    /// A bare Escape. A chord that happens to end in Escape carries modifiers, so it is
-    /// not mistaken for this.
+    /// Escape, alone or alongside the trigger the speaker is still holding.
+    ///
+    /// The decision itself lives in `ShortcutMatch`, where a check can read it.
     private func cancelRequested(_ event: CGEvent) -> Bool {
-        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-        guard keyCode == Self.escapeKeyCode else { return false }
-        return flagsMatch(event.flags, [])
+        ShortcutMatch.isCancel(
+            keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode)),
+            flags: event.flags,
+            trigger: shortcut.modifiers
+        )
     }
 
     private func modifiersMatch(_ flags: CGEventFlags) -> Bool {
@@ -210,20 +209,8 @@ final class HotkeyMonitor {
     }
 
     private func flagsMatch(_ flags: CGEventFlags, _ modifiers: Set<ShortcutModifier>) -> Bool {
-        var expected = CGEventFlags()
-        for modifier in modifiers {
-            switch modifier {
-            case .command: expected.insert(.maskCommand)
-            case .control: expected.insert(.maskControl)
-            case .option: expected.insert(.maskAlternate)
-            case .shift: expected.insert(.maskShift)
-            case .fn: expected.insert(.maskSecondaryFn)
-            }
-        }
-
-        let relevant: CGEventFlags = [
-            .maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn,
-        ]
-        return flags.intersection(relevant) == expected
+        // One implementation, in `ShortcutMatch`. Two copies of a matching rule is how
+        // the cancellation rule was wrong in a place nothing could read it.
+        ShortcutMatch.flagsMatch(flags, modifiers)
     }
 }
