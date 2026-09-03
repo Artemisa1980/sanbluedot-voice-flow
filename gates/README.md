@@ -49,3 +49,9 @@ evidence.
 | `audit-session2-python-gate.local.md` | 2026-09-02 | Session close · Python engine, practice, export | COMPLETE · FAIL · 1 critical and 2 defects remediated |
 | `audit-session2-swift-ui-gate.local.md` | 2026-09-02 | Session close · Swift app layer and interface | COMPLETE · FAIL · 1 critical and 4 defects remediated |
 | `audit-session2-docs-gate.local.md` | 2026-09-02 | Session close · framework, design system, acceptance | COMPLETE · FAIL · 2 blocking and 3 non-blocking findings remediated |
+| `audit-evolution-python-gate.local.md` | 2026-09-03 | Competitive evolution · Python engine and tests | STOPPED before auditing — the launch packet named no gate and the report lacked `GATE STATUS: IN PROGRESS`. Nothing was opened and no verdict applies |
+| `audit-evolution-swift-gate.local.md` | 2026-09-03 | Competitive evolution · Swift application layer | STOPPED before auditing — same two launch defects. Nothing was opened and no verdict applies |
+| `audit-evolution-docs-gate.local.md` | 2026-09-03 | Competitive evolution · framework, design system, governance | STOPPED before auditing — same two launch defects. Nothing was opened and no verdict applies |
+| `evolution-python-gate-01.local.md` | 2026-09-03 | Competitive evolution · Python engine and tests | COMPLETE · CONDITIONAL PASS · unguarded stdin read and an untested Gemini transform branch |
+| `evolution-swift-gate-01.local.md` | 2026-09-03 | Competitive evolution · Swift application layer | COMPLETE · FAIL · `positionPanel()` resized the redesigned capsule back to `295 × 74`, clipping it by 17pt on every show |
+| `evolution-docs-gate-01.local.md` | 2026-09-03 | Competitive evolution · framework, visual contract and governance | COMPLETE · FAIL · the same panel-size contradiction, a wrong vintage-mic state rule, and two unsupported claims in the relay |

@@ -136,21 +136,59 @@ The window is usable from its floor to full screen, and the chrome is fixed at b
 The HUD renders over other applications and must stay legible on any wallpaper, so it is
 the one surface that does not use the sage canvas.
 
-- Capsule, radius `18px`, black at 75% opacity over a blurred navy wash, with a
+- Panel `330 × 88`, holding three rows beside the microphone disc: status and wordmark,
+  meter, telemetry. The content is `44 + 14 + 226` wide inside `14px` horizontal padding,
+  which is `312`. **Every one of these numbers is declared once, in `HUDLayout`, and read
+  from there by the window, the positioner and the view.** They were literals in three
+  files, and the redesign updated the window's creation size while the code that places
+  it on screen went on resizing the capsule back to the previous `295 × 74` on every
+  show — 17pt narrower than the content, clipped, and silent, because both numbers were
+  right when they were written. `VoiceFlowMacCoreChecks` now fails the build if the panel
+  is ever smaller than the content it carries.
+- Capsule, radius `18px`, black at 85% opacity over a blurred navy wash, with a
   hairline gradient border from white through dot blue.
-- Microphone disc `44px`, navy at 80%, glow tinted by state.
+- Microphone disc `44px`, navy at 85%, glow tinted by state. It draws a vintage ribbon
+  microphone — chrome capsule, four horizontal grille ribs, U-cradle and pedestal —
+  wherever the state would otherwise carry `mic.fill`, which is every state except two:
+  a mode confirmation shows that mode's own glyph, and a cancelled recording shows
+  `mic.slash.fill`. The disc's tint changes with the state; the drawing does not.
 - Twelve VU bars, `9 × 12px`, radius `1.5px`: bars 0–6 dot blue, 7–9 gold, 10–11 the
   on-air red `rgb(255, 69, 59)`. Inactive bars sit at white 10%.
+- `ESC ✕` closes that row at `9px` heavy monospaced in white 50%, while recording and
+  only then. The twelve bars and their gaps spend `141pt` of the `226pt` row, so the
+  reminder sits in space the bars never used; it is not in the header, where it and the
+  wordmark could only ever take turns.
 - State badges: `ON AIR` red, processing dot blue, completed green, error red. The
-  recording badge names the mode — `ON AIR`, `ON AIR • ES➔EN`, `ON AIR • MEETING`.
-- Mode confirmation replaces the twelve bars with four segments, one per mode, at
-  `14px` high with `3px` gaps and radius `2px`. The selected segment is filled and the
-  rest sit at white 10%, so the confirmation also says what the other modes are. The
-  microphone disc carries the mode's glyph while it is shown, and the capsule springs
-  between states rather than cutting.
+  recording badge names the mode — `ON AIR`, `ON AIR • ES➔EN`, `ON AIR • MEETING`,
+  `ON AIR • TRANSFORM` — and, when the frontmost application is a recognized one, the
+  target instead of the prefix: `ON AIR • VSCODE`, `TRANSFORM • TERMINAL`.
+- **The badge is drawn at fixed size, so a name it cannot fit is not truncated — it
+  pushes the wordmark out of the row.** An application short name is therefore capped at
+  12 characters. The budget that cap comes from is not quoted here: `VoiceFlowMacCoreChecks`
+  computes it from `HUDLayout` and the same font the view uses, and fails the build if the
+  widest possible badge overruns the row. A figure copied into prose stops moving with the
+  layout; a figure the build recomputes cannot.
+- Third row, `14px` high on a black 45% pill with a white 8% hairline: the telemetry
+  strip. It states the stage while work is running and the run's own measurements when
+  it ends — speaking rate, latency, the model that answered. It never carries a constant
+  dressed as a reading; a sample rate nothing measures per run is not shown at all.
+- While a transform recording holds a captured selection, that row also carries its size
+  at `8px` heavy monospaced: dot blue up to `2000` characters, the on-air red past it.
+  The red is a warning, not a refusal — the row states a fact about the run and the
+  speaker decides. No new colour enters the palette for it.
+- Mode confirmation replaces the twelve bars with one segment per mode, at `14px` high
+  with `3px` gaps and radius `2px`. The selected segment is filled and the rest sit at
+  white 10%, so the confirmation also says what the other modes are. The strip is built
+  from the mode list itself, so a new mode appears without touching this contract — and
+  narrows every existing segment when it does. The build checks each mode's label against
+  its share of the row rather than trusting a count that was true at five. The microphone
+  disc carries the mode's glyph while it is shown, and the capsule springs between states
+  rather than cutting.
 - One accent rule for that strip: every mode lights brand gold `#EFC15E`, except
-  `ACTION`, which lights the approved coral `#FF7B6B`. The mode that can act on the
-  machine is the only one that reads as live, and no new colour enters the palette.
+  `ACTION`, which lights the approved coral `#FF7B6B`, and `TRANSFORM`, which lights dot
+  blue. The two modes that reach outside the dictation — one acts on the machine, one
+  rewrites text the speaker did not dictate — are the two that read differently, and no
+  new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
 ## Console badge palette

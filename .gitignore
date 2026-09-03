@@ -36,7 +36,11 @@ practice/
 .env
 .env.*
 
-# Model weights and packaged binaries
+# Model weights and packaged binaries. `models/` matches a directory and nothing else,
+# so the worktree that reaches the weights through a symlink named `models` was left
+# untracked-but-not-ignored, one `git add -A` away from committing a path that only
+# exists on this machine. The bare name covers both shapes.
+models
 models/
 *.bin
 *.gguf

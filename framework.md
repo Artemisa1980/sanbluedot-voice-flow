@@ -59,7 +59,31 @@ modes, and the distinction is normative rather than cosmetic.
    preserved.
 2. **Meeting notes:** structures spoken dictation into Markdown summary bullets and a
    `- [ ]` action-item checklist, keeping the speaker's language.
+3. **Transform selection:** applies a spoken instruction to text the speaker highlighted
+   in another application — summarize, restructure, change register, fix grammar. The
+   speech is the instruction; the selection is the material. The language of the
+   selection is kept unless the instruction asks for a translation.
 
+- Transform is the one mode whose payload is not the speaker's own dictation. What is
+  sent is whatever was on screen and highlighted, so the mode is selected deliberately,
+  never entered by inference, and the capsule names it before the microphone opens.
+- The selection is captured at the press, while the target window still holds focus, and
+  reaches the engine on standard input. A process argument is world-readable to the
+  user's own processes through `ps`; screen content the speaker did not dictate does not
+  travel that way.
+- **How much was captured is shown while the recording is still cancellable.** Every
+  other mode sends what the speaker just said, and she can check that payload by
+  remembering it. This one sends what was on screen, so the size is the only thing that
+  distinguishes the sentence she highlighted from the file behind it. It is a count of
+  the captured text, not an estimate, and it is on the capsule before transmission — a
+  selection past a long paragraph is coloured as a warning and still sent if she lets it
+  go, because rewriting a long document is legitimate and Escape is already the way out.
+- Reading the selection must leave the pasteboard as it was found. The capture is a
+  synthetic copy, and a recording the speaker cancels returns no result to replace what
+  the copy overwrote.
+- Transform requires a cleaner that can rewrite text. Paired with the literal cleaner it
+  is refused, because the alternative is a run that reads the selection, discards it and
+  returns an ordinary dictation under a badge that says otherwise.
 - Only `clean` passes through the conservative output guard. Every other mode is
   delivered as the provider returned it, and the guard must never be relaxed to
   accommodate one of them.
@@ -131,6 +155,13 @@ modes, and the distinction is normative rather than cosmetic.
 - Expansion respects word boundaries (`(?<!\w)trigger(?!\w)`) in Spanish and English, operates case-insensitively, and evaluates longest triggers first in a single non-cascading scan.
 - Snippet definitions are stored locally in versioned JSON (`snippets.local.json`) with atomic writes and schema validation, completely excluded from version control.
 - If cleanup fails, snippets expand over the deterministic fallback transcript so macro invocations succeed even under provider failure.
+- An expansion may carry dynamic macros, resolved once at expansion time: `{date}`,
+  `{time}`, `{datetime}`, `{year}`, `{month}`, `{day}`, `{uuid}` and `{app}`. The date
+  parts are numeric and agree with each other; a weekday name would have to choose a
+  language, and choosing English for a Spanish speaker is not a default, it is a defect.
+- A macro whose value the engine was not given stays written as itself. An unresolved
+  `{app}` is visible in the delivered text; substituting a blank would hide the failure
+  in the one place the speaker cannot check it.
 
 ### R5c — Distillation pairs
 

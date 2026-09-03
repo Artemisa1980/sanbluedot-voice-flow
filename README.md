@@ -38,7 +38,11 @@ The native macOS runner can:
   VoiceFlow's own window, stay on clipboard delivery;
 - transform instead of clean when asked: `translate` turns Spanish speech into
   professional English, `meeting` structures it into Markdown bullets and `- [ ]`
-  action items. Only `clean` passes the conservative output guard;
+  action items, and `transform` applies what you say to the text you highlighted in
+  another application. Only `clean` passes the conservative output guard;
+- name the application the text is going to, on the capsule, when it recognizes it —
+  `ON AIR • VSCODE`, `PASTED ➔ TERMINAL`. Detection only: what you say is never rewritten
+  because of where it is going;
 - copy the personalized transcript when opt-in local cleanup fails, while retaining raw;
 - delete each temporary recording after processing;
 - apply the confirmed local vocabulary, correction memory, and voice snippets;
@@ -122,6 +126,49 @@ delivers the engine's `final_text` unchanged and only edits the store.
 
 Triggers match on word boundaries in Spanish and English, case-insensitively, longest
 first. The store is versioned JSON written atomically and excluded from version control.
+
+An expansion may carry macros, resolved when it expands:
+
+| Macro | Resolves to |
+|---|---|
+| `{date}` `{time}` `{datetime}` | `2026-09-03`, `10:15`, `2026-09-03 10:15` |
+| `{year}` `{month}` `{day}` | `2026`, `09`, `03` — all numeric, all the same date |
+| `{uuid}` | a fresh identifier per occurrence |
+| `{app}` | the frontmost application, e.g. `VS Code` |
+
+`{app}` is left written as `{app}` when the engine was run without `--app-name`, so an
+unresolved macro is visible in the text instead of arriving as a blank you would not
+notice. `{day}` is the day of the month: it returned an English weekday name until
+2026-09-03, which put "Thursday" inside Spanish templates regardless of the language
+being spoken.
+
+## Transform a selection
+
+Highlight text anywhere, hold the trigger in `transform` mode, and say what to do with
+it: "hazlo más formal", "resume esto en tres puntos", "make it bullet points". The
+speech is the instruction and the highlighted text is the material; the result replaces
+the selection through the usual paste.
+
+The selection is read at the moment you press, while the other window still has focus,
+and it is handed to the engine on standard input rather than as a command-line argument
+— `ps -ww -ax` prints arguments in full to every process you run, and your screen
+content does not belong there. Reading it uses a synthetic copy, so whatever was on the
+clipboard is captured first and put back afterwards, including images and files.
+
+While the recording is still cancellable, the capsule states how much it captured —
+`⚡ LIVE · 412 CHARS · WHISPER` — in dot blue, or in the on-air red past two thousand
+characters. Every other mode sends what you just said, which you can check by
+remembering it; this one sends what was on screen, and the size is what tells you it
+took the sentence you highlighted and not the whole file. Escape still cancels.
+
+Transform needs a cleaner that can rewrite text. With `literal` it is refused rather
+than run: the pairing produced an ordinary dictation while the capsule said `TRANSFORM`.
+With `ollama` nothing leaves the Mac at all.
+
+```bash
+printf '%s' "$SELECTED" | ./vf process take.wav --whisper-model models/ggml-small.bin \
+  --cleaner gemini --mode transform --context-text-stdin
+```
 
 ## Voice actions
 
@@ -402,8 +449,8 @@ single `Fn/Globe` key:
    second after the press, so a hand brushing the key records nothing. Tune it with
    `--hold-delay SECONDS`, up to 3.
 2. Press `Escape` while recording to take it back: the audio is deleted, nothing is
-   pasted, and no history entry is written. The capsule shows `ESC` while that is
-   available.
+   pasted, and no history entry is written. The capsule shows `ESC ✕` at the end of the
+   meter row while that is available.
 3. Release it to transcribe the recording locally. If Gemini is selected, only the
    resulting transcript text and language hint leave the Mac for cleanup.
 4. Wait for the menu-bar icon to show a check mark.

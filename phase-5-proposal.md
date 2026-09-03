@@ -24,18 +24,26 @@ reference mockup is kept at `assets/retro-mic-ui-mockup.jpg`.
 | 5 | Gemini-to-Ollama distillation, opt-in | R5c · `distill.py` · `./vf distill` |
 | 7 | Voice snippets and spoken macros | R5b · `snippets.py`, `VoiceSnippet.swift` · `./vf snippet` |
 | 9 | Morphing HUD and in-flight mode toggle | R3c · `RetroMicHUDView.swift`, `HotkeyMonitor.swift` · README |
+| 6 | Application-context awareness, detection only | `AppContext.swift` · `HUDBadge` · `design-system.md` |
+| 10 | Latency and speed badge in the floating HUD | R9 · `RetroMicHUDView.swift` telemetry strip |
+| 11 | Transform selection | R3b · `SelectionReader.swift`, `cleaners/prompt.py` |
 
 ## Ahead
 
-### 6 — Application-context awareness and tone adaptation
+### 6b — Tone adaptation from the detected application · CLOSED, will not be built
 
-Detect the frontmost application and adapt the tone profile automatically: casual in
-Slack and Messages, formal and structured in Mail and Docs, literal in a terminal or an
-IDE. The station window already tracks the target application, so the input exists.
+Detection shipped; adaptation will not. The frontmost application is resolved and named
+on the capsule, and nothing about it changes the words. That is the finished state.
 
-Open question before building: a tone profile changes the words that reach the document,
-so it needs the same treatment R3b gave translation — an explicitly selected,
-visible mode rather than a silent switch the speaker cannot see.
+The open question this entry carried was already answered by R3b: a tone profile rewrites
+the document, so it belongs to an explicitly selected, visible mode rather than to a
+silent switch keyed off whichever window happened to be in front. `transform` is that
+mode, it arrived in the same branch, and it takes the instruction out loud — "hazlo más
+formal" produces the same result at the moment the speaker wants it, instead of guessing
+from a window. Building tone profiles as well would add five silent behaviors to reach
+what one spoken sentence already reaches.
+
+Reopen this only if speaking the instruction proves to be the friction in daily use.
 
 ### 8 — Phonetic dictionary and cleaner prompt biasing
 
@@ -47,9 +55,18 @@ Measure before adopting: the vocabulary prompt already suppresses the engine's o
 punctuation, which cost punctuation F1 34.8% against 93.8% until it was found. Any
 richer prompt is measured on the fixed corpus, punctuation included, before it ships.
 
-### 10 — Live latency and speed badge
+### 8b — If the whisper prompt is ever enriched again
 
-Partly delivered: the telemetry bar already shows the measured recognition and cleanup
-seconds and the measured speaking rate, under R9. What remains is surfacing the same
-figures in the floating HUD, where the speaker actually looks, and only ever as
-measurements.
+A fixed list of bilingual priming terms was added to `build_initial_prompt` and removed
+in the same session. Measured against the real store it never reached whisper: 226
+personal terms already fill 596 of the 600 characters, the priming was appended after
+them, and every term was cut. The prompt was byte-identical with the feature on and off,
+and the two tests covering it used two-term fixtures, which is why the budget never bound
+them and the feature read as working.
+
+The condition this entry already stated still holds and is now the reason it was pulled
+rather than fixed: making it effective means prepending, which changes what the engine
+hears, and any richer prompt is measured on the fixed corpus with punctuation before it
+ships. `scripts/replay.py` must exercise the same prompt the application does, or the
+corpus measures something the speaker never runs.
+
