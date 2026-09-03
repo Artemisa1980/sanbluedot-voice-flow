@@ -16,12 +16,16 @@ class DictationPipeline:
         cleaner: Cleaner,
         corrections: Sequence[Correction] = (),
         snippets: Sequence[Snippet] = (),
+        context_text: str | None = None,
+        app_name: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._transcriber = transcriber
         self._cleaner = cleaner
         self._corrections = corrections
         self._snippets = snippets
+        self._context_text = context_text
+        self._app_name = app_name
         # Injected so a test can assert the reported duration is the measured one and
         # not a constant. A displayed latency nobody can reproduce is not evidence.
         self._monotonic = monotonic
@@ -35,17 +39,24 @@ class DictationPipeline:
         # Keep both layers so the engine transcript remains independently recoverable.
         personalized_text = apply_corrections(raw_text, self._corrections)
 
-        fallback = expand_snippets(personalized_text, self._snippets)
+        fallback = expand_snippets(
+            personalized_text, self._snippets, app_name=self._app_name
+        )
 
         cleanup_started = self._monotonic()
         cleanup_seconds: float | None = None
+        mode = getattr(self._cleaner, "mode", "clean")
+        text_to_clean = (
+            f"Original text:\n{self._context_text}\n\nInstruction:\n{personalized_text}"
+            if self._context_text and mode == "transform"
+            else personalized_text
+        )
         try:
             cleaned = self._cleaner.clean(
-                personalized_text,
+                text_to_clean,
                 language_hint=transcript.language,
             )
             cleanup_seconds = self._monotonic() - cleanup_started
-            mode = getattr(self._cleaner, "mode", "clean")
             if mode == "clean":
                 # The guard gets its own handler so a rejection is reported as a
                 # rejection. Wrapped in the general one below it was indistinguishable
@@ -75,7 +86,9 @@ class DictationPipeline:
                     transcribe_seconds=transcribe_seconds,
                     cleanup_seconds=cleanup_seconds,
                 )
-            final_text = expand_snippets(cleaned, self._snippets)
+            final_text = expand_snippets(
+                cleaned, self._snippets, app_name=self._app_name
+            )
         except CleanupFailed:
             # Already carries its raw and fallback text. Re-wrapping it here doubled the
             # message the speaker sees.

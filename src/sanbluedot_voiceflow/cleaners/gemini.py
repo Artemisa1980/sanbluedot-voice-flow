@@ -27,6 +27,7 @@ from .prompt import (
     CLEANED_TEXT_SCHEMA,
     CONSERVATIVE_SYSTEM_PROMPT,
     MEETING_NOTES_SYSTEM_PROMPT,
+    TRANSFORM_SYSTEM_PROMPT,
     TRANSLATE_EN_SYSTEM_PROMPT,
     output_token_budget,
 )
@@ -225,6 +226,9 @@ class GeminiCleaner:
         elif self.mode == "meeting":
             mode_label = " [mode: meeting notes & action items]"
             system_instruction = MEETING_NOTES_SYSTEM_PROMPT
+        elif self.mode == "transform":
+            mode_label = " [mode: transform selection]"
+            system_instruction = TRANSFORM_SYSTEM_PROMPT
         else:
             mode_label = ""
             system_instruction = CONSERVATIVE_SYSTEM_PROMPT

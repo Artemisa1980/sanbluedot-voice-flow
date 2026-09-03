@@ -55,6 +55,20 @@ class VocabularyTests(unittest.TestCase):
 
         self.assertLessEqual(len(prompt), 600)
 
+    def test_a_full_store_leaves_no_room_for_appended_terms(self) -> None:
+        """The budget, not the caller, decides what reaches whisper.
+
+        A fixture of two or three terms cannot show this: it leaves 580 characters free,
+        so anything appended survives and a dead feature reads as a working one. The
+        real store carries 226 terms.
+        """
+        terms = [f"term{index:03d}" for index in range(226)]
+
+        prompt = build_initial_prompt(terms)
+
+        self.assertLessEqual(len(prompt), 600)
+        self.assertNotIn(f"term{225:03d}", prompt)
+
 
 class ApplyCorrectionsTests(unittest.TestCase):
     def test_replaces_a_whole_word_only(self) -> None:

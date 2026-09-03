@@ -70,6 +70,48 @@ class TestSnippets(unittest.TestCase):
             "Revisa https://linkedin.com/company/sanblue para más detalles.",
         )
 
+    def test_expand_snippets_dynamic_macros(self) -> None:
+        from datetime import datetime
+        fixed_time = datetime(2026, 9, 3, 10, 15)
+        snippets = [
+            Snippet(trigger="fecha de hoy", expansion="{date}"),
+            Snippet(trigger="hora actual", expansion="{time}"),
+            Snippet(trigger="timestamp completo", expansion="{datetime}"),
+            Snippet(trigger="plantilla reporte", expansion="Reporte {year}-{month}-{day}"),
+            Snippet(trigger="nuevo uuid", expansion="{uuid}"),
+        ]
+
+        text = "Por favor genera el reporte fecha de hoy a las hora actual. timestamp completo"
+        expanded = expand_snippets(text, snippets, now=fixed_time)
+        self.assertEqual(
+            expanded,
+            "Por favor genera el reporte 2026-09-03 a las 10:15. 2026-09-03 10:15",
+        )
+
+        # The date parts are numeric and agree with each other. `%A` wrote an English
+        # weekday into a Spanish template regardless of the speaker's language.
+        template_expanded = expand_snippets("Crea plantilla reporte", snippets, now=fixed_time)
+        self.assertEqual(template_expanded, "Crea Reporte 2026-09-03")
+
+        uuid_text = "Asigna nuevo uuid"
+        uuid_expanded = expand_snippets(uuid_text, snippets)
+        self.assertNotIn("{uuid}", uuid_expanded)
+        self.assertTrue(uuid_expanded.startswith("Asigna "))
+
+    def test_app_macro_resolves_and_stays_visible_when_unknown(self) -> None:
+        snippets = [Snippet(trigger="app actual", expansion="Escrito desde {app}")]
+
+        self.assertEqual(
+            expand_snippets("Nota: app actual", snippets, app_name="VS Code"),
+            "Nota: Escrito desde VS Code",
+        )
+        # No caller knew the application: the macro is left where the speaker can see
+        # that it did not resolve, rather than pasted as a blank.
+        self.assertEqual(
+            expand_snippets("Nota: app actual", snippets),
+            "Nota: Escrito desde {app}",
+        )
+
     def test_expand_snippets_literal_backslashes_and_group_references(self) -> None:
         snippets = [
             Snippet(trigger="ruta windows", expansion=r"C:\Users\Fixture\Documents\file.txt"),

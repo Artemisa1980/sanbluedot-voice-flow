@@ -80,9 +80,31 @@ def _build_parser() -> argparse.ArgumentParser:
     process.add_argument("--cleaner", choices=list(CLEANER_NAMES), default="literal")
     process.add_argument(
         "--mode",
-        choices=["clean", "translate", "meeting"],
+        choices=["clean", "translate", "meeting", "transform"],
         default="clean",
-        help="Processing mode: clean, translate (ES -> EN), or meeting (notes & action items).",
+        help="Processing mode: clean, translate (ES -> EN), meeting (notes & action items), or transform (selection).",
+    )
+    process.add_argument(
+        "--context-text",
+        default=None,
+        help=(
+            "Reference text or highlighted selection to transform. Typed deliberately "
+            "at a terminal; the application uses --context-text-stdin instead."
+        ),
+    )
+    process.add_argument(
+        "--context-text-stdin",
+        action="store_true",
+        help=(
+            "Read the selection to transform from standard input. A caller that holds "
+            "the speaker's screen content uses this: an argument is visible to every "
+            "process the user runs, and `ps -ww -ax` prints it in full."
+        ),
+    )
+    process.add_argument(
+        "--app-name",
+        default=None,
+        help="Frontmost application name, substituted for the {app} snippet macro.",
     )
     process.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     process.add_argument("--ollama-model", default="qwen3:4b")
@@ -429,6 +451,35 @@ def _timings(
 
 
 def _process(args: argparse.Namespace) -> int:
+    mode = getattr(args, "mode", "clean")
+    # Transform asks a model to rewrite the selection. The literal cleaner has no model,
+    # so the pair produced a plain dictation while the interface said TRANSFORM: the
+    # selection was read, sent nowhere and silently dropped. Refused where the two are
+    # first seen together rather than left to fail quietly downstream.
+    if mode == "transform" and args.cleaner == "literal":
+        print(
+            "Transform needs a cleaner that can rewrite text. Choose gemini or ollama, "
+            "or switch the mode back to clean.",
+            file=sys.stderr,
+        )
+        return 1
+
+    context_text = getattr(args, "context_text", None)
+    if getattr(args, "context_text_stdin", False):
+        # The selection arrives from another application's text storage, so it can be
+        # anything, including bytes that are not valid UTF-8. A traceback here would
+        # discard a recording the speaker already made; the run is refused in the same
+        # controlled shape as every other failure in this command.
+        try:
+            stdin_text = sys.stdin.read().strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            print(
+                f"The highlighted selection could not be read: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        context_text = stdin_text or None
+
     corrections = () if args.no_memory else tuple(CorrectionStore().load())
     snippets = () if args.no_memory else tuple(SnippetStore().load())
     use_prompt = not args.no_vocab_prompt and not args.no_memory
@@ -442,7 +493,7 @@ def _process(args: argparse.Namespace) -> int:
     )
     cleaner = build_cleaner(
         args.cleaner,
-        mode=getattr(args, "mode", "clean"),
+        mode=mode,
         ollama_model=args.ollama_model,
         ollama_url=args.ollama_url,
         gemini_model=args.gemini_model,
@@ -452,6 +503,8 @@ def _process(args: argparse.Namespace) -> int:
         cleaner=cleaner,
         corrections=corrections,
         snippets=snippets,
+        context_text=context_text,
+        app_name=getattr(args, "app_name", None),
     )
 
     try:

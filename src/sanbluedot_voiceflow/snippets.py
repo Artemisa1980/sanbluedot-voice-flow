@@ -7,8 +7,10 @@ Stored locally in JSON with versioned schema and atomic writes.
 
 import json
 import re
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +58,48 @@ class Snippet:
         )
 
 
-def expand_snippets(text: str, snippets: Sequence[Snippet]) -> str:
+def evaluate_macro_expansion(
+    template: str,
+    now: datetime | None = None,
+    app_name: str | None = None,
+) -> str:
+    """Resolve dynamic template variables like {date}, {time}, {uuid}, and {app}.
+
+    `{day}` is the day of the month, matching `{month}` and `{year}`. It returned the
+    weekday name through `%A`, which ignores the speaker's language and writes
+    "Thursday" into a Spanish sentence; a localized weekday is a separate decision and
+    a numeric day is the one the neighbouring macros already imply.
+
+    `{app}` stays literal when the caller does not know the frontmost application, so an
+    unresolved macro is visible in the text rather than silently blank.
+    """
+    current = now or datetime.now()
+    resolved = template
+    if "{date}" in resolved:
+        resolved = resolved.replace("{date}", current.strftime("%Y-%m-%d"))
+    if "{time}" in resolved:
+        resolved = resolved.replace("{time}", current.strftime("%H:%M"))
+    if "{datetime}" in resolved:
+        resolved = resolved.replace("{datetime}", current.strftime("%Y-%m-%d %H:%M"))
+    if "{year}" in resolved:
+        resolved = resolved.replace("{year}", current.strftime("%Y"))
+    if "{month}" in resolved:
+        resolved = resolved.replace("{month}", current.strftime("%m"))
+    if "{day}" in resolved:
+        resolved = resolved.replace("{day}", current.strftime("%d"))
+    if "{uuid}" in resolved:
+        resolved = resolved.replace("{uuid}", str(uuid.uuid4()))
+    if app_name is not None and "{app}" in resolved:
+        resolved = resolved.replace("{app}", app_name)
+    return resolved
+
+
+def expand_snippets(
+    text: str,
+    snippets: Sequence[Snippet],
+    now: datetime | None = None,
+    app_name: str | None = None,
+) -> str:
     """Expand matching snippet triggers within text in a single non-cascading scan.
 
     A single regex scan prevents multi-pass cascading substitution where the expansion
@@ -86,7 +129,9 @@ def expand_snippets(text: str, snippets: Sequence[Snippet]) -> str:
         if intended is None:
             collapsed = " ".join(matched.split()).casefold()
             intended = by_key.get(collapsed)
-        return matched if intended is None else intended
+        if intended is None:
+            return matched
+        return evaluate_macro_expansion(intended, now=now, app_name=app_name)
 
     return pattern.sub(replace, text)
 

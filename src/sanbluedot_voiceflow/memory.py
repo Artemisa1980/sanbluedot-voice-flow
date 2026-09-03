@@ -149,7 +149,16 @@ def build_initial_prompt(
     terms: Sequence[str],
     char_budget: int = PROMPT_CHAR_BUDGET,
 ) -> str:
-    """Join as many leading terms as the budget allows into a whisper initial prompt."""
+    """Join as many leading terms as the budget allows into a whisper initial prompt.
+
+    A fixed list of priming terms was appended here to bias mixed Spanish/English
+    recognition. Measured against the real store it never reached whisper: 226 personal
+    terms already fill 596 of the 600 characters, so every appended term was cut and the
+    prompt was byte-identical with the feature on and off. The two tests that covered it
+    used two-term fixtures, which is why the budget never bound them. Reviving it means
+    prepending rather than appending, which changes what the engine hears and must be
+    measured on the fixed corpus with punctuation first — `phase-5-proposal.md`, 8.
+    """
     selected: list[str] = []
     used = 0
     for term in terms:

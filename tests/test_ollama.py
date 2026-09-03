@@ -89,6 +89,22 @@ class OllamaCleanerTests(unittest.TestCase):
         messages = captured["payload"]["messages"]  # type: ignore[index]
         self.assertIn("Format a spoken voice dictation into clear, structured Markdown meeting notes", messages[0]["content"])
 
+    def test_transform_mode_uses_transform_prompt(self) -> None:
+        captured: dict[str, object] = {}
+
+        def opener(request: object, timeout: float) -> FakeResponse:
+            captured["payload"] = json.loads(request.data.decode("utf-8"))  # type: ignore[attr-defined]
+            return FakeResponse(
+                {"message": {"content": '{"cleaned_text": "- Bullet point item"}'}}
+            )
+
+        cleaner = OllamaCleaner(mode="transform", opener=opener)
+        result = cleaner.clean("Original text:\nHello world\n\nInstruction:\nmake it bullet points", language_hint="en")
+
+        self.assertEqual(result, "- Bullet point item")
+        messages = captured["payload"]["messages"]  # type: ignore[index]
+        self.assertIn("Transform the input text according to the spoken voice instruction", messages[0]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

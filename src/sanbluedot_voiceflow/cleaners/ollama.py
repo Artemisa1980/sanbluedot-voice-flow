@@ -9,6 +9,7 @@ from .prompt import (
     CLEANED_TEXT_SCHEMA,
     CONSERVATIVE_SYSTEM_PROMPT,
     MEETING_NOTES_SYSTEM_PROMPT,
+    TRANSFORM_SYSTEM_PROMPT,
     TRANSLATE_EN_SYSTEM_PROMPT,
     output_token_budget,
 )
@@ -43,6 +44,8 @@ class OllamaCleaner:
             system_instruction = TRANSLATE_EN_SYSTEM_PROMPT
         elif self.mode == "meeting":
             system_instruction = MEETING_NOTES_SYSTEM_PROMPT
+        elif self.mode == "transform":
+            system_instruction = TRANSFORM_SYSTEM_PROMPT
         else:
             system_instruction = CONSERVATIVE_SYSTEM_PROMPT
         payload = {

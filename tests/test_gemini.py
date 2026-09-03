@@ -216,6 +216,31 @@ class TransmissionGuardTests(unittest.TestCase):
         payload = json.loads(request.data.decode("utf-8"))
         self.assertIn("Format a spoken voice dictation into clear, structured Markdown meeting notes", payload["systemInstruction"]["parts"][0]["text"])
 
+    def test_transform_mode_uses_transform_system_prompt_and_announcement(self) -> None:
+        """The cloud branch of transform, which shipped with no test of its own.
+
+        `ollama.py` gained one in the same change; this provider is the one that sends
+        the selection off the machine, so it is the branch that most needed the cover.
+        """
+        announced: list[str] = []
+        opener = Recorder(reply("- Fix authentication bug\n- Deadline: tomorrow"))
+
+        result = build(opener, mode="transform", announced=announced).clean(
+            'Original text:\nWe need to fix the authentication bug by tomorrow.\n\n'
+            'Instruction:\nmake it bullet points',
+            language_hint="en",
+        )
+
+        self.assertEqual(result, "- Fix authentication bug\n- Deadline: tomorrow")
+        self.assertEqual(len(announced), 1)
+        self.assertIn("transform", announced[0])
+        request = opener.requests[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertIn(
+            "Transform the input text according to the spoken voice instruction",
+            payload["systemInstruction"]["parts"][0]["text"],
+        )
+
 
 class ResponseTests(unittest.TestCase):
     def test_the_cleaned_text_is_returned(self) -> None:

@@ -37,6 +37,17 @@ Preserve all names, deadlines, numbers, and technical terms.
 Example input: En la reunión acordamos que Juan revisa el código hoy, María envía la cotización mañana a las diez, y yo preparo la presentación para el viernes.
 Example output: {"cleaned_text":"### Puntos Clave\n- Acuerdos de entrega y asignación de responsabilidades.\n\n### Action Items\n- [ ] Juan: Revisar el código hoy.\n- [ ] María: Enviar la cotización mañana a las 10:00.\n- [ ] Preparar la presentación para el viernes."}"""
 
+TRANSFORM_SYSTEM_PROMPT = """Transform the input text according to the spoken voice instruction and return JSON only.
+When context text is provided ("Original text: ..."), apply the voice instruction ("Instruction: ...") to transform the original text (e.g. summarize, change tone to formal/casual, format as bullet points, fix grammar, rewrite, or translate if requested).
+When no context text is provided, refine and format the spoken text directly in its spoken language (Spanish in Spanish, English in English).
+Maintain the original language unless an explicit translation command (such as 'translate to English', 'traducir', 'en inglés') is requested.
+Preserve code syntax, variable names, proper nouns, and numerical values.
+Return only the transformed result in cleaned_text without commentary.
+Example input: Original text: "We need to fix the authentication bug by tomorrow." Instruction: "make it bullet points"
+Example output: {"cleaned_text":"- Fix authentication bug\n- Deadline: tomorrow"}
+Example input: Original text: "hola como estas necesito el reporte hoy" Instruction: "hazlo más formal"
+Example output: {"cleaned_text":"Estimado/a, espero que se encuentre bien. Quisiera solicitar la entrega del reporte el día de hoy."}"""
+
 CLEANED_TEXT_SCHEMA = {
     "type": "object",
     "properties": {"cleaned_text": {"type": "string"}},

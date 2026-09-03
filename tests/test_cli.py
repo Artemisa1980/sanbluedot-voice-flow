@@ -30,9 +30,84 @@ class CliTests(unittest.TestCase):
             "no_memory": True,
             "no_vocab_prompt": True,
             "distill": False,
+            "context_text": None,
+            "context_text_stdin": False,
+            "app_name": None,
         }
         defaults.update(overrides)
         return Namespace(**defaults)
+
+    def test_transform_without_a_rewriting_cleaner_is_refused(self) -> None:
+        """The pair produced a plain dictation while the HUD said TRANSFORM.
+
+        The literal cleaner carries no mode, so the pipeline read `clean`, dropped the
+        captured selection and ran the conservative guard. Nothing failed and nothing
+        transformed, which is the one outcome the speaker cannot see.
+        """
+        args = self._process_args(mode="transform", cleaner="literal")
+
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            status = cli._process(args)
+
+        self.assertEqual(status, 1)
+        self.assertIn("Transform needs a cleaner that can rewrite text", stderr.getvalue())
+
+    def test_transform_selection_is_read_from_standard_input(self) -> None:
+        """An argument is readable by every process the speaker runs; stdin is not."""
+        args = self._process_args(
+            mode="transform", cleaner="ollama", context_text_stdin=True
+        )
+        captured: dict[str, object] = {}
+
+        class RecordingPipeline:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+
+            def process(self, audio: Path) -> PipelineResult:
+                del audio
+                return PipelineResult(
+                    raw_text="hazlo formal",
+                    personalized_text="hazlo formal",
+                    final_text="Estimado equipo",
+                    language="es",
+                    cleaner="ollama",
+                    transcribe_seconds=0.1,
+                    cleanup_seconds=0.2,
+                )
+
+        with (
+            patch.object(cli, "DictationPipeline", RecordingPipeline),
+            patch.object(cli, "WhisperCppTranscriber", lambda **_: object()),
+            patch.object(cli, "build_cleaner", lambda *_, **__: object()),
+            patch("sys.stdin", StringIO("  --verbose flag from the editor  ")),
+            redirect_stdout(StringIO()),
+        ):
+            status = cli._process(args)
+
+        self.assertEqual(status, 0)
+        self.assertEqual(captured["context_text"], "--verbose flag from the editor")
+
+    def test_an_unreadable_selection_is_refused_without_a_traceback(self) -> None:
+        """The selection comes from another application, so it can be undecodable.
+
+        A traceback would end the run by crashing, after the speaker already recorded.
+        """
+        args = self._process_args(
+            mode="transform", cleaner="ollama", context_text_stdin=True
+        )
+
+        class FailingStdin:
+            def read(self) -> str:
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+        stderr = StringIO()
+        with patch("sys.stdin", FailingStdin()), redirect_stderr(stderr):
+            status = cli._process(args)
+
+        self.assertEqual(status, 1)
+        self.assertIn("The highlighted selection could not be read", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_cleanup_failure_copies_safe_fallback_when_requested(self) -> None:
         args = Namespace(
