@@ -47,7 +47,25 @@ class DictationPipeline:
             cleanup_seconds = self._monotonic() - cleanup_started
             mode = getattr(self._cleaner, "mode", "clean")
             if mode == "clean":
-                cleaned = guard_conservative_cleanup(personalized_text, cleaned)
+                # The guard gets its own handler so a rejection is reported as a
+                # rejection. Wrapped in the general one below it was indistinguishable
+                # from the provider being unreachable, and the speaker could not tell
+                # that the sentence, not the network, was what needed to change.
+                try:
+                    cleaned = guard_conservative_cleanup(personalized_text, cleaned)
+                except CleanupFailed:
+                    raise
+                except Exception as exc:
+                    raise CleanupFailed(
+                        f"The conservative guard refused the cleanup: {exc}",
+                        raw_text=raw_text,
+                        fallback_text=fallback,
+                        language=transcript.language,
+                        transcribe_seconds=transcribe_seconds,
+                        cleanup_seconds=cleanup_seconds,
+                        reason="guard",
+                        rejected_text=cleaned,
+                    ) from exc
             elif personalized_text and not cleaned.strip():
                 raise CleanupFailed(
                     f"Cleanup with {self._cleaner.name!r} returned empty text.",

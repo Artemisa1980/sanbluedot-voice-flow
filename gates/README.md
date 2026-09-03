@@ -7,6 +7,11 @@ checkpointed as the run advances, and stays here when the run closes.
 Every run log in this directory has a row here, including a run that was blocked or
 stopped before it audited anything. An unindexed log cannot be told apart from a lost one.
 
+**The row states what the log says, and is written after the log closes.** A row was
+once filled in from what was expected — "NOT RUN" against a gate that had in fact
+completed with a FAIL — and the index then concealed a real finding from anyone who
+trusted it instead of opening the file.
+
 **These are closed runs, not open work.** Their findings were remediated by the author
 in the same work cycle. Read one to learn why a decision was made or whether a defect
 was already raised; never treat an entry as a task, and never re-run a gate because a
@@ -41,3 +46,6 @@ evidence.
 | `audit-python-pipeline-gate.local.md` | 2026-09-02 | Feature 9 close-out · Python snippets and pipeline engine | COMPLETE · FAIL on double snippet expansion and a snippet-store data-loss path; both remediated |
 | `audit-swift-ui-gate.local.md` | 2026-09-02 | Feature 9 close-out · Swift app layer and UI | COMPLETE · CONDITIONAL PASS · 3 findings remediated |
 | `audit-framework-governance-gate.local.md` | 2026-09-02 | Feature 9 close-out · framework, roadmap and governance | COMPLETE · CONDITIONAL PASS · 2 defects and 3 notes remediated |
+| `audit-session2-python-gate.local.md` | 2026-09-02 | Session close · Python engine, practice, export | COMPLETE · FAIL · 1 critical and 2 defects remediated |
+| `audit-session2-swift-ui-gate.local.md` | 2026-09-02 | Session close · Swift app layer and interface | COMPLETE · FAIL · 1 critical and 4 defects remediated |
+| `audit-session2-docs-gate.local.md` | 2026-09-02 | Session close · framework, design system, acceptance | COMPLETE · FAIL · 2 blocking and 3 non-blocking findings remediated |

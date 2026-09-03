@@ -32,7 +32,12 @@ from .memory import (
     export_memory,
     load_vocabulary,
 )
-from .practice import PracticeStore, compare, record, recovered_words
+from .practice import (
+    PracticeStore,
+    compare,
+    record,
+    recovered_words,
+)
 from .pipeline import DictationPipeline
 from .snippets import Snippet, SnippetStore
 from .transcribers import WhisperCppTranscriber
@@ -293,11 +298,15 @@ def _forget(args: argparse.Namespace) -> int:
 
 def _export(args: argparse.Namespace) -> int:
     try:
-        written = export_memory(args.to)
+        written, counts = export_memory(args.to)
     except OSError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     print(f"Exported to {written}. Audio is not included; copy it separately.")
+    # Name what left the machine. Distillation pairs are the speaker's own sentences,
+    # and an export that carries them without saying so is not a choice they made.
+    for section, count in counts.items():
+        print(f"  {section.replace('_', ' ')}: {count}")
     return 0
 
 
@@ -335,6 +344,14 @@ def _practice(args: argparse.Namespace) -> int:
     if not reference:
         print("Give the text to read with --text or --text-file.", file=sys.stderr)
         return 1
+
+    # Remove any take a previous run reserved and never indexed, before reserving one
+    # more. Those are recordings of the speaker that nothing can list or delete. The
+    # store does the reading and the sweeping under one lock, and leaves alone anything
+    # young enough to still be recording: sweeping those destroyed a live take.
+    stranded = store.sweep_orphans()
+    for path in stranded:
+        print(f"Removed a stranded recording from an interrupted run: {path.name}")
 
     print(f"\nRead this aloud:\n\n  {reference}\n")
     audio = store.next_audio_path()
@@ -453,6 +470,8 @@ def _process(args: argparse.Namespace) -> int:
                         "language": exc.language,
                         "cleaner": args.cleaner,
                         "used_fallback": True,
+                        "fallback_reason": exc.reason,
+                        "rejected_text": exc.rejected_text,
                         "timings": _timings(
                             exc.transcribe_seconds, exc.cleanup_seconds
                         ),

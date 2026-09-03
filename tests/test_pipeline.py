@@ -139,5 +139,46 @@ class PipelineTimingTests(unittest.TestCase):
         self.assertAlmostEqual(raised.exception.cleanup_seconds, 45.0)
 
 
+class FallbackReasonTests(unittest.TestCase):
+    """Which side refused is reported, because the two call for opposite responses.
+
+    A guard rejection means the sentence was restructured too far to be verified, and a
+    provider failure means the request never came back. Reporting both as "safe
+    fallback" left the speaker unable to tell that shortening the sentence was the fix.
+    """
+
+    def test_a_guard_rejection_is_named_as_one(self) -> None:
+        # The cleanup invents a word the speaker never said, which the conservative
+        # guard refuses. The provider itself answered perfectly well.
+        cleaner = FakeCleaner(result="hello beautiful world")
+        pipeline = DictationPipeline(FakeTranscriber("hello world", "en"), cleaner)
+
+        with self.assertRaises(CleanupFailed) as raised:
+            pipeline.process(Path("unused.wav"))
+
+        self.assertEqual(raised.exception.reason, "guard")
+        self.assertEqual(raised.exception.fallback_text, "hello world")
+        # The refused text is kept. Discarding it unseen is what left the speaker with
+        # no way to judge a rejection made on their behalf.
+        self.assertEqual(raised.exception.rejected_text, "hello beautiful world")
+
+    def test_a_provider_failure_is_named_as_one(self) -> None:
+        cleaner = FakeCleaner(error=RuntimeError("the provider is unreachable"))
+        pipeline = DictationPipeline(FakeTranscriber("hello world", "en"), cleaner)
+
+        with self.assertRaises(CleanupFailed) as raised:
+            pipeline.process(Path("unused.wav"))
+
+        self.assertEqual(raised.exception.reason, "provider")
+        # Nothing came back, so there is nothing to offer.
+        self.assertIsNone(raised.exception.rejected_text)
+
+    def test_the_default_reason_never_blames_the_speaker(self) -> None:
+        # An unspecified failure is the provider's, not the sentence's. Defaulting the
+        # other way would tell the speaker to rewrite a sentence that was fine.
+        failure = CleanupFailed("something went wrong", raw_text="hola")
+        self.assertEqual(failure.reason, "provider")
+
+
 if __name__ == "__main__":
     unittest.main()

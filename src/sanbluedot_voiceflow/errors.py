@@ -25,8 +25,19 @@ class CleanupFailed(CleanupError):
         language: str | None = None,
         transcribe_seconds: float | None = None,
         cleanup_seconds: float | None = None,
+        reason: str = "provider",
+        rejected_text: str | None = None,
     ) -> None:
         super().__init__(message)
+        # Which side refused: "guard" when the conservative output guard rejected a
+        # cleanup the provider did return, "provider" when the provider itself failed.
+        # The two look identical to the speaker otherwise, and they call for opposite
+        # responses: one says shorten the sentence, the other says wait or go local.
+        self.reason = reason
+        # What the provider actually returned when the guard refused it. Discarding it
+        # unseen left the speaker with no way to judge a rejection they never saw, and
+        # no way to take a cleanup that was in fact fine.
+        self.rejected_text = rejected_text
         self.raw_text = raw_text
         self.fallback_text = raw_text if fallback_text is None else fallback_text
         self.language = language

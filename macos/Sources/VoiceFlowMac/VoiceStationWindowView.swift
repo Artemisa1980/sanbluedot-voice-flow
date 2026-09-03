@@ -29,6 +29,21 @@ public enum VoiceStationTokens {
     public static let working = Color(red: 0xD9 / 255.0, green: 0x8A / 255.0, blue: 0x2B / 255.0) // #D98A2B Amber-deep
     public static let rec = Color(red: 0xFF / 255.0, green: 0x7B / 255.0, blue: 0x6B / 255.0) // #FF7B6B Coral
 
+    // Console badge palette. These are not brand colours and are not used on the mint
+    // canvas: they exist to tell eight log categories apart at 7pt on the dark olive
+    // console ground, where the brand's own family collapses into two readable hues.
+    // Approved by the owner on 2026-09-02, after they had already shipped as literals.
+    public static let logAction = Color(red: 0xF3 / 255.0, green: 0x9C / 255.0, blue: 0x12 / 255.0) // #F39C12 Amber-orange
+    public static let logSnippet = Color(red: 0xA7 / 255.0, green: 0x8B / 255.0, blue: 0xFA / 255.0) // #A78BFA Violet
+    public static let logPaste = Color(red: 0x2E / 255.0, green: 0xCC / 255.0, blue: 0x71 / 255.0) // #2ECC71 Emerald
+
+    /// The lit half of the microphone's radial gradient, one step above navy.
+    public static let micHighlight = Color(red: 0x2C / 255.0, green: 0x3A / 255.0, blue: 0x63 / 255.0) // #2C3A63
+
+    /// On-air red. Hotter than the coral `rec`, and used only where a recording is
+    /// live: the meter's last bars and the floating capsule's badge.
+    public static let onAir = Color(red: 0xFF / 255.0, green: 0x45 / 255.0, blue: 0x3B / 255.0) // #FF453B
+
     /// The version the badge shows, read from the bundle so the badge and
     /// `CFBundleShortVersionString` cannot drift apart again. A `swift run` of the
     /// target has no bundle version, and falls back to the unpackaged label.
@@ -49,24 +64,17 @@ public enum VoiceStationTokens {
 }
 
 // MARK: - Log Category
-public enum LogCategory: String, CaseIterable, Sendable {
-    case stt = "WHISPER"
-    case gemini = "GEMINI"
-    case ollama = "OLLAMA"
-    case action = "ACTION"
-    case snippet = "SNIPPET"
-    case paste = "PASTE"
-    case system = "SYS"
-    case warn = "WARN"
-
+// `LogCategory` itself lives in `VoiceFlowMacCore`, where a check can reach the rule
+// that assigns it. Only its colour belongs to the view.
+extension LogCategory {
     public var badgeColor: Color {
         switch self {
         case .stt: return VoiceStationTokens.dotBlue
         case .gemini: return VoiceStationTokens.gold
         case .ollama: return VoiceStationTokens.appBg
-        case .action: return Color(red: 0xF3 / 255.0, green: 0x9C / 255.0, blue: 0x12 / 255.0) // #F39C12 Orange
-        case .snippet: return Color(red: 0xA7 / 255.0, green: 0x8B / 255.0, blue: 0xFA / 255.0) // #A78BFA Purple
-        case .paste: return Color(red: 0x2E / 255.0, green: 0xCC / 255.0, blue: 0x71 / 255.0) // #2ECC71 Green
+        case .action: return VoiceStationTokens.logAction
+        case .snippet: return VoiceStationTokens.logSnippet
+        case .paste: return VoiceStationTokens.logPaste
         case .system: return VoiceStationTokens.panelHeader
         case .warn: return VoiceStationTokens.danger
         }
@@ -81,6 +89,9 @@ public enum ConsoleFilterMode: String, CaseIterable, Sendable {
     case actions = "ACTIONS"
     case snippets = "SNIPPETS"
     case system = "SYSTEM"
+    /// Warnings and failures, which used to sit inside SYSTEM among the routine lines.
+    /// One failure among thirty "recording started…" entries is a failure nobody sees.
+    case errors = "ERRORS"
 }
 
 // MARK: - Activity Log Item
@@ -199,6 +210,21 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var shortcutName: String = "Fn/Globe"
     @Published public var selectedCleaner: CleanerMode = .literal
     @Published public var selectedMode: ProcessingMode = .clean
+    /// A way out that does not need a keyboard permission.
+    ///
+    /// Escape reaches the controller through the global event tap, which requires Input
+    /// Monitoring. The app supports a speaker who never granted it and dictates with the
+    /// button below, and that speaker had no way to take a recording back anywhere.
+    public var onCancelRecording: (() -> Void)?
+
+    /// Which engine's information sheet is open, if any. One at a time.
+    @Published public var engineInfoShown: CleanerMode? = nil
+    /// A cleanup the guard refused, kept until the speaker decides. The guard cannot
+    /// prove a restructured sentence still means the same thing, but the speaker can
+    /// read it, so the choice is offered instead of made for them.
+    @Published public var rejectedCleanup: String? = nil
+    public var onAcceptRejectedCleanup: ((String) -> Void)?
+    public var onDismissRejectedCleanup: (() -> Void)?
     @Published public var selectedGeminiModel: GeminiModel = .preferredDefault
     @Published public var hasKey: Bool = false
     @Published public var isRecording: Bool = false
@@ -270,29 +296,9 @@ public final class VoiceStationViewModel: ObservableObject {
         tags: [String] = [],
         isHighlight: Bool = false
     ) {
-        let autoCategory: LogCategory
-        if category != .system {
-            autoCategory = category
-        } else {
-            let lower = message.lowercased()
-            if lower.contains("whisper") || lower.contains("heard") {
-                autoCategory = .stt
-            } else if lower.contains("gemini") {
-                autoCategory = .gemini
-            } else if lower.contains("ollama") {
-                autoCategory = .ollama
-            } else if lower.contains("action") || lower.contains("executed") {
-                autoCategory = .action
-            } else if lower.contains("snippet") || lower.contains("expanded") {
-                autoCategory = .snippet
-            } else if lower.contains("pasted") || lower.contains("cmd+v") || lower.contains("copied") {
-                autoCategory = .paste
-            } else if lower.contains("failed") || lower.contains("error") || lower.contains("warn") {
-                autoCategory = .warn
-            } else {
-                autoCategory = .system
-            }
-        }
+        let autoCategory = category != .system
+            ? category
+            : LogCategory.inferred(from: message)
 
         activityLogs.append(ActivityLogItem(
             message: message,
@@ -459,6 +465,31 @@ public struct VoiceStationWindowView: View {
 
     /// ON AIR while recording, READY otherwise. A filled pill with a navy hairline,
     /// because no status colour reaches 4.5 as bare ink on the mint canvas.
+    /// Take back the recording. Beside the badge, and only while there is something to
+    /// take back — Escape does the same thing but only for a speaker who granted Input
+    /// Monitoring, and that is not everyone.
+    private var cancelRecordingButton: some View {
+        Button(action: { viewModel.onCancelRecording?() }) {
+            HStack(spacing: 4) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .heavy))
+                Text("CANCEL")
+                    .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                    .tracking(1.0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(VoiceStationTokens.panelBg)
+            .foregroundColor(VoiceStationTokens.navy)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(VoiceStationTokens.navy, lineWidth: 2))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .voiceFlowNoFocusRing()
+        .help("Discard this recording. Escape does the same.")
+    }
+
     private var onAirBadge: some View {
         HStack(spacing: 7) {
             Circle()
@@ -505,7 +536,7 @@ public struct VoiceStationWindowView: View {
                 .fill(
                     RadialGradient(
                         colors: [
-                            Color(red: 0x2C / 255.0, green: 0x3A / 255.0, blue: 0x63 / 255.0),
+                            VoiceStationTokens.micHighlight,
                             VoiceStationTokens.navy
                         ],
                         center: UnitPoint(x: 0.5, y: 0.38),
@@ -794,6 +825,93 @@ public struct VoiceStationWindowView: View {
         .frame(width: 26, height: 10)
     }
 
+    /// The cleanup the guard would not accept, put in front of the speaker.
+    ///
+    /// The guard cannot prove that a restructured sentence still means what was said,
+    /// and it is right not to guess. But throwing the text away unseen meant a good
+    /// cleanup was lost four times in ten with nothing shown for it. The speaker can
+    /// read a sentence, so the refusal becomes a question instead of a verdict.
+    private func rejectedCleanupCard(_ rejected: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(VoiceStationTokens.working)
+                    .frame(width: 8, height: 8)
+                Text("CLEANUP HELD BACK")
+                    .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                    .foregroundColor(VoiceStationTokens.navy)
+            }
+
+            Text("It rewrote more than the guard can verify. Read it and decide.")
+                .font(VoiceStationTokens.mono(size: 8))
+                .foregroundColor(VoiceStationTokens.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                Text(rejected)
+                    .font(VoiceStationTokens.mono(size: 9.5))
+                    .foregroundColor(VoiceStationTokens.navy)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxHeight: 96)
+            .padding(8)
+            .background(VoiceStationTokens.inputCream)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(VoiceStationTokens.navy.opacity(0.5), lineWidth: 1)
+            )
+
+            HStack(spacing: 7) {
+                Button(action: { viewModel.onAcceptRejectedCleanup?(rejected) }) {
+                    Text("USE THIS")
+                        .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(VoiceStationTokens.navy)
+                        .foregroundColor(VoiceStationTokens.gold)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(VoiceStationTokens.navy, lineWidth: 1.5)
+                        )
+                        .retroExtrusion(radius: 6, offset: 2, color: VoiceStationTokens.controlDangerBg)
+                }
+                .buttonStyle(.plain)
+                .voiceFlowNoFocusRing()
+
+                Button(action: { viewModel.onDismissRejectedCleanup?() }) {
+                    Text("KEEP MINE")
+                        .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(VoiceStationTokens.panelBg)
+                        .foregroundColor(VoiceStationTokens.navy)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(VoiceStationTokens.navy, lineWidth: 1.5)
+                        )
+                        .retroExtrusion(radius: 6, offset: 2)
+                }
+                .buttonStyle(.plain)
+                .voiceFlowNoFocusRing()
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VoiceStationTokens.headerBtnAmber)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(VoiceStationTokens.navy, lineWidth: 2)
+        )
+        .retroExtrusion(radius: 10, offset: 3)
+    }
+
     // MARK: - Patch Bay
 
     /// The chain is also the control: the engine and, for a cloud provider, the model
@@ -806,7 +924,8 @@ public struct VoiceStationWindowView: View {
                     patchOption(
                         title: cleaner.displayName,
                         detail: nil,
-                        isOn: viewModel.selectedCleaner == cleaner
+                        isOn: viewModel.selectedCleaner == cleaner,
+                        info: cleaner
                     ) {
                         guard viewModel.isSelectionEnabled else { return }
                         viewModel.selectedCleaner = cleaner
@@ -841,56 +960,144 @@ public struct VoiceStationWindowView: View {
         .retroExtrusion(radius: 10, offset: 3)
     }
 
+    /// One engine option: a lamp, its name, and the `?` that explains it.
+    ///
+    /// The two are siblings inside one visual slab rather than a button inside a button.
+    /// The mark sits in the space the name already left empty, so asking a question costs
+    /// the row no width, and pressing it cannot change where the speaker's words go.
     private func patchOption(
         title: String,
         detail: String?,
         isOn: Bool,
+        info: CleanerMode? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(isOn ? VoiceStationTokens.ok : VoiceStationTokens.navy.opacity(0.16))
-                    .frame(width: 8, height: 8)
-                    .overlay(
-                        Circle().stroke(
-                            isOn ? VoiceStationTokens.panelBg : VoiceStationTokens.navy,
-                            lineWidth: 1.5
+        HStack(spacing: 6) {
+            Button(action: action) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isOn ? VoiceStationTokens.ok : VoiceStationTokens.navy.opacity(0.16))
+                        .frame(width: 8, height: 8)
+                        .overlay(
+                            Circle().stroke(
+                                isOn ? VoiceStationTokens.panelBg : VoiceStationTokens.navy,
+                                lineWidth: 1.5
+                            )
                         )
-                    )
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(title)
-                        .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
-                        .lineLimit(1)
-                    if let detail {
-                        Text(detail)
-                            .font(VoiceStationTokens.mono(size: 7.5))
-                            .opacity(0.65)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(title)
+                            .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
                             .lineLimit(1)
+                        if let detail {
+                            Text(detail)
+                                .font(VoiceStationTokens.mono(size: 7.5))
+                                .opacity(0.65)
+                                .lineLimit(1)
+                        }
                     }
-                }
 
-                Spacer(minLength: 0)
+                    // The spacer belongs INSIDE the button. Outside it, the button
+                    // shrinks to the width of its own text and the empty half of the
+                    // slab stops selecting the engine — which is exactly what happened
+                    // when the mark was moved to the border and this went with it.
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity)
-            .background(isOn ? VoiceStationTokens.navy : VoiceStationTokens.panelBg)
-            .foregroundColor(isOn ? VoiceStationTokens.panelBg : VoiceStationTokens.navy)
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(VoiceStationTokens.navy, lineWidth: 1.5)
-            )
-            .retroExtrusion(
-                radius: 7,
-                offset: isOn ? 3 : 2,
-                color: isOn ? VoiceStationTokens.controlDangerBg : VoiceStationTokens.navy
-            )
+            .buttonStyle(.plain)
+            .voiceFlowNoFocusRing()
+
+            // Against the slab's right border. It drifts from the name as the window
+            // grows, and the owner chose that over the ragged column the alternative
+            // produced: the three marks line up, which is what makes the row read as
+            // one control rather than three.
+            if let info {
+                engineInfoMark(for: info, onDark: isOn)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
+        .background(isOn ? VoiceStationTokens.navy : VoiceStationTokens.panelBg)
+        .foregroundColor(isOn ? VoiceStationTokens.panelBg : VoiceStationTokens.navy)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(VoiceStationTokens.navy, lineWidth: 1.5)
+        )
+        .retroExtrusion(
+            radius: 7,
+            offset: isOn ? 3 : 2,
+            color: isOn ? VoiceStationTokens.controlDangerBg : VoiceStationTokens.navy
+        )
+    }
+
+    /// The `?` inside an engine slab. It carries the opposite fill of the slab it sits
+    /// in — navy on paper, gold on navy — so one rule keeps it legible in both states,
+    /// and it stays flat: a slab inside a slab reads as noise at this size.
+    private func engineInfoMark(for cleaner: CleanerMode, onDark: Bool) -> some View {
+        Button(action: {
+            viewModel.engineInfoShown = viewModel.engineInfoShown == cleaner ? nil : cleaner
+        }) {
+            Text("?")
+                .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                .frame(width: 15, height: 15)
+                .background(onDark ? VoiceStationTokens.gold : VoiceStationTokens.navy)
+                .foregroundColor(onDark ? VoiceStationTokens.navy : VoiceStationTokens.panelBg)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .voiceFlowNoFocusRing()
+        .help("What this engine costs and delivers")
+        .popover(
+            isPresented: Binding(
+                get: { viewModel.engineInfoShown == cleaner },
+                set: { shown in viewModel.engineInfoShown = shown ? cleaner : nil }
+            ),
+            arrowEdge: .bottom
+        ) {
+            engineInfoSheet(for: cleaner)
+        }
+    }
+
+    /// Measured facts only. A panel built to help someone decide is the worst place for
+    /// a number nobody measured, so an engine with no measurement says that instead.
+    private func engineInfoSheet(for cleaner: CleanerMode) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(cleaner.displayName.uppercased())
+                .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                .foregroundColor(VoiceStationTokens.gold)
+
+            ForEach(cleaner.facts, id: \.label) { fact in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(fact.label)
+                        .font(VoiceStationTokens.mono(size: 7, weight: .bold))
+                        .foregroundColor(VoiceStationTokens.gold.opacity(0.55))
+                    Text(fact.value)
+                        .font(VoiceStationTokens.mono(size: 9))
+                        .foregroundColor(VoiceStationTokens.inputCream)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider().overlay(VoiceStationTokens.gold.opacity(0.25))
+
+            Text(cleaner.recommendation)
+                .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                .foregroundColor(VoiceStationTokens.inputCream)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let measured = cleaner.factsMeasuredOn {
+                Text("measured \(measured) · nothing re-measures")
+                    .font(VoiceStationTokens.mono(size: 7))
+                    .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+            }
+        }
+        .padding(14)
+        .frame(width: 290, alignment: .leading)
+        .background(VoiceStationTokens.consoleBg)
     }
 
     // MARK: - Left Control Card (Light Amber / Paper #F8ECCF)
@@ -903,7 +1110,12 @@ public struct VoiceStationWindowView: View {
                     // the hold control itself, and the meter under it moves with the
                     // real audio level rather than on a timer.
                     VStack(spacing: 10) {
-                        onAirBadge
+                        HStack(spacing: 8) {
+                            onAirBadge
+                            if viewModel.isRecording {
+                                cancelRecordingButton
+                            }
+                        }
 
                         Button(action: {}) {
                             micCapsule
@@ -942,6 +1154,11 @@ public struct VoiceStationWindowView: View {
                                 modeTile(for: mode)
                             }
                         }
+                    }
+
+                    // A cleanup the guard refused, offered rather than discarded.
+                    if let rejected = viewModel.rejectedCleanup {
+                        rejectedCleanupCard(rejected)
                     }
 
                     // Permissions section (only visible when needed)
@@ -1291,80 +1508,6 @@ public struct VoiceStationWindowView: View {
         .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(VoiceStationTokens.navy, lineWidth: 1))
     }
 
-    /// Pick the cloud model, and say what the engine will do when it is busy.
-    private var cloudModelPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text("CLOUD MODEL")
-                    .font(VoiceStationTokens.mono(size: 9, weight: .bold))
-                    .foregroundColor(VoiceStationTokens.navy)
-
-                Spacer()
-
-                HStack(spacing: 3) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 8, weight: .bold))
-                    Text("auto")
-                        .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                }
-                .foregroundColor(VoiceStationTokens.textMuted)
-            }
-
-            HStack(spacing: 6) {
-                ForEach(GeminiModel.allCases, id: \.self) { model in
-                    Button(action: {
-                        guard viewModel.isSelectionEnabled else { return }
-                        viewModel.selectedGeminiModel = model
-                        viewModel.onGeminiModelSelect?(model)
-                        viewModel.addLog("cloud model: \(model.rawValue)")
-                    }) {
-                        VStack(spacing: 1) {
-                            Text(model.shortName)
-                                .font(VoiceStationTokens.mono(size: 10.5, weight: .bold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                            Text(model.measuredNote)
-                                .font(VoiceStationTokens.mono(size: 7, weight: .regular))
-                                .opacity(0.75)
-                                .lineLimit(1)
-                        }
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
-                        .background(
-                            viewModel.selectedGeminiModel == model
-                                ? VoiceStationTokens.navy : VoiceStationTokens.inputCream
-                        )
-                        .foregroundColor(
-                            viewModel.selectedGeminiModel == model
-                                ? VoiceStationTokens.gold : VoiceStationTokens.navy
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .stroke(VoiceStationTokens.navy, lineWidth: 1.2)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            Text(fallbackHint)
-                .font(VoiceStationTokens.mono(size: 8, weight: .regular))
-                .foregroundColor(VoiceStationTokens.textMuted)
-                .lineLimit(1)
-        }
-        .padding(.top, 4)
-    }
-
-    /// Name the order the engine will actually walk, not a generic promise.
-    private var fallbackHint: String {
-        let rest = GeminiModel.fallbackOrder
-            .filter { $0 != viewModel.selectedGeminiModel }
-            .map(\.shortName)
-            .joined(separator: " → ")
-        return "busy → \(rest) → local transcript"
-    }
-
     private func cleanerButtonLabel(for cleaner: CleanerMode) -> String {
         switch cleaner {
         case .literal: return "Literal (No AI)"
@@ -1380,7 +1523,12 @@ public struct VoiceStationWindowView: View {
         case .ai: return viewModel.activityLogs.filter { $0.category == .gemini || $0.category == .ollama }
         case .actions: return viewModel.activityLogs.filter { $0.category == .action }
         case .snippets: return viewModel.activityLogs.filter { $0.category == .snippet }
-        case .system: return viewModel.activityLogs.filter { $0.category == .system || $0.category == .paste || $0.category == .warn }
+        case .system: return viewModel.activityLogs.filter { $0.category == .system || $0.category == .paste }
+        case .errors:
+            // The chip vanishes when the last warning ages out of the log. Falling back
+            // to everything keeps the console from going blank with no chip to press.
+            let warnings = viewModel.activityLogs.filter { $0.category == .warn }
+            return warnings.isEmpty ? viewModel.activityLogs : warnings
         }
     }
 }
@@ -1606,7 +1754,7 @@ private struct MiniVUMeterView: View {
         } else if index < 10 {
             return VoiceStationTokens.gold
         } else {
-            return Color(red: 0xFF / 255.0, green: 0x45 / 255.0, blue: 0x3B / 255.0)
+            return VoiceStationTokens.onAir
         }
     }
 }
@@ -1680,6 +1828,7 @@ private struct TelemetryHeaderView: View {
             gaugeRow
             if viewModel.selectedCleaner.isCloud {
                 cloudRow
+                cloudMeasurementCaption
             }
         }
         .padding(.horizontal, 8)
@@ -1687,11 +1836,48 @@ private struct TelemetryHeaderView: View {
         .background(Color.black.opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(VoiceStationTokens.gold.opacity(0.2), lineWidth: 1))
-        .onAppear {
-            withAnimation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                isPulsing = true
-            }
+        // The beacon was the one continuous animation here that kept running while the
+        // window was hidden. `repeatForever` does not stop on its own, so it is started
+        // and stopped from the same visibility flag the four TimelineViews already read.
+        .onAppear { setPulse(viewModel.isWindowVisible) }
+        .onChange(of: viewModel.isWindowVisible) { visible in
+            setPulse(visible)
         }
+    }
+
+    private func setPulse(_ running: Bool) {
+        guard running else {
+            withAnimation(.linear(duration: 0)) { isPulsing = false }
+            return
+        }
+        withAnimation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+            isPulsing = true
+        }
+    }
+
+    /// The two facts the model chips cannot carry on their own: when their figures were
+    /// measured, and the order the engine will actually walk when the chosen model is
+    /// busy. The date is there because nothing re-measures, so the numbers above are a
+    /// photograph and should not read as today's ranking.
+    private var cloudMeasurementCaption: some View {
+        HStack(spacing: 4) {
+            Text("measured \(GeminiModel.measurementDate)")
+            Text("·")
+            Text("busy → \(fallbackOrderAfterSelection) → local transcript")
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+        }
+        .font(VoiceStationTokens.mono(size: 7, weight: .regular))
+        .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+    }
+
+    /// Name the order the engine will actually walk, not a generic promise.
+    private var fallbackOrderAfterSelection: String {
+        GeminiModel.fallbackOrder
+            .filter { $0 != viewModel.selectedGeminiModel }
+            .map(\.shortName)
+            .joined(separator: " → ")
     }
 
     private var gaugeRow: some View {
@@ -1866,7 +2052,10 @@ private struct TacticalFilterChipsView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                ForEach(ConsoleFilterMode.allCases, id: \.self) { filter in
+                // ERRORS appears only when there is something in it. Its arrival is
+                // the signal, and the row has no width for a seventh chip that would
+                // read zero almost always.
+                ForEach(visibleFilters, id: \.self) { filter in
                     let count = countFor(filter)
                     Button(action: { selectedFilter = filter }) {
                         Text("\(filter.rawValue)\(count > 0 ? " (\(count))" : "")")
@@ -1889,6 +2078,11 @@ private struct TacticalFilterChipsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Every filter, plus ERRORS only while it holds something.
+    private var visibleFilters: [ConsoleFilterMode] {
+        ConsoleFilterMode.allCases.filter { $0 != .errors || countFor(.errors) > 0 }
+    }
+
     private func countFor(_ filter: ConsoleFilterMode) -> Int {
         switch filter {
         case .all: return logs.count
@@ -1896,7 +2090,8 @@ private struct TacticalFilterChipsView: View {
         case .ai: return logs.filter { $0.category == .gemini || $0.category == .ollama }.count
         case .actions: return logs.filter { $0.category == .action }.count
         case .snippets: return logs.filter { $0.category == .snippet }.count
-        case .system: return logs.filter { $0.category == .system || $0.category == .paste || $0.category == .warn }.count
+        case .system: return logs.filter { $0.category == .system || $0.category == .paste }.count
+        case .errors: return logs.filter { $0.category == .warn }.count
         }
     }
 }

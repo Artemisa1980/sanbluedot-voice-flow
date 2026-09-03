@@ -24,6 +24,10 @@ config.local.*
 *.local.json
 *.local.md
 *.local.txt
+# Whole directories of personal working material, not just single files. The suffix
+# alone matched `x.local.txt` but nothing inside `corpus.local/`, so a directory of
+# practice texts would have been committed.
+*.local/
 *.jsonl
 *-audio/
 practice/

@@ -3,12 +3,15 @@ import unittest
 from urllib.error import HTTPError, URLError
 
 from sanbluedot_voiceflow.cleaners.gemini import (
+    CONTACT_AT_CAPACITY,
+    CONTACT_TIMED_OUT,
     DEFAULT_MODEL,
     DEFAULT_TIMEOUT_SECONDS,
     MODEL_CHAIN,
     MINIMUM_RETRY_BUDGET_SECONDS,
     PER_MODEL_TIMEOUT_SECONDS,
     GeminiCleaner,
+    describe_chain_failure,
     per_model_slice,
     model_chain,
 )
@@ -464,6 +467,42 @@ class ModelChainTests(unittest.TestCase):
         for model in MODEL_CHAIN:
             self.assertIn(model, str(raised.exception))
 
+    def test_the_last_model_timing_out_still_names_what_was_contacted(self) -> None:
+        # Found by the 2026-09-02 gate: this raise site bypassed the record of what the
+        # run contacted, so the message named no model at all — neither the one that
+        # timed out nor the ones that were busy before it.
+        opener = SequenceRecorder([
+            unavailable(), unavailable(),
+            unavailable(), unavailable(),
+            URLError("slow"),
+        ])
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, fallback=True).clean("hola")
+
+        message = str(raised.exception)
+        self.assertIn(MODEL_CHAIN[0], message)
+        self.assertIn(MODEL_CHAIN[2], message)
+        self.assertIn("time budget", message)
+        self.assertIn("capacity", message)
+
+    def test_the_failure_never_calls_an_uncontacted_model_busy(self) -> None:
+        # The budget runs out after the first model, so the other two are never sent
+        # anything. Reporting them as at capacity is a claim about Google's
+        # availability that nothing in this run measured.
+        clock = Clock(step=20.0)
+        opener = SequenceRecorder([unavailable(), reply("Hola."), reply("Hola.")])
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, clock=clock, fallback=True).clean("hola")
+
+        message = str(raised.exception)
+        self.assertEqual(len(opener.requests), 1)
+        self.assertIn("Not contacted", message)
+        for skipped in MODEL_CHAIN[1:]:
+            self.assertNotIn(f"{skipped} was at capacity", message)
+            self.assertIn(skipped, message.split("Not contacted", 1)[1])
+
 
 class PerModelBudgetTests(unittest.TestCase):
     """No single model may spend the whole budget and starve the rest of the chain.
@@ -531,6 +570,49 @@ class PerModelBudgetTests(unittest.TestCase):
             any("Trying" in m for m in announced),
             f"promised a model it never contacted: {announced}",
         )
+
+
+class ChainFailureMessageTests(unittest.TestCase):
+    """The message reports what happened, model by model, and nothing more."""
+
+    def test_one_busy_model_is_named_alone(self) -> None:
+        message = describe_chain_failure([("gemini-3.5-flash", CONTACT_AT_CAPACITY)])
+        self.assertEqual(message, "Gemini is at capacity (gemini-3.5-flash).")
+
+    def test_every_contacted_model_busy_says_so(self) -> None:
+        message = describe_chain_failure(
+            [(model, CONTACT_AT_CAPACITY) for model in MODEL_CHAIN]
+        )
+        self.assertIn("Every Gemini model contacted is at capacity", message)
+        for model in MODEL_CHAIN:
+            self.assertIn(model, message)
+
+    def test_a_slow_model_is_not_called_busy(self) -> None:
+        message = describe_chain_failure([("gemini-3.7-flash", CONTACT_TIMED_OUT)])
+        self.assertIn("time budget", message)
+        self.assertNotIn("capacity", message)
+
+    def test_mixed_reasons_are_reported_per_model(self) -> None:
+        message = describe_chain_failure([
+            ("gemini-3.5-flash", CONTACT_AT_CAPACITY),
+            ("gemini-3.6-flash", CONTACT_TIMED_OUT),
+        ])
+        self.assertIn("gemini-3.5-flash was at capacity", message)
+        self.assertIn("gemini-3.6-flash ran out of the time budget", message)
+
+    def test_skipped_models_are_named_as_skipped(self) -> None:
+        message = describe_chain_failure(
+            [("gemini-3.5-flash", CONTACT_AT_CAPACITY)],
+            skipped=["gemini-3.6-flash", "gemini-3.7-flash"],
+        )
+        head, tail = message.split("Not contacted", 1)
+        self.assertNotIn("gemini-3.6-flash", head)
+        self.assertIn("gemini-3.6-flash", tail)
+        self.assertIn("gemini-3.7-flash", tail)
+
+    def test_contacting_nothing_says_nothing_was_contacted(self) -> None:
+        message = describe_chain_failure([], skipped=list(MODEL_CHAIN))
+        self.assertIn("No Gemini model was contacted", message)
 
 
 if __name__ == "__main__":

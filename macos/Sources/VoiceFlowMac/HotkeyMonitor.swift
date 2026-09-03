@@ -18,6 +18,7 @@ final class HotkeyMonitor {
     private let onPressed: () -> Void
     private let onReleased: () -> Void
     private let onModeCycle: () -> Void
+    private let onCancel: () -> Void
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var keyIsDown = false
@@ -27,7 +28,8 @@ final class HotkeyMonitor {
         modeShortcut: Shortcut? = nil,
         onPressed: @escaping () -> Void,
         onReleased: @escaping () -> Void,
-        onModeCycle: @escaping () -> Void = {}
+        onModeCycle: @escaping () -> Void = {},
+        onCancel: @escaping () -> Void = {}
     ) {
         self.shortcut = shortcut
         // A modifier-only chord is a hold, and the mode switch is a tap. Configuration
@@ -38,7 +40,12 @@ final class HotkeyMonitor {
         self.onPressed = onPressed
         self.onReleased = onReleased
         self.onModeCycle = onModeCycle
+        self.onCancel = onCancel
     }
+
+    /// Escape, pressed on its own. The controller ignores it unless a recording is
+    /// running, so the key keeps its ordinary meaning everywhere else.
+    private static let escapeKeyCode: UInt16 = 53
 
     func start() throws {
         let eventMask = (CGEventMask(1) << CGEventType.keyDown.rawValue)
@@ -100,6 +107,11 @@ final class HotkeyMonitor {
         // reach a check placed after it.
         if type == .keyDown, cycleModeRequested(event) {
             onModeCycle()
+            return Unmanaged.passUnretained(event)
+        }
+
+        if type == .keyDown, cancelRequested(event) {
+            onCancel()
             return Unmanaged.passUnretained(event)
         }
 
@@ -183,6 +195,14 @@ final class HotkeyMonitor {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         guard keyCode == expectedKey else { return false }
         return flagsMatch(event.flags, modeShortcut.modifiers)
+    }
+
+    /// A bare Escape. A chord that happens to end in Escape carries modifiers, so it is
+    /// not mistaken for this.
+    private func cancelRequested(_ event: CGEvent) -> Bool {
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        guard keyCode == Self.escapeKeyCode else { return false }
+        return flagsMatch(event.flags, [])
     }
 
     private func modifiersMatch(_ flags: CGEventFlags) -> Bool {

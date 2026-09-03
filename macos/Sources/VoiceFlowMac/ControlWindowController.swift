@@ -16,6 +16,9 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     var onCopyRawRecord: ((DictationRecord) -> Void)?
     var onRepasteHistoryRecord: ((DictationRecord) -> Void)?
     var onClearHistory: (() -> Void)?
+    var onCancelRecording: (() -> Void)?
+    var onAcceptRejectedCleanup: ((String) -> Void)?
+    var onDismissRejectedCleanup: (() -> Void)?
     var onAddSnippet: ((String, String, String?) -> Void)?
     var onDeleteSnippet: ((UUID) -> Void)?
 
@@ -54,7 +57,9 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         window.minSize = window.frameRect(
             forContentRect: NSRect(origin: .zero, size: Self.contentFloor)
         ).size
-        window.backgroundColor = NSColor(red: 0x16 / 255.0, green: 0x21 / 255.0, blue: 0x3E / 255.0, alpha: 1.0)
+        // From the token, not a repeat of its value. A window painted with a copy of
+        // navy stays behind on the day the token moves, and nothing fails to warn.
+        window.backgroundColor = NSColor(VoiceStationTokens.navy)
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)
@@ -114,6 +119,11 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     ///
     /// The hold hint used to read a default that nothing ever wrote, so a window launched
     /// with `--shortcut` told the speaker to hold a key the app was not listening for.
+    /// Offer a cleanup the guard refused, or clear the offer.
+    func showRejectedCleanup(_ text: String?) {
+        viewModel.rejectedCleanup = text
+    }
+
     func configureShortcut(name: String) {
         viewModel.shortcutName = name
     }
@@ -198,6 +208,15 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         }
         viewModel.onModeSelect = { [weak self] mode in
             self?.onModeChange?(mode)
+        }
+        viewModel.onCancelRecording = { [weak self] in
+            self?.onCancelRecording?()
+        }
+        viewModel.onAcceptRejectedCleanup = { [weak self] text in
+            self?.onAcceptRejectedCleanup?(text)
+        }
+        viewModel.onDismissRejectedCleanup = { [weak self] in
+            self?.onDismissRejectedCleanup?()
         }
         viewModel.onGeminiModelSelect = { [weak self] model in
             self?.onGeminiModelChange?(model)

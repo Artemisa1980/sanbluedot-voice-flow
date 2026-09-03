@@ -22,7 +22,17 @@ against the same recordings rather than against a fresh, incomparable set.
 | `phase-2-acceptance.md` | Gate 2 — macOS push-to-talk: 20 recordings, latency, word error rate, clipboard delivery | PASS 2026-08-29 |
 | `phase-3-acceptance.md` | Gate 3 — correction memory, with control items that must not move | PASS 2026-08-29 |
 | `phase-4-acceptance.md` | Gate 4 — cloud cleanup: privacy boundary, fallback, output guard, corpus quality | PASS 2026-08-31 |
+| `phase-6-acceptance.local.md` | Gate 6 — pronunciation practice: recording, word-level report, deletability, formatting separated | PASS 2026-09-02 · local |
 
-Gate 5 (Windows) has no file yet: the Windows machine is still unnamed. Gate 6
-(pronunciation practice) is implemented and untested against a live session, so it has
-no acceptance record either.
+Gate 5 (Windows) has no file yet: the Windows machine is still unnamed.
+
+## What stays out of version control
+
+A gate whose evidence is the owner's own speech keeps its record local and is named
+`*.local.md`, with its reading corpus in a `*.local/` directory beside it. Gate 6's
+report names the words the engine did not recover from a live session; that is a record
+of how one person speaks, not a property of the software, and it belongs on the machine
+that produced it. This index carries the verdict, which is what a reader needs.
+
+Gates 2, 3 and 4 measured the engine and are tracked in full. Where their tables quote
+recorded speech, it is corpus material rather than a reading of the owner's voice.

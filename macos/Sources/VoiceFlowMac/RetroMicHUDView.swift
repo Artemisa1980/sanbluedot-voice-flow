@@ -10,6 +10,8 @@ enum HUDMode {
     /// The mode switch was used while nothing was being dictated. The capsule appears
     /// on its own to confirm the new mode, then leaves.
     case modeChanged(ProcessingMode)
+    /// The speaker took the recording back with Escape. Nothing was pasted or kept.
+    case cancelled
 
     /// A stable name for the current state, used as the animation value so the capsule
     /// morphs between states instead of cutting.
@@ -21,6 +23,7 @@ enum HUDMode {
         case .actionExecuted: return "actionExecuted"
         case .failed: return "failed"
         case .modeChanged(let mode): return "modeChanged.\(mode.rawValue)"
+        case .cancelled: return "cancelled"
         }
     }
 }
@@ -40,10 +43,16 @@ struct RetroMicHUDView: View {
     @ObservedObject var viewModel: HUDViewModel
     
     // sanblue brand colors
-    private let skyBlue = Color(red: 0x7C / 255.0, green: 0xB3 / 255.0, blue: 0xE8 / 255.0)
-    private let retroNavy = Color(red: 0x16 / 255.0, green: 0x21 / 255.0, blue: 0x3E / 255.0)
-    private let vintageGold = Color(red: 0xEF / 255.0, green: 0xC1 / 255.0, blue: 0x5E / 255.0)
-    private let onAirRed = Color(red: 1.0, green: 0.27, blue: 0.23)
+    private let skyBlue = VoiceStationTokens.dotBlue
+    private let retroNavy = VoiceStationTokens.navy
+    // The brand gold, from the token rather than repeated as a literal. The values
+    // matched, which is exactly why a copy is dangerous: the day the token moves, this
+    // one stays behind and nothing fails.
+    private let vintageGold = VoiceStationTokens.gold
+    // The same #FF453B the station's meter uses, from the one token. It was written
+    // here as 1.0/0.27/0.23 and there as hex — two spellings of one colour, which is
+    // how a palette drifts without anything failing.
+    private let onAirRed = VoiceStationTokens.onAir
 
     var body: some View {
         HStack(spacing: 16) {
@@ -76,18 +85,29 @@ struct RetroMicHUDView: View {
                     
                     Spacer()
                     
-                    // brand.md: the dot is ALWAYS #7CB3E8 and `sanblue` is gold on a
-                    // dark surface. A single-colour lockup loses the one contrast that
-                    // identifies the mark, so the two words are drawn separately here
-                    // exactly as they are in the station window header and footer.
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        Text("sanblue")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(vintageGold.opacity(0.9))
-                        Text("dot")
-                            .font(.system(size: 7, weight: .heavy, design: .monospaced))
-                            .foregroundColor(skyBlue)
-                            .baselineOffset(5)
+                    if isRecording {
+                        // The way out replaces the mark while it exists. The capsule is
+                        // 195pt wide and the badge already names the mode, so the two
+                        // cannot share the row: putting them side by side squeezed the
+                        // mode out and left the speaker reading only "ESC".
+                        Text("ESC ✕")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                            .fixedSize()
+                    } else {
+                        // brand.md: the dot is ALWAYS #7CB3E8 and `sanblue` is gold on a
+                        // dark surface. A single-colour lockup loses the one contrast
+                        // that identifies the mark, so the two words are drawn
+                        // separately here exactly as in the station window.
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
+                            Text("sanblue")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(vintageGold.opacity(0.9))
+                            Text("dot")
+                                .font(.system(size: 7, weight: .heavy, design: .monospaced))
+                                .foregroundColor(skyBlue)
+                                .baselineOffset(5)
+                        }
                     }
                 }
                 
@@ -142,7 +162,7 @@ struct RetroMicHUDView: View {
     static func accent(for mode: ProcessingMode) -> Color {
         switch mode {
         case .clean, .translate, .meeting:
-            return Color(red: 0xEF / 255.0, green: 0xC1 / 255.0, blue: 0x5E / 255.0)
+            return VoiceStationTokens.gold
         case .actions:
             return VoiceStationTokens.rec
         }
@@ -158,9 +178,17 @@ struct RetroMicHUDView: View {
         }
     }
 
+    private var isRecording: Bool {
+        if case .recording = viewModel.mode { return true }
+        return false
+    }
+
     private var glyphName: String {
         if case .modeChanged(let mode) = viewModel.mode {
             return Self.glyph(for: mode)
+        }
+        if case .cancelled = viewModel.mode {
+            return "mic.slash.fill"
         }
         return "mic.fill"
     }
@@ -179,6 +207,8 @@ struct RetroMicHUDView: View {
             return onAirRed
         case .modeChanged(let mode):
             return Self.accent(for: mode)
+        case .cancelled:
+            return VoiceStationTokens.rec
         }
     }
 
@@ -196,34 +226,19 @@ struct RetroMicHUDView: View {
             return onAirRed.opacity(0.8)
         case .modeChanged(let mode):
             return Self.accent(for: mode).opacity(0.7)
+        case .cancelled:
+            return VoiceStationTokens.rec.opacity(0.6)
         }
     }
 
+    // The text itself lives in `HUDBadge`, in the core module, so a check can read what
+    // the speaker reads. This view only places it.
     private var recordingBadgeText: String {
-        switch viewModel.processingMode {
-        case .translate:
-            return "ON AIR • ES➔EN"
-        case .meeting:
-            return "ON AIR • MEETING"
-        case .actions:
-            return "ON AIR • ACTION"
-        case .clean:
-            return "ON AIR"
-        }
+        HUDBadge.recording(mode: viewModel.processingMode)
     }
 
     private var processingBadgeText: String {
-        let provider = viewModel.cleanerName.uppercased()
-        switch viewModel.processingMode {
-        case .translate:
-            return "TRANSLATING (\(provider))"
-        case .meeting:
-            return "STRUCTURING (\(provider))"
-        case .actions:
-            return "PARSING ACTION"
-        case .clean:
-            return "CLEANING (\(provider))"
-        }
+        HUDBadge.processing(mode: viewModel.processingMode, cleanerName: viewModel.cleanerName)
     }
 
     @ViewBuilder
@@ -238,6 +253,7 @@ struct RetroMicHUDView: View {
                 Text(recordingBadgeText)
                     .font(.system(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(onAirRed)
+                    .fixedSize()
             }
         case .processing:
             HStack(spacing: 5) {
@@ -276,7 +292,7 @@ struct RetroMicHUDView: View {
                         .font(.system(size: 8, weight: .heavy, design: .monospaced))
                         .foregroundColor(VoiceStationTokens.rec)
                 } else if let model = viewModel.answeredModel {
-                    Text(Self.shortModelName(model))
+                    Text(HUDBadge.shortModelName(model))
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundColor(vintageGold.opacity(0.85))
                 }
@@ -290,6 +306,15 @@ struct RetroMicHUDView: View {
                     .font(.system(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundColor(onAirRed)
             }
+        case .cancelled:
+            HStack(spacing: 5) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(VoiceStationTokens.rec)
+                Text("CANCELLED")
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundColor(VoiceStationTokens.rec)
+            }
         case .modeChanged(let mode):
             HStack(spacing: 5) {
                 Text("MODE")
@@ -300,14 +325,6 @@ struct RetroMicHUDView: View {
                     .foregroundColor(Self.accent(for: mode))
             }
         }
-    }
-
-    /// `gemini-3.6-flash` reads as `3.6` in a HUD this narrow. The full identifier
-    /// stays in the control window's activity log.
-    static func shortModelName(_ model: String) -> String {
-        model
-            .replacingOccurrences(of: "gemini-", with: "")
-            .replacingOccurrences(of: "-flash", with: "")
     }
 
     /// The mode switch as it appears in the HUD: all four modes at once, so the
@@ -360,6 +377,8 @@ struct RetroMicHUDView: View {
             activeCount = 0
         case .modeChanged:
             // The strip replaces the meter in this state; the bars are never drawn.
+            activeCount = 0
+        case .cancelled:
             activeCount = 0
         }
 

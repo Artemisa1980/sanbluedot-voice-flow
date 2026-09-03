@@ -78,17 +78,8 @@ enum VoiceActionExecutor {
 
         case .openApp(let appName):
             let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let appURLCandidates = [
-                "/Applications/\(appName).app",
-                "/System/Applications/\(appName).app",
-                "/System/Applications/Utilities/\(appName).app",
-                "/System/Library/CoreServices/\(appName).app",
-                "\(home)/Applications/\(appName).app",
-                "/Applications/\(appName.capitalized).app",
-                "/System/Applications/\(appName.capitalized).app",
-                "/System/Library/CoreServices/\(appName.capitalized).app"
-            ]
-            for path in appURLCandidates {
+            // The search order lives in `ApplicationSearch`, where a check can read it.
+            for path in ApplicationSearch.candidatePaths(for: appName, home: home) {
                 let url = URL(fileURLWithPath: path)
                 if FileManager.default.fileExists(atPath: path) {
                     let config = NSWorkspace.OpenConfiguration()

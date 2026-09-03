@@ -1,10 +1,20 @@
 import json
+import os
+import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sanbluedot_voiceflow.practice import PracticeStore, compare, recovered_words
+from sanbluedot_voiceflow.practice import (
+    MAX_TAKE_SECONDS,
+    _is_formatting,
+    PracticeStore,
+    compare,
+    recovered_words,
+    sweep_orphan_takes,
+)
 
 
 def missed(reference: str, heard: str) -> list[tuple[str, str]]:
@@ -74,6 +84,160 @@ class CompoundNumberTests(unittest.TestCase):
 
     def test_a_wrong_number_is_still_a_missed_word(self) -> None:
         self.assertEqual(missed("page twenty five", "page 26"), [("twenty five", "26")])
+
+
+class SymbolFormattingTests(unittest.TestCase):
+    """A symbol the engine writes where the speaker said a word is formatting.
+
+    Found by the Gate 6 acceptance session on 2026-09-02: "twelve percent" written as
+    `12%` and "cuarenta y dos mil dólares" written as `$42,000` were both reported as
+    missed words, telling the speaker they had mispronounced something they said
+    correctly. That is the false signal R8 exists to prevent.
+    """
+
+    def test_a_percent_sign_is_the_word_percent(self) -> None:
+        self.assertEqual(
+            missed(
+                "The forecast assumes a twelve percent margin.",
+                "The forecast assumes a 12% margin.",
+            ),
+            [],
+        )
+
+    def test_spanish_por_ciento_is_the_same_symbol(self) -> None:
+        self.assertEqual(missed("un doce por ciento de margen", "un 12% de margen"), [])
+
+    def test_a_currency_symbol_matches_the_spoken_word(self) -> None:
+        self.assertEqual(
+            missed(
+                "el invoice de cuarenta y dos mil dólares",
+                "el invoice de $42,000",
+            ),
+            [],
+        )
+        self.assertEqual(missed("a forty two thousand dollar invoice", "a $42,000 invoice"), [])
+
+    def test_a_dropped_currency_word_is_still_a_missed_word(self) -> None:
+        # The engine wrote the amount and no currency at all. That is not formatting:
+        # the word the speaker said is simply absent.
+        self.assertEqual(
+            missed("cuarenta y dos mil dólares", "42000"),
+            [("cuarenta y dos mil dólares", "42000")],
+        )
+
+    def test_a_dropped_percent_is_still_a_missed_word(self) -> None:
+        # The aligner reports the whole differing span, so the number comes with it.
+        self.assertEqual(
+            missed("a twelve percent margin", "a 12 margin"),
+            [("twelve percent", "12")],
+        )
+
+    def test_two_amounts_cannot_swap_their_currencies(self) -> None:
+        # Found by the 2026-09-02 gate. Markers were compared as an unordered set and
+        # the amounts were summed across the boundary, so 50+30 matched 30+50 and a
+        # genuinely different sentence was reported as formatting — the one thing R8
+        # says the report must never do.
+        # The aligner reports the two swapped amounts as two differences, which is the
+        # honest answer; what matters is that neither is called formatting.
+        self.assertEqual(
+            missed(
+                "cincuenta dólares y treinta euros",
+                "treinta dólares y cincuenta euros",
+            ),
+            [("cincuenta", "treinta"), ("treinta", "cincuenta")],
+        )
+        # And the whole span, which is what `_is_formatting` sees when the aligner
+        # cannot split it, is not formatting either.
+        self.assertFalse(
+            _is_formatting(
+                ["cincuenta", "dólares", "y", "treinta", "euros"],
+                ["treinta", "dólares", "y", "cincuenta", "euros"],
+            )
+        )
+
+    def test_two_different_currencies_do_not_match(self) -> None:
+        self.assertEqual(
+            missed("cuarenta y dos mil dólares", "€42,000"),
+            [("cuarenta y dos mil dólares", "euros 42 000")],
+        )
+
+
+class OrphanTakeTests(unittest.TestCase):
+    """A reserved recording no session claims is deleted, not left on disk.
+
+    Found on 2026-09-02: a closed terminal left `ffmpeg` holding the microphone for
+    fourteen minutes. The audio it wrote was never indexed, so nothing could list or
+    delete it, which R7 does not allow.
+    """
+
+    def setUp(self) -> None:
+        self.directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, True)
+
+    def _take(self, name: str, age_seconds: float = 0.0) -> Path:
+        path = self.directory / name
+        path.write_bytes(b"\0" * 100)
+        if age_seconds:
+            stamp = time.time() - age_seconds
+            os.utime(path, (stamp, stamp))
+        return path
+
+    def test_a_stranded_take_is_removed(self) -> None:
+        stranded = self._take("001.wav", age_seconds=MAX_TAKE_SECONDS + 60)
+        removed = sweep_orphan_takes(self.directory, indexed=set())
+        self.assertEqual(removed, [stranded])
+        self.assertFalse(stranded.exists())
+
+    def test_a_take_still_being_recorded_is_left_alone(self) -> None:
+        # The dangerous case, found by the 2026-09-02 gate: a second `vf practice`
+        # started while the first is still recording sees the first run's reserved
+        # file, which is not in the index yet either. Deleting it destroys a recording
+        # in progress and the speaker is told the microphone has no permission.
+        # `ffmpeg` writes continuously and caps itself at MAX_TAKE_SECONDS, so nothing
+        # younger than that can be assumed dead.
+        live = self._take("001.wav")
+        self.assertEqual(sweep_orphan_takes(self.directory, indexed=set()), [])
+        self.assertTrue(live.exists())
+
+    def test_a_reserved_but_silent_take_is_swept_once_it_is_old(self) -> None:
+        # Reserved by name, ffmpeg never started, the run died. Nothing can list or
+        # delete it, so it goes — but only after it is too old to be live.
+        reserved = self.directory / "003.wav"
+        reserved.touch()
+        self.assertEqual(sweep_orphan_takes(self.directory, indexed=set()), [])
+        stamp = time.time() - (MAX_TAKE_SECONDS + 1)
+        os.utime(reserved, (stamp, stamp))
+        self.assertEqual(sweep_orphan_takes(self.directory, indexed=set()), [reserved])
+
+    def test_an_indexed_take_is_kept(self) -> None:
+        kept = self._take("002.wav", age_seconds=MAX_TAKE_SECONDS + 60)
+        self.assertEqual(sweep_orphan_takes(self.directory, indexed={2}), [])
+        self.assertTrue(kept.exists())
+
+    def test_other_files_are_never_touched(self) -> None:
+        index = self.directory / "sessions.local.json"
+        index.write_text("{}", encoding="utf-8")
+        note = self.directory / "notes.wav"
+        note.write_bytes(b"\0" * 100)
+        os.utime(note, (0, 0))
+        sweep_orphan_takes(self.directory, indexed=set())
+        self.assertTrue(index.exists())
+        self.assertTrue(note.exists())
+
+    def test_a_missing_directory_is_not_an_error(self) -> None:
+        self.assertEqual(sweep_orphan_takes(self.directory / "gone", set()), [])
+
+    def test_the_store_reads_and_sweeps_under_one_lock(self) -> None:
+        # Reading the index and sweeping as two steps let a second run act on a view
+        # that had already gone stale.
+        store = PracticeStore(self.directory)
+        stranded = self._take("001.wav", age_seconds=MAX_TAKE_SECONDS + 60)
+        self.assertEqual(store.sweep_orphans(), [stranded])
+        self.assertFalse(stranded.exists())
+
+    def test_a_take_is_capped_so_it_cannot_hold_the_microphone(self) -> None:
+        self.assertLessEqual(MAX_TAKE_SECONDS, 600)
+        self.assertGreater(MAX_TAKE_SECONDS, 0)
 
 
 class RecoveredWordsTests(unittest.TestCase):

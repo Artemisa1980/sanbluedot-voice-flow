@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -76,8 +77,31 @@ class Difference:
     kind: Kind
 
 
+# Symbols the engine writes where the speaker said a word. They are stripped by the
+# non-word pass below, so the word behind them is restored first: without this,
+# "twelve percent" written as "12%" loses the "percent" and is reported as a missed
+# word, which tells the speaker they mispronounced something they said correctly.
+_SYMBOL_WORDS = {
+    "%": " percent ",
+    "$": " dollars ",
+    "€": " euros ",
+    "£": " pounds ",
+}
+
+# One canonical token per currency, so the spoken word and the written symbol compare
+# equal across languages.
+_CURRENCY_WORDS = {
+    "dollars": "dollars", "dollar": "dollars", "usd": "dollars",
+    "dolares": "dollars", "dolar": "dollars",
+    "euros": "euros", "euro": "euros", "eur": "euros",
+    "pounds": "pounds", "pound": "pounds", "gbp": "pounds",
+}
+
+
 def _words(text: str) -> list[str]:
     normalized = unicodedata.normalize("NFKC", text).casefold()
+    for symbol, word in _SYMBOL_WORDS.items():
+        normalized = normalized.replace(symbol, word)
     return re.sub(r"[^\w]+", " ", normalized, flags=re.UNICODE).split()
 
 
@@ -153,6 +177,47 @@ def _summed(words: list[str]) -> str:
     return "".join(rendered)
 
 
+def _canonical_currency(word: str) -> str | None:
+    """The canonical name of a currency, or None when the word names no currency."""
+    return _CURRENCY_WORDS.get(_unaccented(word))
+
+
+def _split_currency(words: list[str]) -> tuple[list[str], list[str]]:
+    """Separate currency markers from the rest of a span.
+
+    A symbol precedes the amount and the spoken word follows it — `$42,000` against
+    "cuarenta y dos mil dólares" — so the marker is compared as a marker rather than in
+    place. Everything else keeps its order and is compared normally.
+    """
+    markers: list[str] = []
+    rest: list[str] = []
+    for word in words:
+        canonical = _canonical_currency(word)
+        if canonical is None:
+            rest.append(word)
+        else:
+            markers.append(canonical)
+    return sorted(markers), rest
+
+
+def _percent_collapsed(words: list[str]) -> list[str]:
+    """Read "por ciento" as the one word the symbol expands to."""
+    collapsed: list[str] = []
+    index = 0
+    while index < len(words):
+        if (
+            words[index] == "por"
+            and index + 1 < len(words)
+            and _unaccented(words[index + 1]) == "ciento"
+        ):
+            collapsed.append("percent")
+            index += 2
+            continue
+        collapsed.append(words[index])
+        index += 1
+    return collapsed
+
+
 def _is_formatting(read: list[str], heard: list[str]) -> bool:
     """True when the two sides differ only in numerals, spacing or written accents.
 
@@ -164,10 +229,24 @@ def _is_formatting(read: list[str], heard: list[str]) -> bool:
     Reporting it as a pronunciation problem would be a false signal, and those arrive
     constantly because whisper.cpp drops Spanish accents often.
     """
-    concatenated = _unaccented("".join(_digits(w) for w in read)) == _unaccented(
-        "".join(_digits(w) for w in heard)
+    read_collapsed = _percent_collapsed(read)
+    heard_collapsed = _percent_collapsed(heard)
+    read_markers, read_rest = _split_currency(read_collapsed)
+    heard_markers, heard_rest = _split_currency(heard_collapsed)
+    if read_markers != heard_markers:
+        return False
+    # Taking the markers out of their places is only safe when there is one amount to
+    # pair them with. With two, the pairing carries meaning that the multiset throws
+    # away: "cincuenta dólares y treinta euros" and "treinta dólares y cincuenta euros"
+    # hold the same markers and the same sum, and were reported as mere formatting.
+    if len(read_markers) > 1:
+        read_rest, heard_rest = read_collapsed, heard_collapsed
+    concatenated = _unaccented("".join(_digits(w) for w in read_rest)) == _unaccented(
+        "".join(_digits(w) for w in heard_rest)
     )
-    return concatenated or _unaccented(_summed(read)) == _unaccented(_summed(heard))
+    return concatenated or _unaccented(_summed(read_rest)) == _unaccented(
+        _summed(heard_rest)
+    )
 
 
 def compare(reference: str, heard: str) -> list[Difference]:
@@ -206,13 +285,64 @@ def recovered_words(reference: str, heard: str) -> int:
     return exact + formatted
 
 
-def record(destination: Path, stop: str = "Press Enter to stop recording…") -> Path:
+# No practice take is longer than this. `ffmpeg` enforces it itself, so the microphone
+# closes even when the process that started it never gets to stop it.
+#
+# Found on 2026-09-02: a terminal window was closed while a take was open. The window
+# went away, `ffmpeg` did not, and it held the microphone for fourteen minutes writing
+# 25.8 MB nothing could list or delete. R7 does not allow a recording to outlive the
+# session that asked for it.
+MAX_TAKE_SECONDS = 300
+
+
+def sweep_orphan_takes(
+    directory: Path,
+    indexed: set[int],
+    minimum_age_seconds: float = MAX_TAKE_SECONDS,
+    now: float | None = None,
+) -> list[Path]:
+    """Delete reserved WAV files no session claims, and say which ones went.
+
+    A take is reserved by name before recording starts, so a run that dies between the
+    reservation and the index leaves audio of the speaker with no way to reach it. The
+    next run removes it rather than leaving it on disk forever.
+
+    A take being recorded right now is also unindexed, and deleting one destroys the
+    recording while it is still being made — the speaker then sees "No audio was
+    captured. Grant this terminal Microphone access", a diagnosis with nothing to do
+    with what happened. Age is what separates the two: `ffmpeg` writes continuously and
+    caps itself at `MAX_TAKE_SECONDS`, so a file touched more recently than that may
+    still be live and is left alone, while anything older cannot be.
+    """
+    if not directory.is_dir():
+        return []
+    moment = time.time() if now is None else now
+    removed: list[Path] = []
+    for path in sorted(directory.glob("[0-9][0-9][0-9].wav")):
+        if not path.stem.isdigit() or int(path.stem) in indexed:
+            continue
+        try:
+            if moment - path.stat().st_mtime < minimum_age_seconds:
+                continue
+            path.unlink()
+        except OSError:
+            continue
+        removed.append(path)
+    return removed
+
+
+def record(
+    destination: Path,
+    stop: str = "Press Enter to stop recording…",
+    max_seconds: int = MAX_TAKE_SECONDS,
+) -> Path:
     """Capture one take from the default input until the speaker stops it."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "avfoundation", "-i", ":default",
         "-ar", "16000", "-ac", "1", "-sample_fmt", "s16",
+        "-t", str(max_seconds),
         str(destination),
     ]
     try:
@@ -305,6 +435,17 @@ class PracticeStore:
             seen_ids.add(session_id)
             sessions.append(item)
         return sessions
+
+    def sweep_orphans(self) -> list[Path]:
+        """Read the index and sweep under one lock.
+
+        Reading the index and then sweeping outside it let a second run compute the
+        indexed set before a first run's session was written, and act on a view that
+        was already wrong.
+        """
+        with exclusive_file_lock(self.index):
+            indexed = {int(item["id"]) for item in self.load()}
+            return sweep_orphan_takes(self.directory, indexed)
 
     def next_audio_path(self) -> Path:
         self.directory.mkdir(parents=True, exist_ok=True)

@@ -77,9 +77,14 @@ which stays empty unless distillation recording is switched on.
 ./vf export --to ~/Desktop/voiceflow-memory.json
 ```
 
-`export` satisfies R7 by writing the vocabulary, every confirmed correction and the
-practice history into one portable file, which is how this memory reaches the second
-computer. Audio is excluded; copy recordings deliberately or not at all.
+`export` satisfies R7 by writing every local store into one portable file — vocabulary,
+confirmed corrections, practice history, voice snippets and distillation pairs — which is
+how this memory reaches the second computer. Snippets and pairs were missing from it
+while it claimed to carry everything, so a move lost both without a word.
+
+It prints a count per section, because the pairs are the sentences you spoke and an
+export that carries them without saying so is not a choice you made. Audio is excluded;
+copy recordings deliberately or not at all.
 
 `./vf` is a thin wrapper that sets `PYTHONPATH` and runs the module from the project
 root, so the same commands also work as `PYTHONPATH=src python3 -m sanbluedot_voiceflow …`.
@@ -393,11 +398,16 @@ from the window or the `VF` menu after changing permissions. The window includes
 The window provides one large hold-to-talk button. The default global control is the
 single `Fn/Globe` key:
 
-1. Hold the visible button or `Fn/Globe` while speaking.
-2. Release it to transcribe the recording locally. If Gemini is selected, only the
+1. Hold the visible button or `Fn/Globe` while speaking. The microphone opens half a
+   second after the press, so a hand brushing the key records nothing. Tune it with
+   `--hold-delay SECONDS`, up to 3.
+2. Press `Escape` while recording to take it back: the audio is deleted, nothing is
+   pasted, and no history entry is written. The capsule shows `ESC` while that is
+   available.
+3. Release it to transcribe the recording locally. If Gemini is selected, only the
    resulting transcript text and language hint leave the Mac for cleanup.
-3. Wait for the menu-bar icon to show a check mark.
-4. Paste the copied text with `Command+V` in the intended application.
+4. Wait for the menu-bar icon to show a check mark.
+5. Paste the copied text with `Command+V` in the intended application.
 
 Launch a separate instance with a different supported shortcut when needed:
 

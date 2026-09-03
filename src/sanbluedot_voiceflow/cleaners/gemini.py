@@ -17,7 +17,7 @@ import json
 import sys
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -93,6 +93,54 @@ def per_model_slice(total_seconds: float, chain_length: int) -> float:
     if chain_length <= 1:
         return total_seconds
     return max(MINIMUM_RETRY_BUDGET_SECONDS, total_seconds / chain_length)
+
+
+CONTACT_AT_CAPACITY = "capacity"
+CONTACT_TIMED_OUT = "timed out"
+
+
+def describe_chain_failure(
+    contacted: Sequence[tuple[str, str]],
+    skipped: Sequence[str] = (),
+) -> str:
+    """Say what happened to each model that was actually contacted.
+
+    The message used to list the whole chain, so a model the budget check skipped before
+    any request left this machine was still reported as being at capacity. That is a
+    claim about Google's availability that this code has no evidence for: nothing was
+    ever sent. A skipped model is now named as skipped, and a model that ran out of its
+    slice is named as slow rather than as busy.
+    """
+    if not contacted:
+        if skipped:
+            return (
+                "No Gemini model was contacted before the time budget ran out: "
+                f"{', '.join(skipped)}."
+            )
+        return "No Gemini model was contacted before the time budget ran out."
+
+    reasons = {reason for _, reason in contacted}
+    names = ", ".join(model for model, _ in contacted)
+    if reasons == {CONTACT_AT_CAPACITY}:
+        detail = (
+            f"Gemini is at capacity ({names})." if len(contacted) == 1
+            else f"Every Gemini model contacted is at capacity: {names}."
+        )
+    elif reasons == {CONTACT_TIMED_OUT}:
+        detail = (
+            f"Gemini ran out of the time budget ({names})." if len(contacted) == 1
+            else f"Every Gemini model contacted ran out of the time budget: {names}."
+        )
+    else:
+        parts = "; ".join(
+            f"{model} was at capacity" if reason == CONTACT_AT_CAPACITY
+            else f"{model} ran out of the time budget"
+            for model, reason in contacted
+        )
+        detail = f"Gemini did not answer: {parts}."
+    if skipped:
+        detail += f" Not contacted, no budget left: {', '.join(skipped)}."
+    return detail
 
 
 def _announce_to_stderr(message: str) -> None:
@@ -223,16 +271,22 @@ class GeminiCleaner:
         slice_seconds = per_model_slice(self.timeout_seconds, len(chain))
         last_error: Exception | None = None
 
+        # What was actually sent, and to whom. The failure message is built from this
+        # rather than from the chain, so it can never name a model nothing reached.
+        contacted: list[tuple[str, str]] = []
+        skipped: list[str] = []
+
         for index, model in enumerate(chain):
-            # Announce only after the budget allows the attempt. Naming a model first
-            # and then refusing to contact it is a promise the speaker can see broken.
-            if index and self._monotonic() < deadline - MINIMUM_RETRY_BUDGET_SECONDS:
-                self._announce(f"Trying {model}.")
             if index and self._monotonic() >= deadline - MINIMUM_RETRY_BUDGET_SECONDS:
                 # Too little budget left to be worth another model. Falling back exists
                 # to save the cleanup, not to keep the speaker waiting past the point
                 # where the deterministic transcript is the better answer.
+                skipped = list(chain[index:])
                 break
+            # Announce only after the budget allows the attempt. Naming a model first
+            # and then refusing to contact it is a promise the speaker can see broken.
+            if index:
+                self._announce(f"Trying {model}.")
             request = Request(
                 self._build_url(model), data=body, headers=headers, method="POST"
             )
@@ -248,14 +302,22 @@ class GeminiCleaner:
                 # A model that ran out of its slice is busy, not broken. The next one
                 # gets the remaining budget rather than the speaker getting nothing.
                 last_error = exc.cause
+                contacted.append((model, CONTACT_TIMED_OUT))
                 if is_last:
-                    raise CleanupError(f"Gemini request failed: {exc.cause}") from exc.cause
+                    # The last model's timeout used to raise straight past the record of
+                    # what this run contacted, so the speaker was told "Gemini request
+                    # failed" and no model was named — not the one that just timed out,
+                    # nor the ones that were busy before it.
+                    raise CleanupError(
+                        describe_chain_failure(contacted, skipped)
+                    ) from exc.cause
                 self._announce(f"{model} ran out of its share of the time budget.")
                 continue
             except _TransientProvider as exc:
                 # Report only what happened. Naming the next model here would promise a
                 # request the budget check at the top of the loop may refuse to make.
                 last_error = exc.cause
+                contacted.append((model, CONTACT_AT_CAPACITY))
                 self._announce(f"{model} is at capacity ({exc.status}).")
                 continue
             self.answered_with = model
@@ -263,11 +325,7 @@ class GeminiCleaner:
 
         if last_error is None:
             raise CleanupError("Gemini had no time left to answer.")
-        tried = ", ".join(chain)
-        raise CleanupError(
-            f"Gemini is at capacity ({tried})." if len(chain) == 1
-            else f"Every Gemini model is at capacity: {tried}."
-        ) from last_error
+        raise CleanupError(describe_chain_failure(contacted, skipped)) from last_error
 
     def _send(self, request: Request, deadline: float, hard_deadline: float) -> str:
         """Post one model's request, retrying a transient status within the budget.

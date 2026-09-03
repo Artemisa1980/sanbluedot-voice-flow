@@ -16,6 +16,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
     case invalidShortcut(String)
     case shortcutConflict(String)
     case modifierOnlyModeShortcut(String)
+    case invalidHoldDelay(String)
 
     public var errorDescription: String? {
         switch self {
@@ -33,6 +34,8 @@ public enum ConfigurationError: LocalizedError, Equatable {
             return "Invalid shortcut: \(shortcut). Use fn alone or a modifier plus a supported key."
         case .shortcutConflict(let shortcut):
             return "\(shortcut) is already the push-to-talk shortcut. Give --mode-shortcut a different chord."
+        case .invalidHoldDelay(let value):
+            return "Invalid hold delay: \(value). Give a number of seconds between 0 and 3."
         case .modifierOnlyModeShortcut(let shortcut):
             return "\(shortcut) is a modifier by itself. The mode switch is tapped, not held, "
                 + "so --mode-shortcut needs a modifier plus a key, such as control+option+m."
@@ -113,6 +116,14 @@ public enum GeminiModel: String, CaseIterable, Sendable {
         case .flash35: return "3.5"
         }
     }
+
+    /// When the figures below were taken.
+    ///
+    /// Shown beside them because nothing re-measures: the numbers are a photograph, and
+    /// a picker that presents a dated measurement as a current fact recommends a model
+    /// that may no longer be the one that answers. Re-measure with
+    /// `scripts/cleaner_gate.py --cleaner gemini` and update this date with the figures.
+    public static let measurementDate = "2026-08-31"
 
     /// Delivery measured on 2026-08-31, interleaved, identical output quality.
     /// Shown in the window so the choice is informed rather than a guess.
@@ -293,6 +304,15 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
     /// The chord that advances the processing mode from the HUD, without opening the
     /// station window. Tapped rather than held: it is a switch, not a trigger.
     public let modeShortcut: Shortcut
+    /// How long the trigger must be held before the microphone opens.
+    ///
+    /// The Fn key sits where a hand rests, and a brush against it used to open the
+    /// microphone and record a dictation of nothing — one such take reached the history
+    /// as a single full stop. Anything shorter than this never starts the recorder, so
+    /// an accidental touch costs no recording and no indicator light. The cost is the
+    /// speech in that window, which is why the default is short: nobody speaks in the
+    /// first half second of pressing a key.
+    public let holdDelaySeconds: TimeInterval
     public let acceptanceLog: URL?
 
     public static func parse(
@@ -310,6 +330,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
         var geminiModel = "gemini-3.5-flash"
         var shortcut = try Shortcut(specification: "fn")
         var modeShortcut = try Shortcut(specification: "control+option+m")
+        var holdDelaySeconds: TimeInterval = 0.5
         var acceptanceLogValue: String?
 
         var index = 0
@@ -352,6 +373,11 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
                 shortcut = try Shortcut(specification: value)
             case "--mode-shortcut":
                 modeShortcut = try Shortcut(specification: value)
+            case "--hold-delay":
+                guard let parsed = TimeInterval(value), parsed >= 0, parsed <= 3 else {
+                    throw ConfigurationError.invalidHoldDelay(value)
+                }
+                holdDelaySeconds = parsed
             case "--acceptance-log":
                 acceptanceLogValue = value
             default:
@@ -397,6 +423,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
             geminiModel: geminiModel,
             shortcut: shortcut,
             modeShortcut: modeShortcut,
+            holdDelaySeconds: holdDelaySeconds,
             acceptanceLog: acceptanceLog
         )
     }
@@ -416,6 +443,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
       --gemini-model NAME    Gemini model; defaults to gemini-3.5-flash.
       --shortcut CHORD       Defaults to fn (the Fn/Globe key alone).
       --mode-shortcut CHORD  Cycles the mode from the HUD; defaults to control+option+m.
+      --hold-delay SECONDS   Hold before the microphone opens; defaults to 0.5, max 3.
       --acceptance-log PATH  Append private Phase 2 results as JSON Lines.
     """
 

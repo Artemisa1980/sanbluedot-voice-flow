@@ -15,6 +15,49 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
     guard condition() else { throw CheckFailure.failed(message) }
 }
 
+/// Every source file that draws the interface, with the token declaration removed.
+///
+/// A colour written as a literal beside the view that uses it is a copy of a token that
+/// no longer moves with it. Four had already drifted this way — the gold, the dot blue,
+/// the navy twice — with identical values, which is precisely why nothing failed.
+func interfaceSourcesWithoutTokenDeclarations() throws -> [(String, String)] {
+    let macos = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    // Every file in the target, not a hand-kept list. A list of three covered three of
+    // fourteen: a colour written in any of the other eleven passed unseen, while the
+    // check reported that the interface was clean.
+    let sources = macos.appendingPathComponent("Sources/VoiceFlowMac")
+    guard let found = try? FileManager.default.contentsOfDirectory(
+        at: sources,
+        includingPropertiesForKeys: nil
+    ) else {
+        throw CheckFailure.failed("Could not list \(sources.path).")
+    }
+    let files = found
+        .filter { $0.pathExtension == "swift" }
+        .map { "VoiceFlowMac/\($0.lastPathComponent)" }
+        .sorted()
+    guard files.count >= 10 else {
+        throw CheckFailure.failed(
+            "Only \(files.count) interface sources were found; the guard is looking in the wrong place."
+        )
+    }
+    return try files.map { relative in
+        let url = macos.appendingPathComponent("Sources/\(relative)")
+        guard var body = try? String(contentsOf: url, encoding: .utf8) else {
+            throw CheckFailure.failed("Could not read \(relative).")
+        }
+        // The token enum is where literals belong; everything after it is a copy.
+        if let start = body.range(of: "public enum VoiceStationTokens {"),
+           let end = body.range(of: "\n}\n", range: start.upperBound..<body.endIndex) {
+            body.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        return (relative, body)
+    }
+}
+
 /// The `--mode` values the engine's `process` subcommand actually accepts.
 ///
 /// Read out of `cli.py` at check time. Duplicating the list in Swift is what this check
@@ -794,6 +837,228 @@ do {
             URL(string: site)?.scheme == "https",
             "The site for \(name) is not an https URL: \(site)."
         )
+    }
+
+    // The measured figures are dated, and the date is shown beside them. A number with
+    // no date reads as today's ranking, and nothing in this app re-measures.
+    try check(
+        GeminiModel.measurementDate == "2026-08-31",
+        "The displayed measurement date no longer matches the figures in measuredNote."
+    )
+    try check(
+        GeminiModel.allCases.allSatisfy { !$0.measuredNote.isEmpty },
+        "A model offers no measured figure to date."
+    )
+
+    // --- Logic lifted out of the executable target so a check can reach it ---
+    //
+    // `VoiceFlowMac` is an executable and cannot be imported, so anything decided there
+    // is decided untested. These four rules moved to the library rather than staying
+    // where nothing could read them.
+
+    // The activity log's own category rule. A line naming a provider is about that
+    // provider even when it also says the request failed.
+    let logExpectations: [(String, LogCategory)] = [
+        ("gemini is at capacity (503)", .gemini),
+        ("cloud key verified for Gemini — cloud, text only", .gemini),
+        ("provider: Local cleanup — Ollama", .ollama),
+        ("whisper heard: hola", .stt),
+        ("⚡ action: Open site: youtube.com", .action),
+        ("no action recognized · dictated instead: \"hola\"", .action),
+        ("added voice snippet [mi correo]", .snippet),
+        ("pasted into Notes", .paste),
+        ("snippets could not be read (the file is not a valid snippet store)", .snippet),
+        ("mode switched to: actions", .system),
+        ("recording started…", .system),
+    ]
+    for (message, expected) in logExpectations {
+        let actual = LogCategory.inferred(from: message)
+        try check(
+            actual == expected,
+            "\"\(message)\" was filed under \(actual.rawValue), not \(expected.rawValue)."
+        )
+    }
+    // Whole words only: an ordinary sentence must not be filed under actions because it
+    // happens to contain the letters.
+    try check(
+        LogCategory.inferred(from: "the transaction cleared") == .system,
+        "A substring match filed an ordinary sentence under a category."
+    )
+
+    // What the floating capsule says. Every mode names itself while recording, and only
+    // the action mode names no provider while processing.
+    for mode in ProcessingMode.allCases {
+        let recording = HUDBadge.recording(mode: mode)
+        try check(recording.hasPrefix("ON AIR"), "The recording badge stopped saying ON AIR.")
+        if mode != .clean {
+            try check(
+                recording.contains(mode.badgeName) || recording.contains("MEETING"),
+                "\(mode.rawValue) does not name itself while recording: \(recording)."
+            )
+        }
+    }
+    try check(
+        HUDBadge.processing(mode: .actions, cleanerName: "gemini") == "PARSING ACTION",
+        "The action mode named a cleaner for work no cleaner does."
+    )
+    try check(
+        HUDBadge.processing(mode: .clean, cleanerName: "gemini").contains("GEMINI"),
+        "The processing badge no longer names the provider receiving the text."
+    )
+    try check(
+        HUDBadge.shortModelName("gemini-3.6-flash") == "3.6",
+        "The capsule's short model name is wrong."
+    )
+
+    // The order a spoken application name is looked for.
+    let searched = ApplicationSearch.candidatePaths(for: "Notes", home: "/Users/fixture")
+    try check(
+        searched.first == "/Applications/Notes.app",
+        "The application search no longer starts in /Applications."
+    )
+    try check(
+        searched.contains("/System/Applications/Notes.app"),
+        "The application search skips the system applications directory."
+    )
+    try check(
+        searched.contains("/System/Applications/Utilities/Notes.app"),
+        "The application search skips Utilities, where Terminal lives."
+    )
+    try check(
+        searched.contains("/Users/fixture/Applications/Notes.app"),
+        "The application search skips the speaker's own Applications directory."
+    )
+    try check(
+        ApplicationSearch.candidatePaths(for: "youtube", home: "/Users/fixture")
+            .contains("/Applications/Youtube.app"),
+        "A lowercase spoken name is not also tried capitalized."
+    )
+    try check(
+        searched.allSatisfy { $0.hasSuffix(".app") },
+        "The application search produced a path that is not a bundle."
+    )
+
+    // --- The engine information sheet ---
+    //
+    // A panel built to help someone choose is the worst place for a number nobody
+    // measured. R9 applies hardest here: an invented latency would make the decision.
+    for cleaner in CleanerMode.allCases {
+        let facts = cleaner.facts
+        try check(!facts.isEmpty, "\(cleaner.rawValue) offers no facts to decide on.")
+        try check(
+            facts.contains { $0.label == "PRIVACY" },
+            "\(cleaner.rawValue) does not say whether the text leaves this Mac."
+        )
+        try check(
+            !cleaner.recommendation.isEmpty,
+            "\(cleaner.rawValue) offers no recommendation."
+        )
+        try check(
+            facts.allSatisfy { !$0.value.isEmpty && !$0.label.isEmpty },
+            "\(cleaner.rawValue) has an empty fact."
+        )
+    }
+
+    // A cloud engine must disclose that the text leaves the machine; a local one must
+    // not claim it does.
+    for cleaner in CleanerMode.allCases {
+        let privacy = cleaner.facts.first { $0.label == "PRIVACY" }?.value ?? ""
+        if cleaner.isCloud {
+            try check(
+                privacy.lowercased().contains("leaves this mac"),
+                "\(cleaner.rawValue) is a cloud provider and does not say the text leaves."
+            )
+        } else {
+            try check(
+                privacy.lowercased().contains("nothing leaves this mac"),
+                "\(cleaner.rawValue) runs locally and does not say so plainly."
+            )
+        }
+    }
+
+    // Every figure carries its date, and an engine with no measurement states none.
+    try check(
+        CleanerMode.gemini.factsMeasuredOn == "2026-08-31",
+        "The cloud figures lost the date they were measured on."
+    )
+    for local in CleanerMode.allCases where !local.isCloud {
+        try check(
+            local.factsMeasuredOn == nil,
+            "\(local.rawValue) claims a measurement date for figures it does not have."
+        )
+        try check(
+            !local.facts.contains { $0.value.contains("s median") },
+            "\(local.rawValue) states a latency nothing measured."
+        )
+    }
+
+    // --- The hold delay before the microphone opens ---
+    try check(
+        defaults.holdDelaySeconds == 0.5,
+        "The default hold delay changed; the microphone opens at a different moment."
+    )
+    try check(
+        defaults.holdDelaySeconds > 0,
+        "A zero hold delay opens the microphone on a brush against the trigger."
+    )
+    let slowHold = try VoiceFlowConfiguration.parse(
+        arguments: ["--hold-delay", "1.5"],
+        currentDirectory: root
+    )
+    try check(slowHold.holdDelaySeconds == 1.5, "An explicit hold delay was not applied.")
+
+    for rejected in ["-1", "4", "abc", ""] {
+        var refused = false
+        do {
+            _ = try VoiceFlowConfiguration.parse(
+                arguments: ["--hold-delay", rejected],
+                currentDirectory: root
+            )
+        } catch ConfigurationError.invalidHoldDelay {
+            refused = true
+        }
+        try check(refused, "A hold delay of \"\(rejected)\" was accepted.")
+    }
+
+    // The line speech recognition now writes must reach the MIC/STT filter, and the
+    // fallback line must reach the errors filter rather than hiding among routine ones.
+    try check(
+        LogCategory.inferred(from: "whisper heard: \"hola mundo\"") == .stt,
+        "The per-dictation recognition line does not reach the MIC/STT filter."
+    )
+    try check(
+        LogCategory.inferred(from: "fallback · the provider did not answer · the transcript was delivered instead") == .warn,
+        "A fallback line does not reach the errors filter."
+    )
+    try check(
+        LogCategory.inferred(from: "fallback · the cleanup changed too much to verify") == .warn,
+        "A guard rejection does not reach the errors filter."
+    )
+
+    // No colour outside the token declaration. The palette drifts by copy, not by
+    // decision, and every copy so far had the right value on the day it was written.
+    for (name, body) in try interfaceSourcesWithoutTokenDeclarations() {
+        for spelling in ["Color(red:", "NSColor(red:", "Color(hue:", "Color(white:"] {
+            try check(
+                !body.contains(spelling),
+                "\(name) writes a colour as a literal. Declare it in VoiceStationTokens "
+                    + "and reference the token, so the palette moves in one place."
+            )
+        }
+        // The system's adaptive colours are the bug design-system.md opens with:
+        // `Color.green` changed the ready state with the viewer's macOS settings, and a
+        // guard that only looked for RGB literals would not have seen it.
+        for adaptive in [
+            "Color.green", "Color.red", "Color.blue", "Color.orange", "Color.yellow",
+            "Color.purple", "Color.pink", "Color.mint", "Color.teal", "Color.indigo",
+            "Color.brown", "Color.cyan", "Color.accentColor",
+        ] {
+            try check(
+                !body.contains(adaptive),
+                "\(name) uses \(adaptive), which follows the viewer's system settings "
+                    + "rather than this interface's palette. Use a VoiceStationTokens value."
+            )
+        }
     }
 
     print("VoiceFlowMacCore checks passed.")

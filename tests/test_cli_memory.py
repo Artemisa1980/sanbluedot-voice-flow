@@ -15,7 +15,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sanbluedot_voiceflow import cli
-from sanbluedot_voiceflow.memory import CorrectionStore
+from sanbluedot_voiceflow.distill import DistillationStore
+from sanbluedot_voiceflow.memory import CorrectionStore, export_memory
+from sanbluedot_voiceflow.snippets import SnippetStore
 
 
 class MemoryCommandTests(unittest.TestCase):
@@ -87,18 +89,55 @@ class MemoryCommandTests(unittest.TestCase):
         self.assertIn("No confirmed correction", text)
 
     def test_export_writes_every_layer_into_one_file(self) -> None:
-        self.store.add("ies", "IESS")
+        # Every store is read from this test's own directory. Before `export_memory`
+        # took one, it read the real vocabulary, practice, snippet and distillation
+        # stores and copied the owner's own sentences into a temporary file on every
+        # run of the suite.
         destination = self.root / "memory-export.json"
+        vocabulary = self.root / "vocabulary.local.txt"
+        vocabulary.write_text("IESS\n", encoding="utf-8")
+        CorrectionStore(self.root / "corrections.local.json").add("ies", "IESS")
+        SnippetStore(self.root / "snippets.local.json").add(
+            "mi correo", "user@example.com"
+        )
+        DistillationStore(self.root / "distill_pairs.local.jsonl").record(
+            "hola que tal", "Hola, ¿qué tal?"
+        )
 
-        with patch("sanbluedot_voiceflow.memory.CorrectionStore", lambda *_a, **_k: self.store):
+        written, counts = export_memory(
+            destination, vocabulary=vocabulary, directory=self.root
+        )
+
+        self.assertEqual(written, destination)
+        payload = json.loads(destination.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual([c["heard"] for c in payload["corrections"]], ["ies"])
+        self.assertEqual(payload["vocabulary"], ["IESS"])
+        # The two stores this file used to omit while promising "every piece".
+        self.assertEqual([s["trigger"] for s in payload["snippets"]], ["mi correo"])
+        self.assertEqual(
+            [p["raw_text"] for p in payload["distillation_pairs"]], ["hola que tal"]
+        )
+        self.assertEqual(counts["snippets"], 1)
+        self.assertEqual(counts["distillation_pairs"], 1)
+        self.assertEqual(counts["corrections"], 1)
+
+    def test_the_export_command_names_what_it_carried(self) -> None:
+        # Distillation pairs are the speaker's own sentences. An export that carries
+        # them without saying so is not a decision they made.
+        destination = self.root / "memory-export.json"
+        counts = {"vocabulary": 3, "snippets": 1, "distillation_pairs": 12}
+
+        with patch(
+            "sanbluedot_voiceflow.cli.export_memory",
+            lambda *_a, **_k: (destination, counts),
+        ):
             status, text = self.run_command(cli._export, Namespace(to=destination))
 
         self.assertEqual(status, 0)
         self.assertIn("Audio is not included", text)
-        payload = json.loads(destination.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema_version"], 1)
-        self.assertEqual([c["heard"] for c in payload["corrections"]], ["ies"])
-        self.assertIn("vocabulary", payload)
+        self.assertIn("distillation pairs: 12", text)
+        self.assertIn("snippets: 1", text)
 
 
 if __name__ == "__main__":

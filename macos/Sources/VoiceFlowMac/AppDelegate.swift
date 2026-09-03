@@ -103,10 +103,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlWindow.onOpenAccessibility = { [weak self] in
             self?.openAccessibilitySettings()
         }
+        // The window's button is a distinct control from the hotkey, and says so, so a
+        // click cannot end a dictation the speaker is holding the key for.
         controlWindow.configureRecording(
-            onPress: { [weak self] in self?.controller?.shortcutPressed() },
-            onRelease: { [weak self] in self?.controller?.shortcutReleased() }
+            onPress: { [weak self] in self?.controller?.shortcutPressed(from: .button) },
+            onRelease: { [weak self] in self?.controller?.shortcutReleased(from: .button) }
         )
+        controlWindow.onCancelRecording = { [weak self] in
+            self?.controller?.cancelRecording()
+        }
         controlWindow.configureProviders(
             available: CleanerMode.allCases,
             selected: selectedCleaner
@@ -163,6 +168,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         controlWindow.onClearHistory = { [weak self] in
             self?.clearDictationHistory()
+        }
+        // The guard's refusal becomes a question. Accepting puts the text on the
+        // clipboard and says so; nothing is pasted behind the speaker's back, because
+        // the cursor has moved on since the dictation ended.
+        controlWindow.onAcceptRejectedCleanup = { [weak self] text in
+            guard let self else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            self.playCompletionSound()
+            self.controlWindow.showRejectedCleanup(nil)
+            self.controlWindow.addLog("held-back cleanup accepted · copied", isHighlight: true)
+        }
+        controlWindow.onDismissRejectedCleanup = { [weak self] in
+            self?.controlWindow.showRejectedCleanup(nil)
+            self?.controlWindow.addLog("held-back cleanup discarded")
         }
         controlWindow.updateSnippets(snippetStore.snippets)
         // A store that could not be read is said out loud. Starting empty in silence is
@@ -588,6 +609,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func authorizeAndStart() {
         guard let configuration else { return }
 
+        // A hold may be in flight. Dropping the controller under it left the arm timer
+        // pointing at an object nothing owned, and the speaker was told nothing at all —
+        // unlike the ordinary refusal, which says the touch was too short.
+        if controller?.isCancellable == true {
+            controller?.cancelRecording()
+        }
+
         setRetryPermissionsAvailable(false)
 
         hotkeyMonitor?.stop()
@@ -648,6 +676,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onReleased: { [weak controller] in controller?.shortcutReleased() },
                 onModeCycle: { [weak self] in
                     DispatchQueue.main.async { self?.cycleProcessingMode() }
+                },
+                onCancel: { [weak controller] in
+                    DispatchQueue.main.async { controller?.cancelRecording() }
                 }
             )
             do {
@@ -683,6 +714,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     detail: "Hold the button below. Enable Input Monitoring and Retry for Fn/Globe."
                 )
             }
+        case .cancelled(let reason):
+            // A recording taken back leaves nothing behind: no paste, no history entry,
+            // no audio. Both cases are said out loud, because a trigger that quietly
+            // does nothing is indistinguishable from one that is broken.
+            setRetryPermissionsAvailable(true)
+            controlWindow.setProviderSelectionEnabled(true)
+            statusItem.button?.title = "VF"
+            switch reason {
+            case .tooShort:
+                let seconds = configuration?.holdDelaySeconds ?? 0.5
+                controlWindow.addLog(
+                    String(format: "ignored a touch shorter than %.1fs · the microphone stayed closed", seconds)
+                )
+                floatingHUD.hideImmediately()
+            case .escaped:
+                controlWindow.addLog("recording cancelled · the audio was discarded", isHighlight: true)
+                floatingHUD.showCancelled()
+            }
+            updateStatus(.idle)
+
         case .recording:
             setRetryPermissionsAvailable(false)
             controlWindow.setProviderSelectionEnabled(false)
@@ -737,6 +788,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controlWindow.setProviderSelectionEnabled(true)
             statusItem.button?.title = "✓"
             playCompletionSound()
+
+            // Speech recognition did half the work and left no trace: the MIC/STT filter
+            // read zero however much was dictated. One line per run, naming the language
+            // the engine chose and what it returned, so the filter has something to show
+            // and a misheard word can be found where it happened.
+            let heardPreview = result.rawText.count > 90
+                ? String(result.rawText.prefix(90)) + "…"
+                : result.rawText
+            controlWindow.addLog(
+                "whisper heard: \"\(heardPreview)\"",
+                category: .stt
+            )
+
+            // Clear before anything can return early. An executed voice action used to
+            // skip this, leaving a card from an older run on screen; USE THIS then
+            // copied text that belonged to a dictation the speaker had moved past.
+            self.controlWindow.showRejectedCleanup(result.rejectedText)
 
             // R3c: a dictation is examined for a spoken command only in the mode the
             // speaker selected for it. Parsing every dictation meant a sentence that
@@ -847,7 +915,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
 
                 let actionVerb = didAutoPaste ? "Pasted" : "Copied"
-                let prefix = usedFallback ? "\(actionVerb) safe fallback" : actionVerb
+                // Name which side refused. "safe fallback" alone described the guard
+                // rejecting a cleanup and the provider never answering with the same
+                // words, and those call for opposite responses: shorten the sentence,
+                // or wait and try a local engine.
+                if let reason = result.fallbackReason {
+                    self.controlWindow.addLog(
+                        "fallback · \(reason.summary) · the transcript was delivered instead",
+                        isHighlight: true
+                    )
+                }
+                let prefix = result.fallbackReason.map { "\(actionVerb) fallback · \($0.summary)" }
+                    ?? actionVerb
                 // Name the model that answered, not the one that was asked for, so a
                 // capacity fallback is visible instead of silent.
                 let modelNote = model.map { " · \($0)" } ?? ""

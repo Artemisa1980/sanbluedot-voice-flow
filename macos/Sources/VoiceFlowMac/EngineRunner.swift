@@ -31,7 +31,28 @@ enum EngineRunnerError: LocalizedError {
 
 enum EngineOutcome: Equatable {
     case cleaned
-    case safeFallback
+    /// The cleanup did not survive, and the deterministic transcript was delivered
+    /// instead. Which side refused matters: a guard rejection means the sentence was
+    /// restructured too far to be verified, and a provider failure means the request
+    /// never came back. They call for opposite responses from the speaker.
+    case safeFallback(FallbackReason)
+}
+
+enum FallbackReason: String, Equatable {
+    /// The provider answered, and the conservative guard refused what it returned.
+    case guardRejected = "guard"
+    /// The provider itself failed: busy, unreachable, or out of time.
+    case providerFailed = "provider"
+
+    /// What to tell the speaker, in the words that change what they would do next.
+    var summary: String {
+        switch self {
+        case .guardRejected:
+            return "the cleanup changed too much to verify"
+        case .providerFailed:
+            return "the provider did not answer"
+        }
+    }
 }
 
 struct EngineResult: Equatable {
@@ -49,6 +70,17 @@ struct EngineResult: Equatable {
     /// a latency figure is this field.
     let transcribeSeconds: Double?
     let cleanupSeconds: Double?
+    /// What the provider returned when the guard refused it. Kept so the speaker can
+    /// see the cleanup that was rejected on their behalf and take it if it is fine.
+    let rejectedText: String?
+
+    /// Whether the cleanup was replaced by the deterministic transcript, and why.
+    var fallbackReason: FallbackReason? {
+        if case .safeFallback(let reason) = outcome { return reason }
+        return nil
+    }
+
+    var usedFallback: Bool { fallbackReason != nil }
 
     init(
         outcome: EngineOutcome,
@@ -57,7 +89,8 @@ struct EngineResult: Equatable {
         finalText: String,
         model: String?,
         transcribeSeconds: Double? = nil,
-        cleanupSeconds: Double? = nil
+        cleanupSeconds: Double? = nil,
+        rejectedText: String? = nil
     ) {
         self.outcome = outcome
         self.rawText = rawText
@@ -66,6 +99,7 @@ struct EngineResult: Equatable {
         self.model = model
         self.transcribeSeconds = transcribeSeconds
         self.cleanupSeconds = cleanupSeconds
+        self.rejectedText = rejectedText
     }
 }
 
@@ -75,6 +109,8 @@ private struct EnginePayload: Decodable {
     let finalText: String
     let model: String?
     let timings: EngineTimings?
+    let fallbackReason: String?
+    let rejectedText: String?
 
     private enum CodingKeys: String, CodingKey {
         case rawText = "raw_text"
@@ -82,6 +118,8 @@ private struct EnginePayload: Decodable {
         case finalText = "final_text"
         case model
         case timings
+        case fallbackReason = "fallback_reason"
+        case rejectedText = "rejected_text"
     }
 }
 
@@ -180,15 +218,24 @@ final class EngineRunner {
             throw EngineRunnerError.emptyResult
         }
 
-        let outcome: EngineOutcome
+        var outcome: EngineOutcome
         switch process.terminationStatus {
         case 0: outcome = .cleaned
-        case 2: outcome = .safeFallback
+        case 2: outcome = .safeFallback(.providerFailed)  // refined from the payload below
         default: throw EngineRunnerError.engineFailed(process.terminationStatus, detail)
         }
 
         guard let payload = try? JSONDecoder().decode(EnginePayload.self, from: output) else {
             throw EngineRunnerError.invalidResult
+        }
+        if case .safeFallback = outcome {
+            // An older engine sends no reason. Treating a missing field as a provider
+            // failure is the safer default: it never blames the speaker's sentence for
+            // something the network did.
+            outcome = .safeFallback(
+                payload.fallbackReason.flatMap(FallbackReason.init(rawValue:))
+                    ?? .providerFailed
+            )
         }
         return EngineResult(
             outcome: outcome,
@@ -197,7 +244,8 @@ final class EngineRunner {
             finalText: payload.finalText,
             model: payload.model,
             transcribeSeconds: payload.timings?.transcribeSeconds,
-            cleanupSeconds: payload.timings?.cleanupSeconds
+            cleanupSeconds: payload.timings?.cleanupSeconds,
+            rejectedText: payload.rejectedText
         )
     }
 }

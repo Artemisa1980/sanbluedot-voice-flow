@@ -161,33 +161,75 @@ def build_initial_prompt(
     return ", ".join(selected)
 
 
-def export_memory(destination: Path, vocabulary: Path = DEFAULT_VOCABULARY) -> Path:
+def export_memory(
+    destination: Path,
+    vocabulary: Path = DEFAULT_VOCABULARY,
+    directory: Path = DEFAULT_DIRECTORY,
+) -> tuple[Path, dict[str, int]]:
     """Write every piece of local personal memory into one portable file.
 
     R7 requires local user data to support export, and the product targets two
     computers. Audio is deliberately excluded: recordings are large and are the
     speaker's voice, so they move only by explicit copy.
+
+    Every other store belongs here. Snippets and distillation pairs were absent while
+    this function promised "every piece", so a speaker moving to a second machine lost
+    both without being told. Each store also has its own export command; this file is
+    the one that has to be complete.
+
+    Returns the path and a count per section, so the caller can say what left the
+    machine rather than only that something did. R5c allows pairs to leave through an
+    explicit export, and this is one — but an export that does not name what it carried
+    is not a decision the speaker actually made.
+
+    Every store is addressed under `directory` rather than by its own default. Reading
+    the real ones from a test is how a test suite ends up copying the speaker's actual
+    sentences into a temporary file, and this function reads five stores.
     """
-    from .practice import PracticeStore  # imported here to avoid a circular import
+    # Imported here: both modules import from this one.
+    from .practice import PracticeStore
+    from .snippets import SnippetStore
+    from .distill import DistillationStore
+
+    terms = load_vocabulary(vocabulary)
+    corrections = [
+        {
+            "heard": item.heard,
+            "intended": item.intended,
+            "confirmed_at": item.confirmed_at,
+        }
+        for item in CorrectionStore(directory / "corrections.local.json").load()
+    ]
+    practice_sessions = PracticeStore(directory / "practice").load()
+    snippets = [
+        item.to_dict()
+        for item in SnippetStore(directory / "snippets.local.json").load()
+    ]
+    distillation_pairs = [
+        pair.to_dict()
+        for pair in DistillationStore(directory / "distill_pairs.local.jsonl").load_all()
+    ]
 
     write_json_atomically(
         destination,
         {
             "schema_version": SCHEMA_VERSION,
             "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "vocabulary": load_vocabulary(vocabulary),
-            "corrections": [
-                {
-                    "heard": item.heard,
-                    "intended": item.intended,
-                    "confirmed_at": item.confirmed_at,
-                }
-                for item in CorrectionStore().load()
-            ],
-            "practice_sessions": PracticeStore().load(),
+            "vocabulary": terms,
+            "corrections": corrections,
+            "practice_sessions": practice_sessions,
+            "snippets": snippets,
+            "distillation_pairs": distillation_pairs,
         },
     )
-    return destination
+    counts = {
+        "vocabulary": len(terms),
+        "corrections": len(corrections),
+        "practice_sessions": len(practice_sessions),
+        "snippets": len(snippets),
+        "distillation_pairs": len(distillation_pairs),
+    }
+    return destination, counts
 
 
 @dataclass(frozen=True, slots=True)

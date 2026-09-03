@@ -24,7 +24,25 @@ enum VoiceFlowStatus {
         /// machine rather than the speaker.
         spokenSeconds: TimeInterval
     )
+    /// The speaker took the recording back before it was delivered, or let go of the
+    /// trigger before the microphone ever opened.
+    case cancelled(reason: CancelReason)
     case failed(String)
+}
+
+/// Which control started a recording. The hotkey and the window's hold button share one
+/// state machine, and without this a stray click on the button ended a dictation the
+/// speaker was still holding the key for — then swallowed the real release in silence.
+enum RecordingSource: Equatable {
+    case hotkey
+    case button
+}
+
+enum CancelReason {
+    /// The trigger was released inside the hold delay. The microphone never opened.
+    case tooShort
+    /// Escape was pressed while recording. The audio is discarded, nothing is pasted.
+    case escaped
 }
 
 final class VoiceFlowController {
@@ -71,6 +89,8 @@ final class VoiceFlowController {
 
     private enum State {
         case idle
+        /// The trigger is down but the hold delay has not elapsed. No microphone yet.
+        case arming
         case recording
         case processing
     }
@@ -83,6 +103,9 @@ final class VoiceFlowController {
         qos: .userInitiated
     )
     private var state = State.idle
+    private var recordingSource: RecordingSource?
+    private var armWorkItem: DispatchWorkItem?
+    private let holdDelaySeconds: TimeInterval
     private var recordingStartedAt: Date?
     private var recordingCleaner: CleanerMode?
     private var recordingMode: ProcessingMode?
@@ -98,10 +121,25 @@ final class VoiceFlowController {
         selectedMode = configuration.mode
         selectedGeminiModel =
             GeminiModel(rawValue: configuration.geminiModel) ?? .preferredDefault
+        holdDelaySeconds = configuration.holdDelaySeconds
     }
 
-    func shortcutPressed() {
+    func shortcutPressed(from source: RecordingSource = .hotkey) {
         guard state == .idle else { return }
+        // The microphone does not open on the press. It opens once the trigger has been
+        // held, so a hand brushing the Fn key costs no recording and no indicator light.
+        recordingSource = source
+        state = .arming
+        let work = DispatchWorkItem { [weak self] in
+            self?.openMicrophone()
+        }
+        armWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdDelaySeconds, execute: work)
+    }
+
+    private func openMicrophone() {
+        guard state == .arming else { return }
+        armWorkItem = nil
         do {
             try recorder.start()
             recordingStartedAt = Date()
@@ -115,7 +153,57 @@ final class VoiceFlowController {
         }
     }
 
-    func shortcutReleased() {
+    /// Take the recording back. The audio is deleted rather than transcribed, so a
+    /// dictation the speaker changed their mind about leaves nothing behind.
+    /// Take back whatever is in flight, from any control.
+    ///
+    /// Cancelling is not the hotkey's privilege: Escape reaches this through the global
+    /// event tap, which needs Input Monitoring, and the app deliberately supports a
+    /// speaker who never granted it and dictates with the window's button. A recording
+    /// they could start and not stop is the take-back requirement unmet.
+    func cancelRecording() {
+        switch state {
+        case .idle, .processing:
+            return
+        case .arming:
+            // Nothing is recording yet; drop the pending open so it never happens.
+            armWorkItem?.cancel()
+            armWorkItem = nil
+            state = .idle
+            recordingSource = nil
+            onStatusChange?(.cancelled(reason: .escaped))
+            return
+        case .recording:
+            break
+        }
+        state = .idle
+        recordingSource = nil
+        recordingStartedAt = nil
+        recordingCleaner = nil
+        recordingMode = nil
+        recordingGeminiModel = nil
+        if let audioURL = try? recorder.stop() {
+            try? removeTemporaryAudio(at: audioURL)
+        }
+        onStatusChange?(.cancelled(reason: .escaped))
+    }
+
+    func shortcutReleased(from source: RecordingSource = .hotkey) {
+        // Only the control that started this recording can end it. A click on the
+        // window's button while the speaker holds the key used to cut the dictation in
+        // half, and the key's own release was then discarded with nothing said.
+        guard recordingSource == nil || recordingSource == source else { return }
+
+        // Released inside the hold delay: the microphone never opened, so there is
+        // nothing to stop and nothing to transcribe.
+        if state == .arming {
+            armWorkItem?.cancel()
+            armWorkItem = nil
+            state = .idle
+            recordingSource = nil
+            onStatusChange?(.cancelled(reason: .tooShort))
+            return
+        }
         guard state == .recording else { return }
 
         let audioURL: URL
@@ -137,6 +225,7 @@ final class VoiceFlowController {
         let cleaner = recordingCleaner ?? selectedCleaner
         let mode = recordingMode ?? selectedMode
         let geminiModel = recordingGeminiModel ?? selectedGeminiModel
+        recordingSource = nil
         recordingCleaner = nil
         recordingMode = nil
         recordingGeminiModel = nil
@@ -179,7 +268,7 @@ final class VoiceFlowController {
                     self.onStatusChange?(
                         .copied(
                             elapsed,
-                            usedFallback: result.outcome == .safeFallback,
+                            usedFallback: result.usedFallback,
                             acceptanceCount: acceptanceCount,
                             acceptanceError: acceptanceError,
                             audioCleanupError: audioCleanupError,
@@ -209,7 +298,16 @@ final class VoiceFlowController {
         }
     }
 
+    /// True while a recording is running or about to start, so the window can offer a
+    /// way out that does not depend on a keyboard permission.
+    var isCancellable: Bool {
+        state == .recording || state == .arming
+    }
+
     private func fail(_ error: Error, additionalMessage: String? = nil) {
+        armWorkItem?.cancel()
+        armWorkItem = nil
+        recordingSource = nil
         recordingStartedAt = nil
         recordingCleaner = nil
         state = .idle

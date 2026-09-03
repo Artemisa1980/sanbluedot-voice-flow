@@ -12,7 +12,12 @@ Provide personal, low-friction dictation on macOS and Windows. A configurable pu
 
 ### R1 — Capture
 
-- Recording starts on shortcut press and stops on release.
+- Recording starts once the shortcut has been held past a configurable delay, and stops
+  on release. A touch shorter than the delay opens no microphone and produces no
+  recording: the default trigger sits where a hand rests, and a brush against it used to
+  record a dictation of nothing. The refusal is reported rather than silent.
+- A recording in progress can be taken back. The audio is deleted rather than
+  transcribed, nothing is pasted, and no history entry is written.
 - The default macOS trigger is the Fn/Globe key alone: hold to record and release to
   process. This single-button behavior is an explicit owner decision.
 - The trigger remains configurable. Other modifier keys alone are rejected to avoid
@@ -58,6 +63,11 @@ modes, and the distinction is normative rather than cosmetic.
 - Only `clean` passes through the conservative output guard. Every other mode is
   delivered as the provider returned it, and the guard must never be relaxed to
   accommodate one of them.
+- A cleanup replaced by the deterministic transcript says which side refused: the guard
+  rejecting text the provider did return, or the provider failing to answer. The two are
+  reported identically nowhere, because they call for opposite responses — shorten the
+  sentence, or wait and use a local engine. An unspecified failure is attributed to the
+  provider, never to the speaker's sentence.
 - The selected mode is visible before transmission and named in the announcement.
 ### R3c — Voice actions & system automation
 
@@ -103,6 +113,10 @@ modes, and the distinction is normative rather than cosmetic.
 - Unconfirmed edits, surrounding screen content, and arbitrary keystrokes are not learning signals.
 - A correction can be viewed, changed, or deleted.
 - Personal data has a versioned local schema and is excluded from version control.
+- The single portable export carries every local store, and names what it carried. A
+  file that promises "every piece" and omits one loses it silently on the machine the
+  speaker moved away from, and an export that does not say it took the archived
+  sentences is not a decision the speaker made.
 
 ### R5b — Voice snippets & spoken macros
 
@@ -147,9 +161,16 @@ explicitly and never inferred from the choice of provider.
   Interleaved on 2026-08-31 with the same request shape and identical output quality on
   cleanup, translation and meeting notes: 3.5 delivered 5 of 6 at a 2.3-second median,
   3.6 delivered 4 of 6 at 14.3 seconds, 3.7 delivered 3 of 6 at 12.5 seconds.
+- A measurement shown in the interface carries the date it was taken. Nothing in the
+  application re-measures, so an undated figure would present a photograph as the current
+  ranking and recommend a model that may no longer be the one that answers.
 - The fallback chain is ordered by measured delivery, not by version. Ordering it by
   version would send a fallback from the most available model straight to the least
   available one.
+- A provider failure names only the models this run actually contacted, and says what
+  happened to each: at capacity, or out of time. A model the budget check skipped before
+  any request left the machine is named as skipped. Reporting an uncontacted model as
+  busy is a claim about the provider's availability that the run has no evidence for.
 - Failures are HTTP 503 `UNAVAILABLE`, returned as "this model is currently experiencing
   high demand". The project is billed, the same status reaches every model, and it
   persists without the response schema and at a small token budget, so it is Google

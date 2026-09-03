@@ -70,7 +70,7 @@ final class AcceptanceLogger {
             rawText: result.rawText,
             personalizedText: result.personalizedText,
             finalText: result.finalText,
-            usedFallback: result.outcome == .safeFallback,
+            usedFallback: result.usedFallback,
             audioFile: storedAudio
         )
         var data = try JSONEncoder().encode(record)

@@ -153,6 +153,69 @@ the one surface that does not use the sage canvas.
   machine is the only one that reads as live, and no new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
+## Console badge palette
+
+Eight log categories must be told apart at `7px` on the dark olive console ground, where
+the brand family collapses into two readable hues. These four are therefore **not brand
+colours**, are never used on the mint canvas, and exist only inside the console and the
+meter. Approved 2026-09-02, after they had already shipped as literals.
+
+| Token | Value | Use |
+|---|---|---|
+| `logAction` | `#F39C12` | ACTION badge |
+| `logSnippet` | `#A78BFA` | SNIPPET badge |
+| `logPaste` | `#2ECC71` | PASTE badge |
+| `micHighlight` | `#2C3A63` | the lit half of the microphone's radial gradient |
+| `onAir` | `#FF453B` | the meter's last bars and the capsule's ON AIR badge |
+
+**Every colour is declared in `VoiceStationTokens` and referenced by name.** A literal
+written beside the view that uses it is a copy that stops moving with the token. Four had
+already drifted this way — gold, dot blue, and navy in two different files — and `onAir`
+was written twice with no token at all, once as hex and once as `1.0/0.27/0.23`. Every
+value was correct on the day it was written, which is why nothing ever failed.
+
+A check reads **every** source file in `VoiceFlowMac` and fails the build on a colour
+literal outside the token declaration, or on a system colour such as `Color.green` that
+follows the viewer's settings instead of this palette. It reads the directory rather than
+a list: an earlier version named three files and reported the interface clean while
+eleven went unread.
+
+## Console filters
+
+Six chips filter the activity log by category, with the count in parentheses and the
+count hidden at zero. A seventh, `ERRORS`, appears only while it holds something: its
+arrival is the signal, and the row has no width for a chip that would read zero almost
+always. Warnings and failures live there rather than inside `SYSTEM`, where one failure
+sat among thirty routine lines and was not found.
+
+## Engine information mark
+
+Each engine option carries a `?` **inside** its own slab, in the space the short name
+already leaves empty on the right. It costs the row no width, and it belongs visually to
+the engine it explains.
+
+- `15 × 15px`, radius `4px`, flat. A slab inside a slab reads as noise at this size, so
+  the mark takes no border and no extrusion — depth stops at the Control tier.
+- It carries the **opposite fill of the slab it sits in**: navy with paper text on an
+  unselected option, gold with navy text on the selected one. One rule, legible in both.
+- It sits against the slab's right border, not beside the name. The three marks then
+  line up down the row, which is what makes the bank read as one control. Placing each
+  mark next to its own name was tried and rejected: the column went ragged.
+- It is a sibling of the selection button, never nested inside it, and both carry
+  `contentShape(Rectangle())`. Pressing a question must not change where the speaker's
+  words are about to go, and the empty half of the slab must still select the engine.
+- The selection button keeps its own trailing spacer, so it fills the slab and the mark
+  is pushed to the border by it. Moving that spacer out to push the mark instead shrank
+  the button to the width of its text and left most of the slab dead to the click.
+
+It opens a popover on the dark olive console ground, `290px` wide, listing measured facts
+as label and value pairs with the gold label at `7px` and the value in cream at `9px`,
+then one line of recommendation, then the date the figures were taken.
+
+The panel states only what was measured. An engine with no measurement says so rather
+than offering an estimate: a figure invented inside a panel built to help someone decide
+makes the decision for them.
+
 ## Dev-Station Tabbed Console contract
 
 The right card in `VoiceStationWindowView` contains a 3-tab switchable console:

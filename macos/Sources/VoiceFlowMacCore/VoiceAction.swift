@@ -70,6 +70,30 @@ public enum WebDestination {
     }
 }
 
+/// Where a spoken application name is looked for, in order.
+///
+/// The list is pure so a check can assert the search order and the escaping rules
+/// without touching the file system. `VoiceActionExecutor` walks it and takes the first
+/// path that exists; only if none does is `WebDestination` consulted.
+public enum ApplicationSearch {
+    public static func candidatePaths(for appName: String, home: String) -> [String] {
+        let roots = [
+            "/Applications",
+            "/System/Applications",
+            "/System/Applications/Utilities",
+            "/System/Library/CoreServices",
+            "\(home)/Applications",
+        ]
+        var names = [appName]
+        // The parser capitalizes an unknown name, but an alias resolves to its real
+        // one; both spellings are tried before the name is declared missing.
+        if appName.capitalized != appName {
+            names.append(appName.capitalized)
+        }
+        return names.flatMap { name in roots.map { "\($0)/\(name).app" } }
+    }
+}
+
 public enum VoiceActionParser {
     /// Parse natural speech into a recognized system action.
     /// Handles both Spanish and English phrases with leading/trailing punctuation tolerance.

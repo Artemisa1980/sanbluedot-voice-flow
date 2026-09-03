@@ -159,6 +159,26 @@ final class FloatingHUDController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: work)
     }
 
+    /// Say the recording was taken back, briefly. Silence here would read the same as a
+    /// trigger that failed.
+    func showCancelled() {
+        meterTimer?.invalidate()
+        meterTimer = nil
+        processingTimer?.invalidate()
+        processingTimer = nil
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+
+        viewModel.mode = .cancelled
+        showAtFullOpacity()
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.fadeOut()
+        }
+        dismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
     func showFailed(message: String) {
         meterTimer?.invalidate()
         meterTimer = nil
