@@ -191,6 +191,29 @@ the one surface that does not use the sage canvas.
   new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
+## Menu bar item
+
+The item is the only VoiceFlow surface always on screen, so it carries the run's state
+whether or not the HUD or the station window is open.
+
+- At rest it shows Meow-Bubble: a speech bubble with pointy cat ears and three sound
+  dots, drawn in code from a `24 × 24` path into an `18 × 18` template image, so macOS
+  tints it for the light bar, the dark bar and the pressed state instead of the drawing
+  choosing a colour. Selected from `docs/menubar-icon-proposals.html` on 2026-09-03.
+- During a run it shows one character instead: `●` recording, `…` processing, `✓`
+  delivered, `!` failed. The check returns to the icon after 2.5 seconds, and only if the
+  controller is still idle.
+- **The image and the title never coexist, and `imagePosition` travels with whichever is
+  showing** — `.imageOnly` for the icon, `.noImage` for the character. A button left on
+  `.imageOnly` with no image draws nothing at all: measured at zero pixels against 364
+  for the same character under `.noImage`. The item went blank in exactly the four states
+  that matter, which reads as an application that is not running. One pair of helpers in
+  `AppDelegate` owns both writes; nothing else touches the button.
+- Left click toggles the station window. Right or Control click opens the menu, whose
+  first line is the state and the permission report — including the line that names a
+  missing Input Monitoring grant, which is the only place the dead global trigger is
+  explained.
+
 ## Console badge palette
 
 Eight log categories must be told apart at `7px` on the dark olive console ground, where

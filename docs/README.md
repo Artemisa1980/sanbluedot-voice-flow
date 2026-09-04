@@ -34,7 +34,7 @@ cannot be told apart from one that was missed.
 | `station-redesign-01-signal-chain.html` | Station window, signal-chain redesign | Approved and shipped 2026-09-01; `design-system.md` records the result |
 | `station-palette-01-mint-partners.html` | Station window, palette proposals over the mint canvas | Superseded 2026-09-01 by the signal-chain preview; kept for the colour decision it records |
 | `hud-design-proposals.html` | Floating HUD, three-row capsule proposals | Built and shipped 2026-09-03; `design-system.md` records the result |
-
+| `menubar-icon-proposals.html` | macOS menu bar icon proposals | Option 7 built and shipped 2026-09-03; `design-system.md` records the result |
 `andor-console-preview.html` carries colours the design system did not have when it was
 drawn, and pulls its typefaces from Google Fonts rather than the bundled face. The fonts
 never reached the app and are still not approved.

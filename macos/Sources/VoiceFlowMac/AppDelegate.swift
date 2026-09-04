@@ -6,10 +6,12 @@ import VoiceFlowMacCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var statusMenu: NSMenu!
     private var statusMenuItem: NSMenuItem!
     private var shortcutMenuItem: NSMenuItem!
     private var modeMenuItem: NSMenuItem!
     private var retryMenuItem: NSMenuItem!
+    private var showMenuItem: NSMenuItem!
     private var controlWindow: ControlWindowController!
     private var configuration: VoiceFlowConfiguration?
     private var controller: VoiceFlowController?
@@ -321,7 +323,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "VF"
+        if let button = statusItem.button {
+            button.toolTip = "sanblueᵈᵒᵗ VoiceFlow"
+            button.target = self
+            button.action = #selector(handleStatusItemClick(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        showStatusIcon()
 
         let menu = NSMenu()
         statusMenuItem = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
@@ -351,13 +359,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildHistoryMenu()
         menu.addItem(.separator())
 
-        let showItem = NSMenuItem(
+        showMenuItem = NSMenuItem(
             title: "Show VoiceFlow",
-            action: #selector(showControlWindow),
+            action: #selector(toggleControlWindow),
             keyEquivalent: "s"
         )
-        showItem.target = self
-        menu.addItem(showItem)
+        showMenuItem.target = self
+        menu.addItem(showMenuItem)
 
         distillationMenuItem = NSMenuItem(
             title: "Keep Distillation Pairs",
@@ -385,7 +393,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "q"
         )
         menu.addItem(quitItem)
-        statusItem.menu = menu
+        statusMenu = menu
+        // Keep statusItem.menu = nil so left click triggers handleStatusItemClick directly.
+        // Right-click or Control-click displays statusMenu via statusItem.popUpMenu(statusMenu).
     }
 
     private func rebuildHistoryMenu() {
@@ -588,6 +598,127 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showControlWindow() {
         controlWindow.showWindow(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        updateShowMenuItemTitle()
+    }
+
+    @objc private func toggleControlWindow() {
+        guard let window = controlWindow.window else {
+            showControlWindow()
+            return
+        }
+        if window.isVisible {
+            window.orderOut(nil)
+        } else {
+            showControlWindow()
+        }
+        updateShowMenuItemTitle()
+    }
+
+    private func updateShowMenuItemTitle() {
+        guard let showMenuItem else { return }
+        if controlWindow?.window?.isVisible == true {
+            showMenuItem.title = "Hide VoiceFlow"
+        } else {
+            showMenuItem.title = "Show VoiceFlow"
+        }
+    }
+
+    @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || (event?.modifierFlags.contains(.control) == true) {
+            statusItem.menu = statusMenu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else {
+            toggleControlWindow()
+        }
+    }
+
+    /// The status item shows either the icon or a one-character state marker, and
+    /// `imagePosition` has to travel with it. A button left on `.imageOnly` with no image
+    /// draws nothing at all, and an empty menu bar is indistinguishable from an app that
+    /// is not running — which is exactly what the recording, processing, success and
+    /// failure states looked like.
+    private func showStatusIcon() {
+        guard let button = statusItem.button else { return }
+        button.image = Self.makeMeowBubbleIcon()
+        button.title = ""
+        button.imagePosition = .imageOnly
+    }
+
+    private func showStatusMarker(_ marker: String) {
+        guard let button = statusItem.button else { return }
+        button.image = nil
+        button.title = marker
+        button.imagePosition = .noImage
+    }
+
+    /// Meow-Bubble: a speech bubble with pointy cat ears and sound dots.
+    /// Vector template image: black fill/stroke with alpha, automatically tinted
+    /// by macOS for dark/light menubar and active state.
+    static func makeMeowBubbleIcon() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+
+            ctx.saveGState()
+
+            // Map 24x24 SVG coordinate space into rect (with Y inverted so (0,0) is top-left like SVG)
+            let scaleX = rect.width / 24.0
+            let scaleY = rect.height / 24.0
+            ctx.translateBy(x: 0, y: rect.height)
+            ctx.scaleBy(x: scaleX, y: -scaleY)
+
+            let color = NSColor.black.cgColor
+            ctx.setStrokeColor(color)
+            ctx.setFillColor(color)
+            ctx.setLineWidth(1.8)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+
+            // 1. Cat Ears (Solid Polygons)
+            let leftEar = CGMutablePath()
+            leftEar.move(to: CGPoint(x: 6, y: 5))
+            leftEar.addLine(to: CGPoint(x: 4, y: 1))
+            leftEar.addLine(to: CGPoint(x: 9, y: 3.5))
+            leftEar.closeSubpath()
+            ctx.addPath(leftEar)
+            ctx.fillPath()
+
+            let rightEar = CGMutablePath()
+            rightEar.move(to: CGPoint(x: 18, y: 5))
+            rightEar.addLine(to: CGPoint(x: 20, y: 1))
+            rightEar.addLine(to: CGPoint(x: 15, y: 3.5))
+            rightEar.closeSubpath()
+            ctx.addPath(rightEar)
+            ctx.fillPath()
+
+            // 2. Speech Bubble Outline
+            let bubble = CGMutablePath()
+            bubble.move(to: CGPoint(x: 4, y: 11))
+            bubble.addCurve(to: CGPoint(x: 12, y: 4), control1: CGPoint(x: 4, y: 7), control2: CGPoint(x: 7.5, y: 4))
+            bubble.addCurve(to: CGPoint(x: 20, y: 11), control1: CGPoint(x: 16.5, y: 4), control2: CGPoint(x: 20, y: 7))
+            bubble.addCurve(to: CGPoint(x: 12, y: 18), control1: CGPoint(x: 20, y: 15), control2: CGPoint(x: 16.5, y: 18))
+            bubble.addCurve(to: CGPoint(x: 8.7, y: 17.4), control1: CGPoint(x: 10.8, y: 18), control2: CGPoint(x: 9.7, y: 17.8))
+            bubble.addLine(to: CGPoint(x: 4, y: 19))
+            bubble.addLine(to: CGPoint(x: 4.8, y: 15.6))
+            bubble.addCurve(to: CGPoint(x: 4, y: 11), control1: CGPoint(x: 4.3, y: 14.3), control2: CGPoint(x: 4, y: 12.7))
+            bubble.closeSubpath()
+            ctx.addPath(bubble)
+            ctx.strokePath()
+
+            // 3. Three sound/dictation dots in the center
+            let dotRadius: CGFloat = 0.9
+            for cx in [9.0, 12.0, 15.0] {
+                let dotRect = CGRect(x: cx - dotRadius, y: 11.0 - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
+                ctx.fillEllipse(in: dotRect)
+            }
+
+            ctx.restoreGState()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     private func openInputMonitoringSettings() {
@@ -699,7 +830,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .idle:
             setRetryPermissionsAvailable(true)
             controlWindow.setProviderSelectionEnabled(true)
-            statusItem.button?.title = "VF"
+            showStatusIcon()
             let shortcut = configuration?.shortcut.displayName ?? "Fn/Globe"
             if globalHotkeyAvailable {
                 statusMenuItem.title = "Ready — hold \(shortcut) or the button"
@@ -720,7 +851,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // does nothing is indistinguishable from one that is broken.
             setRetryPermissionsAvailable(true)
             controlWindow.setProviderSelectionEnabled(true)
-            statusItem.button?.title = "VF"
+            showStatusIcon()
             switch reason {
             case .tooShort:
                 let seconds = configuration?.holdDelaySeconds ?? 0.5
@@ -737,7 +868,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .recording:
             setRetryPermissionsAvailable(false)
             controlWindow.setProviderSelectionEnabled(false)
-            statusItem.button?.title = "●"
+            showStatusMarker("●")
             statusMenuItem.title = "Recording… release to transcribe"
             let shortcut = configuration?.shortcut.displayName ?? "Fn/Globe"
             let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop"
@@ -761,7 +892,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .processing:
             setRetryPermissionsAvailable(false)
             controlWindow.setProviderSelectionEnabled(false)
-            statusItem.button?.title = "…"
+            showStatusMarker("…")
             floatingHUD.showProcessing()
             if selectedCleaner.isCloud {
                 statusMenuItem.title = "Cleaning transcript with \(selectedCleaner.displayName)…"
@@ -789,8 +920,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ):
             setRetryPermissionsAvailable(true)
             controlWindow.setProviderSelectionEnabled(true)
-            statusItem.button?.title = "✓"
+            showStatusMarker("✓")
             playCompletionSound()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if self.controller?.isIdle != false {
+                    self.showStatusIcon()
+                }
+            }
 
             // Speech recognition did half the work and left no trace: the MIC/STT filter
             // read zero however much was dictated. One line per run, naming the language
@@ -969,7 +1106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .failed(let message):
             setRetryPermissionsAvailable(true)
             controlWindow.setProviderSelectionEnabled(true)
-            statusItem.button?.title = "!"
+            showStatusMarker("!")
             statusMenuItem.title = message
             floatingHUD.showFailed(message: message)
             controlWindow.update(title: "VoiceFlow needs attention", detail: message)
