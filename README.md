@@ -1,10 +1,19 @@
-# sanblueᵈᵒᵗ VoiceFlow
+# SANDY.SYSDEV v0.10.0 — retro voice-station
 
-Personal, local-first push-to-talk dictation for macOS and Windows. **Gates 1 to 4 are
-closed. Automatic paste ships, and since 2026-09-01 it reaches terminal emulators too,
-under a single-line flattening guard; applications that report no bundle identifier, and
-VoiceFlow's own window, stay on clipboard delivery. Windows and pronunciation practice
-remain open gates.**
+**retro voice-station** — personal push-to-talk dictation, built by Sandy E. Quintero.
+Local-first on macOS and Windows: the speech never leaves the machine, and cloud cleanup
+is an explicit, visible choice taken one dictation at a time.
+
+> The engine, this README and the interface are in English. The speaker dictates in
+> Spanish, English or a mixture of the two, and the engine detects which.
+
+Gates 1 to 4 are closed. Automatic paste ships, and since 2026-09-01 it reaches terminal
+emulators too, under a single-line flattening guard; applications that report no bundle
+identifier, and VoiceFlow's own window, stay on clipboard delivery. Windows and
+pronunciation practice remain open gates.
+
+The version in the title above is a copy of `CFBundleShortVersionString` in
+`macos/Resources/Info.plist`, and moves with it at each release.
 
 ## Current slice
 
@@ -641,3 +650,11 @@ Do not place recordings, transcripts, vocabulary, corrections, API keys, local c
   metric normalizes away the punctuation it adds, so this corpus cannot judge it. It is
   now opt-in, and a deterministic guard rejects lexical invention, reordering,
   substitution, and non-filler deletion before clipboard delivery.
+
+## License
+
+MIT — the code is free to use. The **sanblueᵈᵒᵗ** name, wordmark and brand identity
+are not covered by the license.
+
+---
+© 2026 Sandy E. Quintero — sanblueᵈᵒᵗ · retro voice-station
