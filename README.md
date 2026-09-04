@@ -442,6 +442,10 @@ System Settings only to enable the global Fn/Globe trigger. Choose **Retry Permi
 from the window or the `VF` menu after changing permissions. The window includes an
 **Open Input Monitoring Settings** button for this one-time setup.
 
+The station window reopens where it was left, at the same size, and falls back to the
+centre of the screen only when the remembered frame lands on a display that is no longer
+attached.
+
 The window provides one large hold-to-talk button. The default global control is the
 single `Fn/Globe` key:
 
@@ -500,6 +504,7 @@ continuing recorded work.
 - `macos/` — native menu-bar runner and dependency-free checks.
 - `macos/Sources/VoiceFlowMacCore/PasteTarget.swift` — which applications may receive a keystroke.
 - `macos/Sources/VoiceFlowMacCore/VoiceAction.swift` — spoken-intent parsing.
+- `windows/` — Windows platform adapter scaffold: written and audited, never compiled.
 - `scripts/build-macos-app.sh` — stable local `.app` packaging and Apple Development signing.
 - `acceptance/` — one runbook and report per framework gate; `acceptance/README.md` indexes them.
 - `docs/` — HTML previews of interface surfaces, built from the `design-system.md` tokens.

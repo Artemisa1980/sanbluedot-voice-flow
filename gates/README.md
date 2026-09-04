@@ -55,3 +55,4 @@ evidence.
 | `evolution-python-gate-01.local.md` | 2026-09-03 | Competitive evolution · Python engine and tests | COMPLETE · CONDITIONAL PASS · unguarded stdin read and an untested Gemini transform branch |
 | `evolution-swift-gate-01.local.md` | 2026-09-03 | Competitive evolution · Swift application layer | COMPLETE · FAIL · `positionPanel()` resized the redesigned capsule back to `295 × 74`, clipping it by 17pt on every show |
 | `evolution-docs-gate-01.local.md` | 2026-09-03 | Competitive evolution · framework, visual contract and governance | COMPLETE · FAIL · the same panel-size contradiction, a wrong vintage-mic state rule, and two unsupported claims in the relay |
+| `windows-scaffold-gate-01.local.md` | 2026-09-03 | Windows platform adapter scaffolding | COMPLETE · FAIL · 9 blocking errors remediated by author |
