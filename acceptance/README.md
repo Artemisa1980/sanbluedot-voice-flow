@@ -24,7 +24,9 @@ against the same recordings rather than against a fresh, incomparable set.
 | `phase-4-acceptance.md` | Gate 4 — cloud cleanup: privacy boundary, fallback, output guard, corpus quality | PASS 2026-08-31 |
 | `phase-6-acceptance.local.md` | Gate 6 — pronunciation practice: recording, word-level report, deletability, formatting separated | PASS 2026-09-02 · local |
 
-Gate 5 (Windows) has no file yet: the Windows machine is still unnamed.
+Gate 5 (Windows) has no file yet. A Windows machine is available as of 2026-09-02, so
+the gate is unblocked; it opens when that machine and its target applications are named
+and the adapter is built and measured there.
 
 ## What stays out of version control
 

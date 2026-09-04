@@ -146,5 +146,10 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
   25.6% raw WER, and 26.9% cleaned WER. The local cleaner did not improve aggregate
   accuracy. Later fixed-audio replay points to English, not mixed speech, as the main
   remaining recognition weakness; the cleaner remains opt-in until separately accepted.
-- The Windows machine specification is still unknown.
+- A Windows machine is available; its specification is not recorded yet. Gate 5 is no
+  longer blocked on having one, only on naming it and its target applications.
+- Windows work continues on that machine, not from the Mac: a copy of this project plus
+  Claude Code running there can build and test the adapter in place, which is what the
+  gate requires. The Python engine is unchanged and shared; only the platform shell —
+  global hotkey, capture, paste, window — is new.
 - macOS microphone and Accessibility permissions require visible user consent.
