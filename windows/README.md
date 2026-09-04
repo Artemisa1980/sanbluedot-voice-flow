@@ -46,11 +46,26 @@ windows/
 
 ### 1. Prerequisites
 
-- Windows 10 (version 1809+) or Windows 11 with WebView2 Runtime (included by default).
-- Python 3.11+ added to `PATH`.
-- Rust toolchain (`rustc`, `cargo`) installed via [rustup.rs](https://rustup.rs).
-- `whisper-cli.exe` pre-built binary for Windows in `models/` (or configured in `PATH`).
-- GGML model file (e.g. `models/ggml-base.bin` or `models/ggml-large-v3-turbo.bin`).
+Measured against the target machine on 2026-09-04. What it already has: Windows 11 Home
+25H2 x64, the WebView2 Runtime, Python 3.13, Git, Node, MSVC Build Tools 2019 with the
+Windows SDK 10.0.19041, and FFmpeg.
+
+What it does not have, and what each is for:
+
+| Missing | Needed for | Install |
+|---|---|---|
+| Rust and Cargo | The Rust backend of this adapter | `winget install Rustlang.Rustup` |
+| Tauri CLI v2 | `cargo tauri` is a Cargo subcommand and is not part of Cargo | `cargo install tauri-cli --version "^2.0"` |
+| `whisper-cli.exe` | The engine invokes the whisper.cpp binary. FFmpeg's own `whisper` filter is a different interface and does not satisfy it | A prebuilt whisper.cpp Windows x64 release, placed at `models\whisper-cli.exe` |
+| A GGML model | `models/` is excluded from version control, so no weights arrive with a clone | Copy `ggml-small.bin` (465 MB) first. `ggml-large-v3-turbo.bin` is 1.5 GB and is the macOS default because it was measured on an M3 Pro, not here |
+
+Ollama is not installed on that machine, so local cleanup is unavailable until one is.
+There is no macOS keychain either: the engine reads the process environment first, so a
+cloud key reaches it as `VOICEFLOW_GEMINI_API_KEY`. It never belongs in a file, a script
+or a committed configuration.
+
+`acceptance/phase-5-acceptance.md` is the gate runbook and records what must be measured
+here.
 
 ### 2. Environment Setup
 

@@ -146,8 +146,19 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
   25.6% raw WER, and 26.9% cleaned WER. The local cleaner did not improve aggregate
   accuracy. Later fixed-audio replay points to English, not mixed speech, as the main
   remaining recognition weakness; the cleaner remains opt-in until separately accepted.
-- A Windows machine is available; its specification is not recorded yet. Gate 5 is no
-  longer blocked on having one, only on naming it and its target applications.
+- The Windows machine is named, which closes Gate 5's first condition. Lenovo IdeaPad 1
+  15IAU7 (`82QD`), Windows 11 Home 25H2, build `10.0.26200.9278`, x64: Intel Core
+  i3-1215U with AVX2, 6 cores and 8 threads; 7.73 GiB usable RAM; Intel UHD integrated
+  graphics and no NVIDIA GPU; 1920 × 1080; 67.6 GiB free on `C:`. Verified 2026-09-04.
+- Its target applications for the gate are Notepad, VS Code and a browser text field.
+- That machine carries the tools and not the payload. Python 3.13, Git, Node, VS Code,
+  WebView2, MSVC Build Tools 2019 and the Windows SDK are installed; Rust, the Tauri CLI,
+  `whisper-cli.exe` and the model weights are not, and the last two are excluded from
+  version control by design. They are provisioned there, not shipped from here.
+- Its transcription budget is not this Mac's. `large-v3-turbo` is the default because it
+  was measured on an M3 Pro. On integrated graphics with 8 GiB the first measurement is
+  `ggml-small`, and which model becomes the Windows default follows what that machine
+  reports rather than what this one did.
 - Windows work continues on that machine, not from the Mac: a copy of this project plus
   Claude Code running there can build and test the adapter in place, which is what the
   gate requires. The Python engine is unchanged and shared; only the platform shell —
