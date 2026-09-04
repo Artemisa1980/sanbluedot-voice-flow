@@ -34,6 +34,11 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     /// measured 687 of the size she accepted they are all present. 700 keeps a margin.
     static let contentFloor = NSSize(width: 760, height: 700)
 
+    /// Where the station was last left. macOS keeps the frame under this name in the
+    /// application's own defaults, so the window reopens where it was put instead of
+    /// jumping back to the centre of whichever screen happens to be active.
+    private static let frameAutosaveName = NSWindow.FrameAutosaveName("VoiceFlowStation")
+
     init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 700),
@@ -63,11 +68,26 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)
+        Self.restoreRememberedFrame(of: window)
         configureContent()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    /// A remembered frame is honoured only while it is still reachable. A window restored
+    /// onto a display that is no longer attached is a window the speaker cannot find and
+    /// cannot move back, so a frame that lands on no screen falls back to centring. The
+    /// saved size is clamped by `minSize`, so a frame stored before the floor was raised
+    /// cannot reopen the window shorter than its content.
+    private static func restoreRememberedFrame(of window: NSWindow) {
+        let restored = window.setFrameUsingName(frameAutosaveName)
+        let reachable = NSScreen.screens.contains { $0.visibleFrame.intersects(window.frame) }
+        if !restored || !reachable {
+            window.center()
+        }
+        _ = window.setFrameAutosaveName(frameAutosaveName)
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
