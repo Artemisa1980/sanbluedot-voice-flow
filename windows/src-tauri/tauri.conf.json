@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "sanblueᵈᵒᵗ VoiceFlow",
+  "version": "0.1.0",
+  "identifier": "com.sanbluedot.voiceflow",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "sanblueᵈᵒᵗ VoiceFlow HUD",
+        "label": "main",
+        "width": 330,
+        "height": 88,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

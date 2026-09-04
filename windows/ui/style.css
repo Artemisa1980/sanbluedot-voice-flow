@@ -1,0 +1,356 @@
+/* sanblueᵈᵒᵗ VoiceFlow — Windows Retro HUD Stylesheet */
+/* Dimensions: 330px × 88px, adhering to HUDLayout.swift and design-system.md */
+
+:root {
+  --navy: #16213E;
+  --dot-blue: #7CB3E8;
+  --gold: #EFC15E;
+  --danger: #C0392B;
+  --ok: #27AE60;
+  --panel-bg: rgba(22, 33, 62, 0.94);
+  --text-cream: #FFF7EF;
+  --text-muted: #98AAB2;
+  --font-mono: "SF Mono", "Cascadia Code", "Consolas", "Courier New", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  background: transparent;
+  width: 330px;
+  height: 88px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 330px × 88px Capsule Container with 18px corner radius */
+.hud-container {
+  width: 330px;
+  height: 88px;
+  background: var(--navy);
+  border-radius: 18px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  border: 1px solid rgba(124, 179, 232, 0.35);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hud-container.recording {
+  border-color: var(--danger);
+  box-shadow: 0 8px 20px rgba(192, 57, 43, 0.35), inset 0 0 0 1px rgba(192, 57, 43, 0.4);
+}
+
+.hud-container.processing {
+  border-color: var(--gold);
+  box-shadow: 0 8px 20px rgba(239, 193, 94, 0.35), inset 0 0 0 1px rgba(239, 193, 94, 0.4);
+}
+
+.hud-container.completed {
+  border-color: var(--ok);
+  box-shadow: 0 8px 20px rgba(39, 174, 96, 0.35), inset 0 0 0 1px rgba(39, 174, 96, 0.4);
+}
+
+/* 44px Vintage Microphone Disc */
+.mic-disc {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  background: var(--navy);
+  border: 1.5px solid var(--dot-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.6);
+}
+
+.hud-container.recording .mic-disc {
+  border-color: var(--danger);
+}
+
+.hud-container.processing .mic-disc {
+  border-color: var(--gold);
+}
+
+.hud-container.completed .mic-disc {
+  border-color: var(--ok);
+}
+
+/* Vintage Ribbon Microphone Artwork */
+.vintage-ribbon-mic {
+  width: 18px;
+  height: 26px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mic-outer-frame {
+  width: 16px;
+  height: 20px;
+  border: 1.5px solid var(--dot-blue);
+  border-radius: 4px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  padding: 1px 2px;
+  background: rgba(22, 33, 62, 0.9);
+}
+
+.hud-container.recording .mic-outer-frame {
+  border-color: var(--danger);
+}
+
+.hud-container.processing .mic-outer-frame {
+  border-color: var(--gold);
+}
+
+.hud-container.completed .mic-outer-frame {
+  border-color: var(--ok);
+}
+
+.mic-grille-line {
+  width: 100%;
+  height: 1px;
+  background: var(--text-muted);
+  opacity: 0.6;
+}
+
+.mic-ribbon-center {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 6px;
+  right: 6px;
+  border-left: 1px solid var(--gold);
+  border-right: 1px solid var(--gold);
+  opacity: 0.8;
+}
+
+.mic-yoke {
+  width: 18px;
+  height: 4px;
+  border-bottom: 1.5px solid var(--text-muted);
+  border-left: 1.5px solid var(--text-muted);
+  border-right: 1.5px solid var(--text-muted);
+  border-radius: 0 0 4px 4px;
+}
+
+.mic-base-stem {
+  width: 4px;
+  height: 2px;
+  background: var(--text-muted);
+}
+
+.pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1.5px solid var(--danger);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud-container.recording .pulse-ring {
+  animation: pulse 1.4s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* 226px Content Column */
+.content-column {
+  width: 226px;
+  margin-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Row 1: Status (Left) + sanblueᵈᵒᵗ Brand Lockup (Right) */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 16px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dot-blue);
+}
+
+.hud-container.recording .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+
+.hud-container.processing .status-dot {
+  background: var(--gold);
+  animation: blink 0.8s infinite alternate;
+}
+
+.hud-container.completed .status-dot {
+  background: var(--ok);
+}
+
+@keyframes blink {
+  from { opacity: 0.3; }
+  to { opacity: 1; }
+}
+
+.status-text {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--text-cream);
+  text-transform: uppercase;
+}
+
+.context-pill {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--dot-blue);
+  background: rgba(124, 179, 232, 0.12);
+  border: 1px solid rgba(124, 179, 232, 0.25);
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+/* sanblueᵈᵒᵗ Brand Lockup: gold word, dot-blue elevated superscript */
+.brand-lockup {
+  display: flex;
+  align-items: baseline;
+  line-height: 1;
+}
+
+.brand-sanblue {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.2px;
+}
+
+.brand-dot {
+  font-size: 7px;
+  font-weight: 800;
+  color: var(--dot-blue);
+  vertical-align: super;
+  margin-left: 1px;
+}
+
+/* Row 2: 12-Bar LED VU Meter + Escape Marker */
+.meter-row {
+  height: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vu-meter {
+  display: flex;
+  flex: 1;
+  height: 10px;
+  gap: 3px;
+  background: rgba(10, 15, 30, 0.6);
+  padding: 2px;
+  border-radius: 3px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+
+.vu-bar {
+  flex: 1;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.vu-fill {
+  width: 100%;
+  height: 100%;
+  background: var(--dot-blue);
+  opacity: 0.15;
+  transition: opacity 0.05s ease;
+}
+
+.vu-bar:nth-child(n+9) .vu-fill {
+  background: var(--gold);
+}
+
+.vu-bar:nth-child(n+11) .vu-fill {
+  background: var(--danger);
+}
+
+.vu-bar.active .vu-fill {
+  opacity: 1;
+  box-shadow: 0 0 4px currentColor;
+}
+
+.esc-marker {
+  display: none;
+  font-size: 9px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.hud-container.recording .esc-marker {
+  display: block;
+}
+
+/* Row 3: Live Telemetry Speed Pill (R9: measured only, no placeholders) */
+.telemetry-row {
+  height: 14px;
+  display: flex;
+  align-items: center;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.telemetry-item {
+  color: var(--text-cream);
+}
+
+.telemetry-details {
+  color: var(--text-muted);
+  margin-left: 4px;
+}

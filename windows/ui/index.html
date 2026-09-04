@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sanblueᵈᵒᵗ VoiceFlow HUD</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="hud-container" id="hud">
+    <!-- 44px Vintage Microphone Disc -->
+    <div class="mic-disc" id="micDisc">
+      <div class="vintage-ribbon-mic">
+        <div class="mic-outer-frame">
+          <div class="mic-grille-line"></div>
+          <div class="mic-grille-line"></div>
+          <div class="mic-grille-line"></div>
+          <div class="mic-ribbon-center"></div>
+        </div>
+        <div class="mic-yoke"></div>
+        <div class="mic-base-stem"></div>
+      </div>
+      <div class="pulse-ring"></div>
+    </div>
+
+    <!-- 226px Content Column -->
+    <div class="content-column">
+      <!-- Row 1: Status Header (Left) + sanblueᵈᵒᵗ Brand Lockup (Right) -->
+      <div class="status-row">
+        <div class="status-badge" id="statusBadge">
+          <span class="status-dot" id="statusDot"></span>
+          <span class="status-text" id="statusText">READY</span>
+          <span class="context-pill" id="contextPill">DESKTOP</span>
+        </div>
+
+        <div class="brand-lockup">
+          <span class="brand-sanblue">sanblue</span><span class="brand-dot">dot</span>
+        </div>
+      </div>
+
+      <!-- Row 2: 12-Bar LED VU Meter + Escape Marker -->
+      <div class="meter-row">
+        <div class="vu-meter" id="vuMeter">
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+          <div class="vu-bar"><div class="vu-fill"></div></div>
+        </div>
+        <div class="esc-marker" id="escMarker">ESC ✕</div>
+      </div>
+
+      <!-- Row 3: Live Telemetry Speed Pill (Measurements only, R9) -->
+      <div class="telemetry-row" id="telemetryRow">
+        <span class="telemetry-item" id="stageItem">READY</span>
+        <span class="telemetry-details" id="telemetryDetails"></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

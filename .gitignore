@@ -46,6 +46,10 @@ models/
 *.gguf
 *.mlmodelc/
 src-tauri/binaries/
+# Cargo writes the Windows build here. `binaries/` alone covered the bundled sidecars and
+# left the compiler's own output, which is where the gigabytes are, untracked but not
+# ignored — one `git add -A` from entering the repository.
+target/
 
 # Platform metadata
 .DS_Store
