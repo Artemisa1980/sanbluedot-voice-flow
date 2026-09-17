@@ -1272,6 +1272,39 @@ do {
         }
     }
 
+    // A refusal the speaker cannot hear.
+    //
+    // R3c asks for two things when a switch is pressed mid-run: the switch is refused,
+    // and the refusal is reported. `guard viewModel.isSelectionEnabled else { return }`
+    // does the first and drops the second, which leaves a live button that answers a
+    // press with nothing — indistinguishable, from the speaker's side, from a break.
+    // Every such guard must now carry a `reportRefusal` before it returns.
+    for (name, body) in try interfaceSourcesWithoutTokenDeclarations() {
+        try check(
+            !body.contains("isSelectionEnabled else { return }"),
+            "\(name) refuses a selection in silence. Report the refusal with "
+                + "viewModel.reportRefusal(_:) before returning, as R3c requires."
+        )
+    }
+
+    // A count nobody can read.
+    //
+    // ChassisCount draws a bare number. On screen the chassis title beside it says what
+    // is being counted; read aloud the badge arrives alone, so the noun travels with it.
+    for (name, body) in try interfaceSourcesWithoutTokenDeclarations() {
+        var searched = Substring(body)
+        while let call = searched.range(of: "ChassisCount(") {
+            let rest = searched[call.upperBound...]
+            guard let close = rest.firstIndex(of: ")") else { break }
+            try check(
+                rest[..<close].contains("noun:"),
+                "\(name) builds a ChassisCount without a noun. A number read on its own "
+                    + "counts nothing; name what it counts."
+            )
+            searched = rest[close...]
+        }
+    }
+
     print("VoiceFlowMacCore checks passed.")
 } catch {
     FileHandle.standardError.write(Data("Check failed: \(error.localizedDescription)\n".utf8))

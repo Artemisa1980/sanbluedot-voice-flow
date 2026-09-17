@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self' file:; img-src 'self' data:">
+<title>01 — Focus Home | VoiceFlow proposal</title>
+<style>
+@font-face { font-family: "Press Start 2P"; src: url("../macos/Resources/Fonts/PressStart2P-Regular.ttf") format("truetype"); }
+body { margin: 0; padding: 20px; background: #a9d3c0; color: #16213e; font: 13px/1.6 ui-monospace, monospace; }
+.proposal-note { max-width: 1024px; margin: 0 auto 18px; }
+.proposal-note a { color: #16213e; }
+#voiceflow-product-direction .vf-owner, #voiceflow-product-direction .vf-product, #voiceflow-product-direction .vf-version { font-family: "Press Start 2P", monospace; }
+#voiceflow-product-direction .vf-owner { font-size: 9px; }
+#voiceflow-product-direction .vf-product { font-size: 8px; }
+#voiceflow-product-direction .vf-version { font-size: 7px; }
+#voiceflow-product-direction .vf-titlebar { height: 72px; }
+@media(max-width:1000px) { #voiceflow-product-direction .vf-product { display:none; } #voiceflow-product-direction .vf-titlebar { grid-template-columns:1fr auto; } }
+</style>
+</head>
+<body>
+<div class="proposal-note"><a href="product-directions.html">← Compare all three directions</a><h2>01 / Focus Home</h2>Design proposal · Fictional demonstration content, including all counts, timings and device status. Controls illustrate layout; no microphone, paste, storage or model connection. Recovery retention and new settings require separate implementation decisions.</div>
+<div id="voiceflow-product-direction" aria-label="VoiceFlow product direction mockup">
+  <style>
+    #voiceflow-product-direction {
+      width: 100%;
+      min-height: 690px;
+      color: #16213e;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    #voiceflow-product-direction * { box-sizing: border-box; }
+    #voiceflow-product-direction button { font: inherit; }
+
+    #voiceflow-product-direction .vf-window {
+      width: min(100%, 1024px);
+      min-height: 680px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 3px solid #16213e;
+      border-radius: 18px;
+      background: #a9d3c0;
+      box-shadow: 0 8px 0 #16213e;
+    }
+
+    #voiceflow-product-direction .vf-titlebar {
+      height: 64px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 20px;
+      color: #f8eccf;
+      background: #16213e;
+      border-bottom: 2px solid #efc15e;
+    }
+
+    #voiceflow-product-direction .vf-owner {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      font-size: 12px;
+    }
+
+    #voiceflow-product-direction .vf-version {
+      padding: 4px 7px;
+      border-radius: 5px;
+      color: #16213e;
+      background: #efc15e;
+      font-size: 9px;
+      letter-spacing: 0;
+    }
+
+    #voiceflow-product-direction .vf-product {
+      font-size: 11px;
+      letter-spacing: .08em;
+    }
+
+    #voiceflow-product-direction .vf-wordmark {
+      justify-self: end;
+      color: #efc15e;
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    #voiceflow-product-direction .vf-wordmark sup { color: #7cb3e8; }
+
+    #voiceflow-product-direction .vf-layout {
+      display: grid;
+      grid-template-columns: 186px minmax(0, 1fr);
+      min-height: 614px;
+    }
+
+    #voiceflow-product-direction .vf-sidebar {
+      display: flex;
+      flex-direction: column;
+      padding: 18px 13px 14px;
+      color: #fff9e9;
+      background: #262319;
+      border-right: 2px solid #16213e;
+    }
+
+    #voiceflow-product-direction .vf-nav-label {
+      margin: 0 8px 10px;
+      color: #efc15e;
+      opacity: .65;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .14em;
+    }
+
+    #voiceflow-product-direction .vf-nav {
+      display: grid;
+      gap: 5px;
+    }
+
+    #voiceflow-product-direction .vf-nav button {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 10px 11px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      color: #fff9e9;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    #voiceflow-product-direction .vf-nav button[aria-current="page"] {
+      color: #16213e;
+      background: #efc15e;
+      border-color: #16213e;
+      box-shadow: 2px 2px 0 #906961;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-count {
+      opacity: .65;
+      font-size: 9px;
+    }
+
+    #voiceflow-product-direction .vf-privacy {
+      margin-top: auto;
+      padding: 11px;
+      border: 1px solid rgba(239, 193, 94, .35);
+      border-radius: 9px;
+      color: #f8eccf;
+      background: rgba(255, 255, 255, .04);
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    #voiceflow-product-direction .vf-privacy strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #a9d3c0;
+      font-size: 10px;
+    }
+
+    #voiceflow-product-direction .vf-content {
+      padding: 20px;
+      background: #a9d3c0;
+    }
+
+    #voiceflow-product-direction .vf-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 15px;
+    }
+
+    #voiceflow-product-direction .vf-heading h1 {
+      margin: 0 0 5px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 24px;
+      letter-spacing: -.03em;
+    }
+
+    #voiceflow-product-direction .vf-heading p {
+      margin: 0;
+      color: #405147;
+      font-size: 11px;
+    }
+
+    #voiceflow-product-direction .vf-health {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border: 1.5px solid #16213e;
+      border-radius: 999px;
+      background: #f8eccf;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #5f7050;
+    }
+
+    #voiceflow-product-direction .vf-focus-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(240px, .65fr);
+      gap: 14px;
+    }
+
+    #voiceflow-product-direction .vf-panel {
+      border: 2px solid #16213e;
+      border-radius: 13px;
+      background: #f8eccf;
+      box-shadow: 4px 4px 0 #16213e;
+    }
+
+    #voiceflow-product-direction .vf-record {
+      position: relative;
+      min-height: 318px;
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    #voiceflow-product-direction .vf-record-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    #voiceflow-product-direction .vf-target,
+    #voiceflow-product-direction .vf-local {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1.5px solid #16213e;
+      border-radius: 7px;
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-target { background: #fff9e9; }
+    #voiceflow-product-direction .vf-local { background: #7cb3e8; }
+
+    #voiceflow-product-direction .vf-record-core {
+      display: grid;
+      justify-items: center;
+      gap: 10px;
+      padding: 23px 0 16px;
+    }
+
+    #voiceflow-product-direction .vf-mic {
+      width: 112px;
+      height: 112px;
+      display: grid;
+      place-items: center;
+      border: 3px solid #16213e;
+      border-radius: 50%;
+      color: #efc15e;
+      background: #16213e;
+      box-shadow: 0 0 0 9px rgba(124, 179, 232, .35), 5px 6px 0 #906961;
+      cursor: pointer;
+      font-size: 39px;
+    }
+
+    #voiceflow-product-direction .vf-record-title {
+      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-record-hint {
+      color: #405147;
+      font-size: 10px;
+    }
+
+    #voiceflow-product-direction .vf-modes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    #voiceflow-product-direction .vf-mode {
+      min-height: 44px;
+      padding: 6px 4px;
+      border: 1.5px solid #16213e;
+      border-radius: 7px;
+      color: #16213e;
+      background: #fff9e9;
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-mode[aria-pressed="true"] {
+      background: #efc15e;
+      box-shadow: 2px 2px 0 #906961;
+    }
+
+    #voiceflow-product-direction .vf-side-stack {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    #voiceflow-product-direction .vf-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px 13px 9px;
+      border-bottom: 1px solid rgba(22, 33, 62, .23);
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-last-body { padding: 12px 13px 13px; }
+
+    #voiceflow-product-direction .vf-last-body p {
+      margin: 0 0 12px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    #voiceflow-product-direction .vf-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    #voiceflow-product-direction .vf-actions button {
+      padding: 6px 8px;
+      border: 1.5px solid #16213e;
+      border-radius: 6px;
+      color: #16213e;
+      background: #fff9e9;
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-actions button:first-child { background: #efc15e; }
+    #voiceflow-product-direction .vf-actions button:last-child { background: #7cb3e8; }
+
+    #voiceflow-product-direction .vf-setup-list {
+      display: grid;
+      gap: 9px;
+      padding: 11px 13px 13px;
+    }
+
+    #voiceflow-product-direction .vf-setup-row {
+      display: grid;
+      grid-template-columns: 11px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      font-size: 9px;
+    }
+
+    #voiceflow-product-direction .vf-setup-row i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #5f7050;
+    }
+
+    #voiceflow-product-direction .vf-setup-row span:last-child { color: #405147; }
+
+    #voiceflow-product-direction .vf-recovery {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
+      padding: 10px 13px;
+      border: 2px solid #16213e;
+      border-radius: 10px;
+      background: #98aab2;
+      box-shadow: 3px 3px 0 #16213e;
+      font-size: 9px;
+    }
+
+    #voiceflow-product-direction .vf-recovery strong { font-size: 10px; }
+
+    #voiceflow-product-direction .vf-recovery button {
+      padding: 7px 9px;
+      border: 1.5px solid #16213e;
+      border-radius: 6px;
+      color: #f8eccf;
+      background: #906961;
+      cursor: pointer;
+      font-size: 8px;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-station-view { display: none; }
+
+    #voiceflow-product-direction .vf-chain {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    #voiceflow-product-direction .vf-stage {
+      padding: 12px;
+      border: 2px solid #16213e;
+      border-radius: 9px;
+      background: #fff9e9;
+      box-shadow: 3px 3px 0 #16213e;
+      font-size: 9px;
+    }
+
+    #voiceflow-product-direction .vf-stage b {
+      display: block;
+      margin-top: 5px;
+      font-size: 11px;
+    }
+
+    #voiceflow-product-direction .vf-console {
+      min-height: 420px;
+      padding: 16px;
+      border: 2px solid #16213e;
+      border-radius: 12px;
+      color: #fff9e9;
+      background: #262319;
+      box-shadow: 4px 4px 0 #906961;
+      font-size: 10px;
+      line-height: 1.8;
+    }
+
+    #voiceflow-product-direction .vf-console-title {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 9px;
+      border-bottom: 1px solid rgba(239, 193, 94, .35);
+      color: #efc15e;
+      font-weight: 900;
+    }
+
+    #voiceflow-product-direction .vf-console span { color: #7cb3e8; }
+
+    #voiceflow-product-direction[data-direction="station"] .vf-focus-view { display: none; }
+    #voiceflow-product-direction[data-direction="station"] .vf-station-view { display: block; }
+
+    @media (max-width: 760px) {
+      #voiceflow-product-direction { min-height: 780px; }
+      #voiceflow-product-direction .vf-window { min-height: 760px; border-radius: 12px; }
+      #voiceflow-product-direction .vf-titlebar { grid-template-columns: 1fr auto; }
+      #voiceflow-product-direction .vf-product { display: none; }
+      #voiceflow-product-direction .vf-layout { grid-template-columns: 1fr; }
+      #voiceflow-product-direction .vf-sidebar {
+        flex-direction: row;
+        gap: 6px;
+        padding: 8px;
+        overflow-x: auto;
+        border-right: 0;
+        border-bottom: 2px solid #16213e;
+      }
+      #voiceflow-product-direction .vf-nav-label,
+      #voiceflow-product-direction .vf-privacy { display: none; }
+      #voiceflow-product-direction .vf-nav { display: flex; }
+      #voiceflow-product-direction .vf-nav button { min-width: max-content; padding: 8px; }
+      #voiceflow-product-direction .vf-content { padding: 14px; }
+      #voiceflow-product-direction .vf-focus-grid { grid-template-columns: 1fr; }
+      #voiceflow-product-direction .vf-record { min-height: 304px; }
+      #voiceflow-product-direction .vf-recovery { grid-template-columns: 1fr auto; }
+      #voiceflow-product-direction .vf-recovery > div:first-child { display: none; }
+      #voiceflow-product-direction .vf-chain { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 430px) {
+      #voiceflow-product-direction .vf-owner { font-size: 10px; }
+      #voiceflow-product-direction .vf-wordmark { font-size: 11px; }
+      #voiceflow-product-direction .vf-heading { display: block; }
+      #voiceflow-product-direction .vf-health { margin-top: 10px; width: max-content; }
+      #voiceflow-product-direction .vf-modes { grid-template-columns: repeat(3, 1fr); }
+      #voiceflow-product-direction .vf-recovery { grid-template-columns: 1fr; }
+      #voiceflow-product-direction .vf-chain { grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <section class="vf-window">
+    <header class="vf-titlebar">
+      <div class="vf-owner">SANDY.SYSDEV <span class="vf-version">CONCEPT</span></div>
+      <div class="vf-product">retro voice-station</div>
+      <div class="vf-wordmark">sanblue<sup>dot</sup></div>
+    </header>
+
+    <div class="vf-layout">
+      <aside class="vf-sidebar">
+        <div class="vf-nav-label">VOICEFLOW</div>
+        <nav class="vf-nav" aria-label="Primary navigation">
+          <button type="button" aria-current="page"><span>⌂ Home</span></button>
+          <button type="button"><span>◷ History</span><span class="vf-count">10</span></button>
+          <button type="button"><span>◇ Modes</span><span class="vf-count">5</span></button>
+          <button type="button"><span>✦ Personalize</span></button>
+          <button type="button"><span>↳ Snippets</span><span class="vf-count">3</span></button>
+          <button type="button"><span>⚙ Settings</span></button>
+          <button type="button"><span>⌁ Diagnostics</span></button>
+        </nav>
+        <div class="vf-privacy"><strong>● PRIVATE BY DEFAULT</strong>Audio stays on this Mac. Cloud text cleanup is off.</div>
+      </aside>
+
+      <main class="vf-content">
+        <div class="vf-heading">
+          <div>
+            <h1>Ready to dictate</h1>
+            <p>The daily surface is quiet. Detail stays one click away.</p>
+          </div>
+          <div class="vf-health"><span class="vf-health-dot"></span> ALL SYSTEMS READY</div>
+        </div>
+
+        <div class="vf-focus-view">
+          <div class="vf-focus-grid">
+            <section class="vf-panel vf-record" aria-label="Dictation controls">
+              <div class="vf-record-top">
+                <span class="vf-target">➜ NOTES</span>
+                <span class="vf-local">LOCAL · WHISPER</span>
+              </div>
+              <div class="vf-record-core">
+                <button type="button" class="vf-mic" aria-label="Hold to record">◉</button>
+                <div class="vf-record-title">Hold Fn to talk</div>
+                <div class="vf-record-hint">Release to paste · Escape to cancel</div>
+              </div>
+              <div class="vf-modes" aria-label="Processing mode">
+                <button type="button" class="vf-mode" aria-pressed="true" data-mode="Dictate">DICTATE</button>
+                <button type="button" class="vf-mode" aria-pressed="false" data-mode="Translate">ES → EN</button>
+                <button type="button" class="vf-mode" aria-pressed="false" data-mode="Notes">NOTES</button>
+                <button type="button" class="vf-mode" aria-pressed="false" data-mode="Command">COMMAND</button>
+                <button type="button" class="vf-mode" aria-pressed="false" data-mode="Rewrite">REWRITE</button>
+              </div>
+            </section>
+
+            <div class="vf-side-stack">
+              <section class="vf-panel">
+                <div class="vf-panel-head"><span>LAST DICTATION</span><span>12s ago</span></div>
+                <div class="vf-last-body">
+                  <p>Let’s make the app easier to use without losing its personality.</p>
+                  <div class="vf-actions">
+                    <button type="button">COPY</button>
+                    <button type="button">VIEW CHANGES</button>
+                    <button type="button">CORRECT WORD</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="vf-panel">
+                <div class="vf-panel-head"><span>SETUP HEALTH</span><span>3 / 3</span></div>
+                <div class="vf-setup-list">
+                  <div class="vf-setup-row"><i></i><strong>Microphone</strong><span>MacBook Pro</span></div>
+                  <div class="vf-setup-row"><i></i><strong>Shortcut</strong><span>Fn / Globe</span></div>
+                  <div class="vf-setup-row"><i></i><strong>Model</strong><span>Turbo · local</span></div>
+                </div>
+              </section>
+            </div>
+
+            <section class="vf-recovery" aria-label="Recovery status">
+              <div>↻</div>
+              <div><strong>Nothing gets lost</strong><br>Failed dictations wait locally for retry, then delete automatically.</div>
+              <button type="button">OPEN RECOVERY</button>
+            </section>
+          </div>
+        </div>
+
+        <div class="vf-station-view">
+          <div class="vf-chain" aria-label="Signal chain">
+            <div class="vf-stage">INPUT<b>Microphone</b></div>
+            <div class="vf-stage">SPEECH · LOCAL<b>Whisper Turbo</b></div>
+            <div class="vf-stage">CLEANUP · LOCAL<b>Conservative</b></div>
+            <div class="vf-stage">OUTPUT<b>Notes</b></div>
+          </div>
+          <section class="vf-console">
+            <div class="vf-console-title"><span>DIAGNOSTIC STATION</span><span>100% LOCAL</span></div>
+            <div><span>[READY]</span> microphone input verified</div>
+            <div><span>[MODEL]</span> whisper turbo · bilingual auto-detect</div>
+            <div><span>[TARGET]</span> Notes · safe paste available</div>
+            <div><span>[MEMORY]</span> 226 vocabulary terms · 3 snippets</div>
+            <div><span>[LAST RUN]</span> STT 1.8s · 142 spoken WPM</div>
+            <div><span>[PRIVACY]</span> audio local · cloud disabled</div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <script>
+    (() => {
+      const root = document.getElementById("voiceflow-product-direction");
+      const design = { showRetroStation: false };
+
+      function render() {
+        root.dataset.direction = design.showRetroStation ? "station" : "focus";
+      }
+
+      root.querySelectorAll(".vf-mode").forEach((button) => {
+        button.addEventListener("click", () => {
+          root.querySelectorAll(".vf-mode").forEach((item) => item.setAttribute("aria-pressed", "false"));
+          button.setAttribute("aria-pressed", "true");
+          root.querySelector(".vf-record-title").textContent = `Hold Fn for ${button.dataset.mode}`;
+        });
+      });
+
+      render();
+
+      if (globalThis.Tweak) {
+        const tweak = new Tweak({ container: root, onChange: render });
+        tweak.addToggle(design, "showRetroStation", {
+          label: "Show retro station alternative",
+          reference: "voiceflow.direction"
+        });
+      }
+    })();
+  </script>
+</div>
+
+<footer style="max-width:1024px;margin:20px auto;text-align:center">sanblue<sup style="color:#7CB3E8">dot</sup></footer>
+</body>
+</html>
+

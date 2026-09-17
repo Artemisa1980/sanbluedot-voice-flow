@@ -72,7 +72,23 @@ The native macOS runner can:
 - opt into a private acceptance log that keeps raw, personalized, and final output,
   release-to-result latency, and the recording behind each numbered result.
 
-A settings interface and Windows integration are later gated phases.
+The station window is now a shell with six destinations in a sidebar — Station,
+Settings, History, Snippets, Modes and Diagnostics. Station carries the whole station at
+once: the signal chain, the engine row, the control card and the console. The other five
+are drawn as a screen set into a chassis, with a title strip that names the section, so
+nothing is named twice. Settings holds the engine, the cloud model, the API key and the
+permissions, and states in plain words what this Mac does with what it hears; Diagnostics
+keeps the dark log, whose category colours were chosen for that ground. The five chassis
+sections do not repeat one another; Station carries the whole station, engine row and mode
+switch included. `design-system.md` records the contract.
+
+An editable shortcut and pickers for the speech and cleanup models are engine work and
+are not part of this shell. This shell is not installed for daily use.
+
+Build an isolated UI-only app with `zsh scripts/build-focus-home-preview.sh`. Its printed
+path is under `dist/previews/`; it never replaces `dist/sanblueᵈᵒᵗ VoiceFlow.app`.
+The preview simulates controls without connecting a microphone, model, personal store,
+clipboard, keychain or cloud provider. See `docs/README.md` for its scope and limitations.
 
 ## Personal memory
 

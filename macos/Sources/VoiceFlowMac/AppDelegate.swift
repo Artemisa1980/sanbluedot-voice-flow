@@ -972,6 +972,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         model: model,
                         latencySeconds: elapsed,
                         usedFallback: usedFallback,
+                        fallbackReason: result.fallbackReason?.summary,
                         didAutoPaste: false
                     )
                     self.historyStore.append(record)
@@ -1040,6 +1041,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     model: model,
                     latencySeconds: elapsed,
                     usedFallback: usedFallback,
+                    fallbackReason: result.fallbackReason?.summary,
                     didAutoPaste: didAutoPaste
                 )
                 self.historyStore.append(record)

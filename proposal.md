@@ -164,3 +164,39 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
   gate requires. The Python engine is unchanged and shared; only the platform shell —
   global hotkey, capture, paste, window — is new.
 - macOS microphone and Accessibility permissions require visible user consent.
+
+## Noted for later — Shortcuts, Xcode, and local intent parsing
+
+Recorded 2026-09-16. Not scheduled, not authorized, and not part of the interface work
+in progress. It is written here so the reasoning is not lost, not because it is next.
+
+**Siri cannot be the transcriber.** `NOT VERIFIED`: no Apple documentation was opened for
+this. The claim is that Apple exposes no way for an application to receive what Siri
+heard, which would make this a platform limit before a privacy one. Check it against
+Apple's developer documentation before the note is acted on. The owner stated
+on 2026-09-16 that Siri reaching Apple's servers is acceptable to her, which removes the
+objection to using Siri as a trigger but changes nothing about the limit above. If a Siri
+path is ever added, `README.md` and R2/R7 stop being true as written and must be
+corrected in the same change; the claim that speech never leaves the machine is not a
+slogan to keep once a path contradicts it.
+
+**Shortcuts can be the hands.** The useful direction is the opposite one: the engine
+transcribes locally, the intent is resolved locally, and the result invokes a Shortcut,
+which already carries a large library of system actions. Nothing is spoken to Apple, and
+the Mac still does the work. This replaces neither `VoiceAction.swift` nor the paste
+path; it is a third delivery target beside clipboard and keystroke.
+
+**A local model could replace the regex intent parser.** `VoiceAction.swift` matches
+fixed patterns and has already failed on ordinary Spanish — an accented application name
+cannot be parsed at all, because the capture class is `[A-Za-z0-9\s]`. A local Ollama
+model would read intent in either language without a pattern list. R3c currently requires
+spoken intents to be parsed *deterministically*, so this is a framework decision before it
+is an implementation: a model is not deterministic, and the requirement would have to say
+what replaces that guarantee.
+
+**The packaging blocks App Intents, and this is unverified.** `macos/Package.swift` builds
+a plain SPM executable and `scripts/build-macos-app.sh` assembles the bundle by hand. App
+Intents rely on metadata that Xcode's build system generates and embeds; without it the
+actions exist in code and the system never sees them. Migrating to an Xcode target, or
+reproducing that step in the script, is the open question. The cheap test is one trivial
+intent through the current packaging, before any of the above is designed.

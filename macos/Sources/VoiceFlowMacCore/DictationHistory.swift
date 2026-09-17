@@ -11,6 +11,11 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
     public let model: String?
     public let latencySeconds: Double
     public let usedFallback: Bool
+    /// Which side refused, in the words the log uses. One bit said a fallback happened
+    /// and never whether the guard rejected a cleanup or the provider never answered,
+    /// and those call for opposite responses. Optional: records written before this
+    /// field decode with nil rather than failing.
+    public let fallbackReason: String?
     public let didAutoPaste: Bool
 
     public init(
@@ -24,6 +29,7 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
         model: String? = nil,
         latencySeconds: Double,
         usedFallback: Bool = false,
+        fallbackReason: String? = nil,
         didAutoPaste: Bool = false
     ) {
         self.id = id
@@ -36,6 +42,7 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
         self.model = model
         self.latencySeconds = latencySeconds
         self.usedFallback = usedFallback
+        self.fallbackReason = fallbackReason
         self.didAutoPaste = didAutoPaste
     }
 

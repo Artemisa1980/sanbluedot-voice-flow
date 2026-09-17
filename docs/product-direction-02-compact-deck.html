@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self' file:; img-src 'self' data:">
+<title>02 — Compact Deck | VoiceFlow proposal</title><link rel="stylesheet" href="product-directions.css">
+</head>
+<body><div class="page">
+<header class="proposal-intro"><a href="product-directions.html">← Compare all three directions</a><h1>02 / Compact Deck</h1><p>A small voice instrument, always close to the work.</p><p class="demo-note">INTERACTIVE DESIGN PROPOSAL · Synthetic text and simulated states. No microphone, clipboard, storage or model access. Start a demo, choose a mode, or open a drawer.</p></header>
+<section class="window deck-window" aria-label="Compact Deck app concept">
+<header class="masthead"><span class="owner">SANDY.SYSDEV</span><span class="product">retro voice-station</span><span class="wordmark">sanblue<sup>dot</sup></span></header>
+<main class="deck-main">
+<div class="bar spread" style="margin-bottom:18px"><span class="eyebrow" style="color:var(--gold)">VOICE DECK / 02</span><span class="tag blue">SIMULATION</span></div>
+<div class="deck-screen">
+<div class="bar spread"><span class="eyebrow" id="runState">READY</span><span class="small">Target: Notes · demo</span></div>
+<h2 id="modeTitle">Dictate naturally.</h2><p class="muted" id="modeHint">Your words, with only confirmed corrections.</p>
+<div class="signal" id="signal" aria-hidden="true"><i style="--level:10px"></i><i style="--level:18px"></i><i style="--level:26px"></i><i style="--level:14px"></i><i style="--level:34px"></i><i style="--level:40px"></i><i style="--level:24px"></i><i style="--level:14px"></i><i style="--level:36px"></i><i style="--level:30px"></i><i style="--level:18px"></i><i style="--level:10px"></i></div>
+<div class="bar spread small muted"><span id="route">Speech: local · Cleanup: off</span><span>Latency: —</span></div>
+</div>
+<div class="deck-modes" aria-label="Choose processing mode"><button data-mode="dictate" aria-pressed="true">Dictate</button><button data-mode="translate" aria-pressed="false">ES → EN</button><button data-mode="notes" aria-pressed="false">Notes</button><button data-mode="transform" aria-pressed="false">Transform</button><button data-mode="actions" aria-pressed="false">Actions</button></div>
+<div class="deck-actions"><button class="primary" id="run">Start demo</button><button class="danger" id="cancel" disabled>Cancel</button></div>
+<div id="feedback" class="demo-message muted" aria-live="polite">Daily use: hold Fn / Globe · Escape cancels.</div>
+</main>
+<details class="deck-drawer" id="recent"><summary>Last result <span class="small muted">/ quick rescue</span></summary><div class="inner"><span class="tag">FICTIONAL SAMPLE</span><p id="result" style="margin-top:12px">The release is ready for review.</p><button id="review">Review sample</button><div id="reviewText" class="small muted" hidden style="margin-top:12px">Raw and final match. No cleanup applied. An expanded comparison would open in a separate history window.</div></div></details>
+<details class="deck-drawer"><summary>Quick settings <span class="small muted">/ visible before recording</span></summary><div class="inner deck-settings"><label>Cleanup<select id="cleaner"><option value="literal">Off — local dictation</option><option value="ollama">Ollama — local text cleanup</option><option value="gemini">Gemini — cloud text cleanup</option></select></label><div><div class="small">Keyboard</div><strong>Fn / Globe</strong><p class="small muted" style="margin-top:6px">Shortcut editing belongs in full Settings.</p></div><p id="privacy" class="small">Audio and text stay local in this simulated configuration.</p></div></details>
+<footer class="footer"><span><span class="wordmark">sanblue<sup>dot</sup></span> — retro dev-station</span></footer>
+</section>
+<section class="deck-rationale"><h2>Best for frequent, short dictation</h2><p class="small">The deck keeps mode, processing location and destination together. Recent results and settings open only when needed. The menu bar and floating HUD remain the everyday entry points.</p><div class="rule"></div><div class="bar" style="align-items:start;gap:28px"><div style="flex:1;min-width:210px"><h3>First implementation slice</h3><p class="small">A compact window shell over existing recording, mode and history behavior. Preserve Fn hold/release, cancellation and paste checks. No additional audio retention required.</p></div><div style="flex:1;min-width:210px"><h3>Tradeoff</h3><p class="small">Less space for long transcripts, vocabulary management and diagnostics. Those workflows need a secondary window. Compact dimensions and drawer behavior are proposed changes to the window contract.</p></div></div></section>
+<div class="prototype-footer"><span class="wordmark">sanblue<sup>dot</sup></span></div>
+</div>
+<script>
+(() => {
+ const el=id=>document.getElementById(id);
+ const modes={dictate:['Dictate naturally.','Your words, with only confirmed corrections.','The release is ready for review.'],translate:['Speak Spanish. Write English.','Translation is explicitly selected.','The release is ready for review.'],notes:['Give your thoughts a shape.','Turn spoken notes into a structured list.','- Review the release\n- Confirm the delivery date'],transform:['Select text. Say the change.','A selected passage is required before recording.','The release is ready. Please review it.'],actions:['Say the action.','Commands run only in this selected mode.','Demo only: open Notes. No application was launched.']};
+ let mode='dictate',recording=false;
+ function update(){const chosen=el('cleaner').value;const blocked=mode==='transform'&&chosen==='literal';el('modeTitle').textContent=modes[mode][0];el('modeHint').textContent=blocked?'Transform requires a rewriting provider. Choose Ollama or Gemini.':modes[mode][1];el('route').textContent='Speech: local · '+(chosen==='literal'?'Cleanup: off':chosen==='ollama'?'Text: Ollama local':'Text: Gemini cloud');el('privacy').textContent=chosen==='gemini'?'Proposed configuration: only text goes to Gemini. This demo sends nothing.':'Audio and text stay local in this simulated configuration.';el('run').disabled=blocked;}
+ document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(recording)return;mode=b.dataset.mode;document.querySelectorAll('[data-mode]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));update();}));
+ function reset(){recording=false;el('runState').textContent='READY';el('run').textContent='Start demo';el('cancel').disabled=true;el('signal').classList.remove('active');document.querySelectorAll('[data-mode],#cleaner').forEach(x=>x.disabled=false);update();}
+ el('run').addEventListener('click',()=>{if(recording){reset();el('result').textContent=modes[mode][2];el('result').style.whiteSpace='pre-wrap';el('recent').open=true;el('reviewText').hidden=true;el('feedback').textContent='Sample result displayed. Nothing was recorded or pasted.';}else{recording=true;el('runState').textContent=mode==='transform'?'DEMO · TRANSFORM · 68 CHARS':'DEMO · RECORDING';el('run').textContent='Finish demo';el('cancel').disabled=false;el('signal').classList.add('active');document.querySelectorAll('[data-mode],#cleaner').forEach(x=>x.disabled=true);el('feedback').textContent='Simulated recording. Mode changes are locked until completion.';}});
+ function cancel(){if(!recording)return;reset();el('feedback').textContent='Demo cancelled. No result added.';}
+ el('cancel').addEventListener('click',cancel);document.addEventListener('keydown',e=>{if(e.key==='Escape')cancel();});el('cleaner').addEventListener('change',update);el('review').addEventListener('click',()=>{el('reviewText').hidden=!el('reviewText').hidden;el('reviewText').textContent=mode==='dictate'?'Raw and final match in this sample. No cleanup applied.':'This is a fictional '+mode+' output. Full raw/final review would open in History.';});update();
+})();
+</script>
+</body></html>

@@ -230,6 +230,13 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var isRecording: Bool = false
     @Published public var isRecordingEnabled: Bool = true
     @Published public var isSelectionEnabled: Bool = true
+    /// The last refusal, for the surface the speaker is looking at.
+    ///
+    /// A control a run has locked used to be `.disabled`, which reports nothing: the
+    /// press produced no switch and no reason, and a refusal indistinguishable from a
+    /// dead button is the defect R3c names. The control now stays live, the press lands
+    /// here, and the sentence is drawn where the press happened.
+    @Published public var refusalNotice: String?
     @Published public var globalHotkeyAvailable: Bool = true
     @Published public var needsInputMonitoring: Bool = false
     @Published public var needsAccessibility: Bool = false
@@ -289,6 +296,22 @@ public final class VoiceStationViewModel: ObservableObject {
         }
     }
 
+    /// Refuse out loud. The notice clears itself so it cannot outlive the run that
+    /// caused it, and a later refusal replaces an earlier one rather than queueing.
+    public func reportRefusal(_ message: String) {
+        refusalNotice = message
+        addLog(message, isHighlight: true)
+        let token = UUID()
+        refusalToken = token
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard let self, self.refusalToken == token else { return }
+            self.refusalNotice = nil
+        }
+    }
+
+    private var refusalToken = UUID()
+
     public func addLog(
         _ message: String,
         category: LogCategory = .system,
@@ -326,43 +349,16 @@ public struct VoiceStationWindowView: View {
         VStack(spacing: 0) {
             headerBar
 
-            VStack(spacing: 12) {
-                signalChainBar
-                patchBay
-
-                GeometryReader { geo in
-                    let spacing: CGFloat = 16
-                    let availableWidth = max(0, geo.size.width - spacing)
-                    // 38 / 62, the owner's choice: the console carries the reading, the
-                    // control card only has to hold the capsule and the mode switch.
-                    // The floor keeps the two-by-two switch from squeezing at the
-                    // window's minimum width, where 38% would fall to about 272pt.
-                    let leftWidth = min(
-                        max(floor(availableWidth * 0.38), 320),
-                        max(availableWidth - 320, 0)
-                    )
-                    let rightWidth = availableWidth - leftWidth
-                    let cardHeight = geo.size.height
-
-                    HStack(alignment: .top, spacing: spacing) {
-                        leftControlCard
-                            .frame(width: leftWidth, height: cardHeight)
-
-                        rightActivityCard
-                            .frame(width: rightWidth, height: cardHeight)
-                    }
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                AppTargetMonitorView(
-                    targetAppName: viewModel.targetAppName,
-                    targetAppProfile: viewModel.targetAppProfile
-                )
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(VoiceStationTokens.appBg)
+            FocusHomeView(
+                viewModel: viewModel,
+                signalChain: AnyView(signalChainBar),
+                controlCard: AnyView(leftControlCard),
+                providers: AnyView(patchBay),
+                console: AnyView(rightActivityCard(showsTabs: true)),
+                snippetsPanel: AnyView(snippetsPaperPanel),
+                historyPanel: AnyView(historyPaperPanel),
+                diagnosticsPanel: AnyView(diagnosticsPaperPanel)
+            )
 
             footerBar
         }
@@ -516,78 +512,203 @@ public struct VoiceStationWindowView: View {
         .overlay(Capsule().stroke(VoiceStationTokens.navy, lineWidth: 2))
     }
 
-    /// A navy capsule under a gold grille, with a halo that opens while recording.
+    /// The station's microphone: a ribbon capsule behind a ticked dial bezel.
+    ///
+    /// It moves like a speaker cone. At rest the swell is ambient and small — it says the
+    /// station is powered, and it never pretends to be a reading. While recording, the
+    /// same swell is driven by the measured input level, so what moves is the speaker's
+    /// own voice rather than a timer. R9 applies to motion as much as to figures.
     private var micCapsule: some View {
-        ZStack {
-            if viewModel.isRecording {
+        TimelineView(
+            .animation(minimumInterval: 1.0 / 30.0, paused: !viewModel.isWindowVisible)
+        ) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            let ambient = (sin(time * 1.9) + 1) / 2
+            // While recording the swell is the measured level. The ambient floor under
+            // it is deliberately small: a microphone that is open and hearing silence
+            // should look powered, not stopped, and the floor is far below anything a
+            // voice produces, so it can never be mistaken for a reading.
+            let level = min(max(viewModel.audioLevel, 0), 1)
+            let drive = viewModel.isRecording
+                ? max(level, ambient * 0.12)
+                : ambient * 0.55
+
+            ZStack {
+                // The bass ring: it opens with the level and fades as it goes.
                 Circle()
-                    .stroke(VoiceStationTokens.rec, lineWidth: 3)
-                    .frame(width: 124, height: 124)
-                    .scaleEffect(haloOpen ? 1.2 : 0.95)
-                    .opacity(haloOpen ? 0 : 0.6)
-                    .onAppear {
-                        withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) {
-                            haloOpen = true
-                        }
-                    }
-                    .onDisappear { haloOpen = false }
-            }
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            VoiceStationTokens.micHighlight,
-                            VoiceStationTokens.navy
-                        ],
-                        center: UnitPoint(x: 0.5, y: 0.38),
-                        startRadius: 4,
-                        endRadius: 74
+                    .stroke(
+                        viewModel.isRecording
+                            ? VoiceStationTokens.onAir
+                            : VoiceStationTokens.gold,
+                        lineWidth: 3
                     )
-                )
-                .frame(width: 112, height: 112)
-                .overlay(Circle().stroke(VoiceStationTokens.navy, lineWidth: 3))
-                .overlay(
-                    Circle()
-                        .stroke(VoiceStationTokens.navy.opacity(0.12), lineWidth: 8)
-                        .padding(-5.5)
-                )
-                .background(
-                    Circle()
-                        .fill(VoiceStationTokens.navy)
-                        .offset(x: 5, y: 5)
-                )
+                    .frame(width: 118, height: 118)
+                    .scaleEffect(1 + drive * 0.16)
+                    .opacity(0.62 * (1 - drive * 0.8))
 
-            // The grille breathes. A microphone that is powered is never perfectly
-            // still, and this is the movement asked for at the centre.
-            // The grille: concentric gold rings, the retro capsule read.
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !viewModel.isWindowVisible)) { context in
-                let time = context.date.timeIntervalSinceReferenceDate
-                ZStack {
-                    ForEach(1..<9, id: \.self) { ring in
-                        let phase = sin(time * (viewModel.isRecording ? 3.4 : 1.5)
-                                        - Double(ring) * 0.45)
-                        let swell = 1 + phase * (viewModel.isRecording ? 0.035 : 0.012)
+                // Bezel, with the dial notches around its rim.
+                Circle()
+                    .fill(VoiceStationTokens.panelBg)
+                    .frame(width: 118, height: 118)
+                    .overlay(Circle().stroke(VoiceStationTokens.navy.opacity(0.18), lineWidth: 1))
+                    .overlay(dialNotches)
+                    // The bezel pushes with the cone rather than standing still while a
+                    // ring travels past it.
+                    .scaleEffect(1 + drive * 0.03)
+                    .background(
                         Circle()
+                            .fill(VoiceStationTokens.navy)
+                            .frame(width: 118, height: 118)
+                            .offset(x: 4, y: 5)
+                    )
+
+                // The face the capsule stands on.
+                Circle()
+                    .fill(VoiceStationTokens.inputCream)
+                    .frame(width: 88, height: 88)
+                    .overlay(Circle().stroke(VoiceStationTokens.navy, lineWidth: 2.5))
+                    .overlay(
+                        // The weighted base of the dial, as a thick arc along the floor.
+                        Circle()
+                            .trim(from: 0.08, to: 0.42)
                             .stroke(
-                                VoiceStationTokens.gold.opacity(
-                                    0.55 + 0.35 * (phase + 1) / 2
-                                ),
-                                lineWidth: 1.5
+                                VoiceStationTokens.navy,
+                                style: StrokeStyle(lineWidth: 6, lineCap: .round)
                             )
-                            .frame(width: CGFloat(ring) * 11.5, height: CGFloat(ring) * 11.5)
-                            .scaleEffect(swell)
+                            .frame(width: 80, height: 80)
+                    )
+
+                ribbonCapsule
+                    .scaleEffect(1 + drive * 0.09)
+            }
+            .frame(width: 138, height: 138)
+        }
+    }
+
+    private var snippetsPaperPanel: some View {
+        PaperChassis(viewModel: viewModel, system: "SNIPPETS.SYS", subtitle: "VOICE MACROS") {
+            ChassisCount(value: viewModel.snippets.count, noun: "snippets")
+        } content: {
+            VoiceSnippetsTabView(viewModel: viewModel, palette: .paper)
+        }
+    }
+
+    /// The log keeps its dark screen inside the same chassis. Its category badges —
+    /// gold, mint, violet, emerald, red — were chosen for a near-black field, and they
+    /// are what the eye scans for a failure. The chrome matches the other sections; the
+    /// screen does not, and that difference now means something.
+    private var diagnosticsPaperPanel: some View {
+        PaperChassis(
+            viewModel: viewModel,
+            system: "DIAGNOSTICS.SYS",
+            subtitle: "ACTIVITY LOG",
+            ground: VoiceStationTokens.consoleBg
+        ) {
+            ChassisCount(value: viewModel.activityLogs.count, noun: "log entries")
+        } content: {
+            rightActivityCard(showsTabs: false, chrome: false)
+        }
+    }
+
+    private var historyPaperPanel: some View {
+        PaperChassis(viewModel: viewModel, system: "HISTORY.SYS", subtitle: "RECENT DICTATIONS") {
+            HStack(spacing: 8) {
+                if !viewModel.recentDictations.isEmpty {
+                    Button(action: { viewModel.onClearHistory?() }) {
+                        Text("CLEAR")
+                            .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(VoiceStationTokens.danger.opacity(0.85))
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .voiceFlowNoFocusRing()
+                }
+                ChassisCount(value: viewModel.recentDictations.count, noun: "dictations")
+            }
+        } content: {
+            // Inside the screen, above the list. History is where a delivery is
+            // reviewed, and a held-back cleanup is a question about the last one — so
+            // the offer belongs with the rows it concerns. Drawn on the mint canvas
+            // instead, it sat outside the chassis and pushed the whole section down.
+            VStack(spacing: 10) {
+                if let rejected = viewModel.rejectedCleanup {
+                    rejectedCleanupCard(rejected)
+                }
+                DictationHistoryTabView(viewModel: viewModel, palette: .paper)
+            }
+        }
+    }
+
+    /// What the console is showing, for the header that no longer offers tabs.
+    private var activeTabLabel: String {
+        switch viewModel.activeRightTab {
+        case .activityLog: return "LOG"
+        case .historyTray: return "HISTORY \(viewModel.recentDictations.count)"
+        case .snippets: return "SNIPPETS \(viewModel.snippets.count)"
+        }
+    }
+
+    /// The notched rim. Thirty-six marks read as a machined dial at this size without
+    /// closing into a solid ring.
+    private var dialNotches: some View {
+        ZStack {
+            ForEach(0..<36, id: \.self) { index in
+                Capsule()
+                    .fill(VoiceStationTokens.navy.opacity(0.32))
+                    .frame(width: 1.6, height: 7)
+                    .offset(y: -51)
+                    .rotationEffect(.degrees(Double(index) * 10))
+            }
+        }
+    }
+
+    /// The ribbon element: a navy body under horizontal grille slats, split by the gold
+    /// band, on a stem and a pedestal foot.
+    private var ribbonCapsule: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                VoiceStationTokens.micHighlight,
+                                VoiceStationTokens.navy
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 30, height: 46)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(VoiceStationTokens.navy, lineWidth: 1.5)
+                    )
+
+                VStack(spacing: 2.6) {
+                    ForEach(0..<8, id: \.self) { _ in
+                        Capsule()
+                            .fill(VoiceStationTokens.panelBg.opacity(0.78))
+                            .frame(width: 20, height: 1.8)
                     }
                 }
+
+                Capsule()
+                    .fill(VoiceStationTokens.gold)
+                    .frame(width: 3.2, height: 40)
             }
 
-            Circle()
-                .fill(VoiceStationTokens.panelBg.opacity(0.18))
-                .frame(width: 30, height: 20)
-                .blur(radius: 4)
-                .offset(x: -20, y: -34)
+            Rectangle()
+                .fill(VoiceStationTokens.navy)
+                .frame(width: 2.6, height: 11)
+
+            Capsule()
+                .fill(VoiceStationTokens.navy)
+                .frame(width: 22, height: 3)
         }
-        .frame(width: 124, height: 124)
+        .offset(y: -3)
     }
 
     /// Twelve bars driven by the measured input level: blue through the working range,
@@ -604,15 +725,24 @@ public struct VoiceStationWindowView: View {
             let time = context.date.timeIntervalSinceReferenceDate
             HStack(alignment: .bottom, spacing: 5) {
                 ForEach(0..<12, id: \.self) { index in
-                    let wave = (sin(time * 2.6 + Double(index) * 0.62) + 1) / 2
+                    // The phase offset per bar is what makes one bar rise while its
+                    // neighbour falls, so the row reads as a wave travelling across it
+                    // rather than twelve bars breathing together.
+                    let wave = (sin(time * 2.0 + Double(index) * 0.85) + 1) / 2
                     let level = viewModel.isRecording
                         ? 0.30 + min(viewModel.audioLevel, 1.0) * 0.95
-                        : 0.26
+                        : 0.42
+                    // How much of the height the wave owns. At rest it owns most of it:
+                    // nothing is being measured, so the movement is decoration and may
+                    // be broad. While recording it owns almost none, because the height
+                    // is a reading of the speaker's voice and a wave large enough to see
+                    // would be a wave large enough to lie.
+                    let waveShare = viewModel.isRecording ? 0.22 : 0.65
                     let height = meterFloor
                         + (meterCeiling - meterFloor)
                         * barProfile(index)
                         * level
-                        * (0.72 + 0.28 * wave)
+                        * (1 - waveShare + waveShare * wave)
 
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(meterColor(at: index))
@@ -648,7 +778,14 @@ public struct VoiceStationWindowView: View {
     private func modeTile(for mode: ProcessingMode) -> some View {
         let isOn = viewModel.selectedMode == mode
         return Button(action: {
-            guard viewModel.isSelectionEnabled else { return }
+            // R3c: refused while a dictation is in flight, and the refusal reported
+            // rather than silent. The station's tile and the Modes page's tile answer
+            // a locked run the same way.
+            guard viewModel.isSelectionEnabled else {
+                viewModel.reportRefusal(
+                    "this run keeps \(shortTitle(for: viewModel.selectedMode)) · the mode changes once it is delivered")
+                return
+            }
             viewModel.selectedMode = mode
             viewModel.onModeSelect?(mode)
             viewModel.addLog("mode switched to: \(mode.rawValue)")
@@ -928,7 +1065,11 @@ public struct VoiceStationWindowView: View {
                         isOn: viewModel.selectedCleaner == cleaner,
                         info: cleaner
                     ) {
-                        guard viewModel.isSelectionEnabled else { return }
+                        guard viewModel.isSelectionEnabled else {
+                            viewModel.reportRefusal(
+                                "this run keeps \(viewModel.selectedCleaner.displayName) · the engine changes once it is delivered")
+                            return
+                        }
                         viewModel.selectedCleaner = cleaner
                         viewModel.onCleanerSelect?(cleaner)
                         viewModel.addLog("provider: \(cleaner.displayName)")
@@ -1176,27 +1317,9 @@ public struct VoiceStationWindowView: View {
                         }
                     }
 
-                    // Permissions section (only visible when needed)
-                    if !viewModel.globalHotkeyAvailable || viewModel.needsAccessibility || viewModel.needsInputMonitoring {
-                        Divider().background(VoiceStationTokens.navy.opacity(0.35))
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("SYSTEM PERMISSIONS")
-                                .font(VoiceStationTokens.mono(size: 9, weight: .bold))
-                                .foregroundColor(VoiceStationTokens.textMuted)
-
-                            HStack(spacing: 6) {
-                                Button("Input Monitoring") { viewModel.onOpenInputMonitoring?() }
-                                    .font(VoiceStationTokens.mono(size: 9))
-                                Button("Accessibility") { viewModel.onOpenAccessibility?() }
-                                    .font(VoiceStationTokens.mono(size: 9))
-                                Button("Retry") { viewModel.onRetryPermissions?() }
-                                    .font(VoiceStationTokens.mono(size: 9))
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
+                    // Permissions moved to Settings, which owns them. Kept here they were
+                    // the one block that made this panel outgrow its card, and the panel
+                    // is meant to stand still.
 
                 }
                 .padding(14)
@@ -1210,14 +1333,21 @@ public struct VoiceStationWindowView: View {
     }
 
     // MARK: - Right Activity & Terminal Log Card (Dark Olive #262319)
-    private var rightActivityCard: some View {
+    /// The console.
+    ///
+    /// `showsTabs` is false where the sidebar already names the destination: repeating
+    /// LOG / HISTORY / SNIPPETS there gave one console two navigations that could
+    /// disagree. On Home the tabs stay, because there the sidebar is somewhere else.
+    private func rightActivityCard(showsTabs: Bool, chrome: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header with Tab Switcher
+            if chrome {
             HStack(spacing: 6) {
                 Image(systemName: viewModel.activeRightTab == .activityLog ? "terminal.fill" : (viewModel.activeRightTab == .historyTray ? "clock.arrow.circlepath" : "text.quote"))
                     .foregroundColor(VoiceStationTokens.gold)
                     .font(.system(size: 10))
 
+                if showsTabs {
                 HStack(spacing: 3) {
                     Button(action: { viewModel.activeRightTab = .activityLog }) {
                         Text("LOG")
@@ -1258,6 +1388,15 @@ public struct VoiceStationWindowView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                } else {
+                    Text(activeTabLabel)
+                        .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3.5)
+                        .background(VoiceStationTokens.gold)
+                        .foregroundColor(VoiceStationTokens.navy)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
 
                 Spacer(minLength: 4)
 
@@ -1282,6 +1421,7 @@ public struct VoiceStationWindowView: View {
             }
 
             Divider().background(VoiceStationTokens.gold.opacity(0.4))
+            }
 
             if viewModel.activeRightTab == .activityLog {
                 // Telemetry Diagnostics Header Bar
@@ -1320,146 +1460,24 @@ public struct VoiceStationWindowView: View {
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(VoiceStationTokens.gold.opacity(0.4), lineWidth: 1.5))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.activeRightTab == .historyTray {
-                // History Tray Screen
-                if viewModel.recentDictations.isEmpty {
-                    VStack(spacing: 8) {
-                        Spacer()
-                        Image(systemName: "tray")
-                            .font(.system(size: 24))
-                            .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
-                        Text("No recent dictations yet.")
-                            .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
-                            .foregroundColor(VoiceStationTokens.gold.opacity(0.8))
-                        Text("Dictated text and translations appear here for 1-click rescue.")
-                            .font(VoiceStationTokens.mono(size: 8.5))
-                            .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(VoiceStationTokens.consoleBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(VoiceStationTokens.gold.opacity(0.4), lineWidth: 1.5))
-                } else {
-                    ScrollView(.vertical) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(viewModel.recentDictations) { record in
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 6) {
-                                        Text("[\(record.timeString)]")
-                                            .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
-                                            .foregroundColor(VoiceStationTokens.gold.opacity(0.9))
-
-                                        Text(record.mode.uppercased())
-                                            .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1)
-                                            .background(VoiceStationTokens.dotBlue.opacity(0.3))
-                                            .foregroundColor(VoiceStationTokens.dotBlue)
-                                            .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                                        Text(record.model ?? record.cleaner)
-                                            .font(VoiceStationTokens.mono(size: 7.5))
-                                            .foregroundColor(VoiceStationTokens.appBg.opacity(0.8))
-
-                                        Spacer()
-
-                                        Text(String(format: "%.1fs", record.latencySeconds))
-                                            .font(VoiceStationTokens.mono(size: 7.5))
-                                            .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
-                                    }
-
-                                    Text(record.finalText)
-                                        .font(VoiceStationTokens.mono(size: 9.5, weight: .regular))
-                                        .foregroundColor(VoiceStationTokens.inputCream)
-                                        .lineLimit(3)
-
-                                    HStack(spacing: 6) {
-                                        Button(action: {
-                                            viewModel.onCopyHistoryRecord?(record)
-                                            viewModel.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
-                                        }) {
-                                            HStack(spacing: 3) {
-                                                Image(systemName: "doc.on.doc")
-                                                    .font(.system(size: 8))
-                                                Text("COPY")
-                                                    .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                                            }
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(VoiceStationTokens.gold)
-                                            .foregroundColor(VoiceStationTokens.navy)
-                                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                                        }
-                                        .buttonStyle(.plain)
-
-                                        if record.rawText != record.finalText && !record.rawText.isEmpty {
-                                            Button(action: {
-                                                viewModel.onCopyRawRecord?(record)
-                                                viewModel.addLog("copied raw transcript from history", isHighlight: true)
-                                            }) {
-                                                HStack(spacing: 3) {
-                                                    Image(systemName: "waveform")
-                                                        .font(.system(size: 8))
-                                                    Text("RAW")
-                                                        .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                                                }
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 3)
-                                                .background(VoiceStationTokens.panelHeader)
-                                                .foregroundColor(VoiceStationTokens.navy)
-                                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-
-                                        Button(action: {
-                                            viewModel.onRepasteHistoryRecord?(record)
-                                        }) {
-                                            HStack(spacing: 3) {
-                                                Image(systemName: "bolt.fill")
-                                                    .font(.system(size: 8))
-                                                Text("RE-PASTE")
-                                                    .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                                            }
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(VoiceStationTokens.dotBlue)
-                                            .foregroundColor(VoiceStationTokens.navy)
-                                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(8)
-                                .background(Color.black.opacity(0.25))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(VoiceStationTokens.gold.opacity(0.2), lineWidth: 1))
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                    }
-                    .background(VoiceStationTokens.consoleBg)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(VoiceStationTokens.gold.opacity(0.4), lineWidth: 1.5))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                DictationHistoryTabView(viewModel: viewModel)
             } else {
                 // Snippets Screen
                 VoiceSnippetsTabView(viewModel: viewModel)
             }
 
             // Bottom Console Status Line
+            if chrome {
             HStack(spacing: 6) {
                 Circle()
                     .fill(viewModel.isRecording ? VoiceStationTokens.rec : VoiceStationTokens.ok)
                     .frame(width: 6, height: 6)
-                Text(viewModel.statusTitle)
+                Text(viewModel.statusDetail.isEmpty
+                     ? viewModel.statusTitle : viewModel.statusDetail)
                     .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
                     .foregroundColor(VoiceStationTokens.gold)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
                     .truncationMode(.tail)
                 Spacer(minLength: 6)
                 Text(viewModel.selectedCleaner.isCloud ? "Cloud (Gemini)" : "100% Local (Whisper)")
@@ -1468,13 +1486,17 @@ public struct VoiceStationWindowView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
+            }
         }
-        .padding(14)
+        .padding(chrome ? 14 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(VoiceStationTokens.consoleBg)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(VoiceStationTokens.navy, lineWidth: 3))
-        .retroExtrusion(radius: 14, offset: 5)
+        .background(chrome ? VoiceStationTokens.consoleBg : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: chrome ? 14 : 0, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(chrome ? VoiceStationTokens.navy : Color.clear, lineWidth: 3)
+        )
+        .retroExtrusion(radius: 14, offset: chrome ? 5 : 0, color: chrome ? VoiceStationTokens.navy : .clear)
     }
 
     // MARK: - Footer Bar (Strict Design System Contract §Footer)
@@ -1568,8 +1590,329 @@ private struct HoldToRecordButtonStyle: ButtonStyle {
 }
 
 // MARK: - Voice Snippets Tab View
+/// The colours one console surface is drawn with.
+///
+/// The dark terminal and the paper panel differ only by these six values, so a section
+/// can carry its own scheme without a second copy of the view underneath it. `terminal`
+/// reproduces what the console has always used; only `paper` is new.
+struct ConsolePalette {
+    let well: Color
+    let sunkenForm: Color
+    let sunkenRow: Color
+    let label: Color
+    let ink: Color
+    let inkDim: Color
+    let rule: Color
+    let fieldStroke: Color
+    let chipBg: Color
+    let chipInk: Color
+
+    static let terminal = ConsolePalette(
+        well: VoiceStationTokens.consoleBg,
+        sunkenForm: Color.black.opacity(0.3),
+        sunkenRow: Color.black.opacity(0.25),
+        label: VoiceStationTokens.gold,
+        ink: VoiceStationTokens.inputCream,
+        inkDim: VoiceStationTokens.gold.opacity(0.6),
+        rule: VoiceStationTokens.gold.opacity(0.35),
+        fieldStroke: .clear,
+        chipBg: VoiceStationTokens.dotBlue.opacity(0.3),
+        chipInk: VoiceStationTokens.dotBlue
+    )
+
+    static let paper = ConsolePalette(
+        well: VoiceStationTokens.panelBg,
+        sunkenForm: VoiceStationTokens.inputCream,
+        sunkenRow: VoiceStationTokens.inputCream,
+        label: VoiceStationTokens.navy,
+        ink: VoiceStationTokens.navy,
+        inkDim: VoiceStationTokens.textMuted,
+        // The terminal's own olive, so the paper panel is bound to the title strip
+        // above it and to the console the rest of the app is drawn with.
+        rule: VoiceStationTokens.consoleBg.opacity(0.45),
+        fieldStroke: VoiceStationTokens.consoleBg.opacity(0.6),
+        chipBg: VoiceStationTokens.dotBlue,
+        chipInk: VoiceStationTokens.navy
+    )
+}
+
+/// A section drawn as a screen set into the console's chassis.
+///
+/// This is the chrome the owner's own site uses, without its outer frame — the window is
+/// already the frame, and a frame inside a frame inside a frame spends the height the
+/// station needs. The title strip replaces the page heading rather than sitting under
+/// it, so a section is named once.
+struct PaperChassis<Trailing: View, Content: View>: View {
+    @ObservedObject var viewModel: VoiceStationViewModel
+    let system: String
+    let subtitle: String
+    /// The screen inside the chassis. Paper for the sections you operate; the console's
+    /// own ground for the log, whose category badges were coloured for a dark field.
+    var ground: Color = VoiceStationTokens.panelBg
+    @ViewBuilder var trailing: () -> Trailing
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(system)
+                    .font(VoiceStationTokens.pixel(9))
+                    .foregroundColor(VoiceStationTokens.gold)
+                Text("— \(subtitle)")
+                    .font(VoiceStationTokens.pixel(9))
+                    .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+                Spacer(minLength: 8)
+                trailing()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(VoiceStationTokens.consoleBg)
+
+            // The strip continues down both sides and across the foot as a band of the
+            // terminal's own colour, and the paper begins inside it.
+            content()
+                .padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(ground)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.horizontal, 18)
+
+            // The foot carries the same status line the console does, in the same
+            // colours: the band is the console's own ground, so nothing is re-tinted.
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(viewModel.isRecording ? VoiceStationTokens.rec : VoiceStationTokens.ok)
+                    .frame(width: 6, height: 6)
+                // The detail, not the title. A failure sets the title to a constant and
+                // puts the message in the detail, so a foot that shows only the title
+                // reports that something is wrong and never what. This is the same
+                // expression the console's own foot uses; the two now match.
+                Text(viewModel.statusDetail.isEmpty
+                     ? viewModel.statusTitle : viewModel.statusDetail)
+                    .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
+                    .foregroundColor(VoiceStationTokens.gold)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
+                Text(viewModel.selectedCleaner.isCloud
+                     ? "Cloud (Gemini)" : "100% Local (Whisper)")
+                    .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                    .foregroundColor(VoiceStationTokens.appBg)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 9)
+            .padding(.bottom, 11)
+        }
+        .background(VoiceStationTokens.consoleBg)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(VoiceStationTokens.navy, lineWidth: 3)
+        )
+        .retroExtrusion(radius: 14, offset: 5)
+    }
+}
+
+/// How many the section holds, on the title strip.
+struct ChassisCount: View {
+    let value: Int
+    /// What the number counts. Drawn it is obvious from the chassis title beside it;
+    /// read aloud the badge arrives alone, and a bare digit counts nothing.
+    let noun: String
+
+    var body: some View {
+        Text("\(value)")
+            .accessibilityLabel("\(value) \(noun)")
+            .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
+            .foregroundColor(VoiceStationTokens.navy)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(VoiceStationTokens.gold)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+}
+
+private struct DictationHistoryTabView: View {
+    @ObservedObject var viewModel: VoiceStationViewModel
+    var palette: ConsolePalette = .terminal
+
+    var body: some View {
+        if viewModel.recentDictations.isEmpty {
+            VStack(spacing: 8) {
+                Spacer()
+                Image(systemName: "tray")
+                    .font(.system(size: 24))
+                    .foregroundColor(palette.inkDim)
+                Text("No recent dictations yet.")
+                    .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
+                    .foregroundColor(palette.label)
+                Text("Dictated text and translations appear here for 1-click rescue.")
+                    .font(VoiceStationTokens.mono(size: 8.5))
+                    .foregroundColor(palette.inkDim)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(palette.well)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1.5))
+        } else {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(viewModel.recentDictations) { record in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 6) {
+                                Text("[\(record.timeString)]")
+                                    .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                                    .foregroundColor(palette.label)
+
+                                Text(record.mode.uppercased())
+                                    .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(VoiceStationTokens.dotBlue.opacity(0.3))
+                                    .foregroundColor(VoiceStationTokens.dotBlue)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                                Text(record.model ?? record.cleaner)
+                                    .font(VoiceStationTokens.mono(size: 7.5))
+                                    .foregroundColor(palette.inkDim)
+
+                                Spacer()
+
+                                Text(String(format: "%.1fs", record.latencySeconds))
+                                    .font(VoiceStationTokens.mono(size: 7.5))
+                                    .foregroundColor(palette.inkDim)
+                            }
+
+                            // A delivered transcript looked exactly like a successful
+                            // cleanup: same badges, same engine name, and nothing saying
+                            // the engine's text never arrived. framework.md asks for the
+                            // opposite — which side refused, because a guard rejection
+                            // and a provider failure call for opposite responses.
+                            if record.usedFallback {
+                                HStack(spacing: 5) {
+                                    Text("FALLBACK")
+                                        .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(VoiceStationTokens.rec.opacity(0.3))
+                                        .foregroundColor(VoiceStationTokens.rec)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    Text(record.fallbackReason
+                                         ?? "the cleanup did not arrive")
+                                        .font(VoiceStationTokens.mono(size: 7.5))
+                                        .foregroundColor(palette.inkDim)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Spacer(minLength: 0)
+                                }
+                                .accessibilityElement(children: .combine)
+                            }
+
+                            Text(record.finalText)
+                                .font(VoiceStationTokens.mono(size: 12, weight: .regular))
+                                .foregroundColor(palette.ink)
+                                .textSelection(.enabled)
+
+                            DisclosureGroup("VIEW ORIGINAL & PERSONALIZED TEXT") {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("ORIGINAL · speech recognition").fontWeight(.bold)
+                                    Text(record.rawText)
+                                    Text("PERSONALIZED · confirmed corrections").fontWeight(.bold)
+                                    Text(record.personalizedText)
+                                }
+                                .font(VoiceStationTokens.mono(size: 12))
+                                .foregroundColor(palette.ink)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 10)
+                            }
+                            .font(VoiceStationTokens.mono(size: 10, weight: .bold))
+                            .foregroundColor(VoiceStationTokens.gold)
+
+                            HStack(spacing: 6) {
+                                Button(action: {
+                                    viewModel.onCopyHistoryRecord?(record)
+                                    viewModel.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
+                                }) {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.system(size: 8))
+                                        Text("COPY")
+                                            .font(VoiceStationTokens.mono(size: 8, weight: .bold))
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(VoiceStationTokens.gold)
+                                    .foregroundColor(VoiceStationTokens.navy)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                                .buttonStyle(.plain)
+
+                                if record.rawText != record.finalText && !record.rawText.isEmpty {
+                                    Button(action: {
+                                        viewModel.onCopyRawRecord?(record)
+                                        viewModel.addLog("copied raw transcript from history", isHighlight: true)
+                                    }) {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "waveform")
+                                                .font(.system(size: 8))
+                                            Text("RAW")
+                                                .font(VoiceStationTokens.mono(size: 8, weight: .bold))
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(VoiceStationTokens.panelHeader)
+                                        .foregroundColor(VoiceStationTokens.navy)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                Button(action: {
+                                    viewModel.onRepasteHistoryRecord?(record)
+                                }) {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "bolt.fill")
+                                            .font(.system(size: 8))
+                                        Text("RE-PASTE")
+                                            .font(VoiceStationTokens.mono(size: 8, weight: .bold))
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(VoiceStationTokens.dotBlue)
+                                    .foregroundColor(VoiceStationTokens.navy)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(8)
+                        .background(palette.sunkenRow)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.rule, lineWidth: 1))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+            }
+            .background(palette.well)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1.5))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
 private struct VoiceSnippetsTabView: View {
     @ObservedObject var viewModel: VoiceStationViewModel
+    var palette: ConsolePalette = .terminal
     @State private var newTrigger: String = ""
     @State private var newExpansion: String = ""
     @State private var newDescription: String = ""
@@ -1580,7 +1923,7 @@ private struct VoiceSnippetsTabView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("ADD VOICE SNIPPET / MACRO")
                     .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                    .foregroundColor(VoiceStationTokens.gold)
+                    .foregroundColor(palette.label)
 
                 HStack(spacing: 5) {
                     TextField("Spoken trigger (e.g. mi linkedin)", text: $newTrigger)
@@ -1590,6 +1933,10 @@ private struct VoiceSnippetsTabView: View {
                         .background(VoiceStationTokens.inputCream)
                         .foregroundColor(VoiceStationTokens.navy)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(palette.fieldStroke, lineWidth: 1)
+                        )
 
                     TextField("Description (optional)", text: $newDescription)
                         .textFieldStyle(.plain)
@@ -1598,6 +1945,10 @@ private struct VoiceSnippetsTabView: View {
                         .background(VoiceStationTokens.inputCream)
                         .foregroundColor(VoiceStationTokens.navy)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(palette.fieldStroke, lineWidth: 1)
+                        )
                 }
 
                 HStack(spacing: 5) {
@@ -1608,6 +1959,10 @@ private struct VoiceSnippetsTabView: View {
                         .background(VoiceStationTokens.inputCream)
                         .foregroundColor(VoiceStationTokens.navy)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(palette.fieldStroke, lineWidth: 1)
+                        )
 
                     let isAddDisabled = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newExpansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
@@ -1634,9 +1989,9 @@ private struct VoiceSnippetsTabView: View {
                 }
             }
             .padding(6)
-            .background(Color.black.opacity(0.3))
+            .background(palette.sunkenForm)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(VoiceStationTokens.gold.opacity(0.3), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.rule, lineWidth: 1))
 
             // Snippets List
             if viewModel.snippets.isEmpty {
@@ -1644,21 +1999,21 @@ private struct VoiceSnippetsTabView: View {
                     Spacer()
                     Image(systemName: "text.quote")
                         .font(.system(size: 20))
-                        .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+                        .foregroundColor(palette.inkDim)
                     Text("No voice snippets registered yet.")
                         .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
-                        .foregroundColor(VoiceStationTokens.gold.opacity(0.8))
+                        .foregroundColor(palette.label)
                     Text("Say your trigger phrase to expand URLs, signatures, or templates instantly.")
                         .font(VoiceStationTokens.mono(size: 7.5))
-                        .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+                        .foregroundColor(palette.inkDim)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 12)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(VoiceStationTokens.consoleBg)
+                .background(palette.well)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(VoiceStationTokens.gold.opacity(0.4), lineWidth: 1.5))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1.5))
             } else {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 5) {
@@ -1677,13 +2032,13 @@ private struct VoiceSnippetsTabView: View {
                                         if let desc = snippet.description, !desc.isEmpty {
                                             Text(desc)
                                                 .font(VoiceStationTokens.mono(size: 7.5))
-                                                .foregroundColor(VoiceStationTokens.appBg.opacity(0.8))
+                                                .foregroundColor(palette.inkDim)
                                         }
                                     }
 
                                     Text(snippet.expansion)
                                         .font(VoiceStationTokens.mono(size: 8.5))
-                                        .foregroundColor(VoiceStationTokens.inputCream)
+                                        .foregroundColor(palette.ink)
                                         .lineLimit(2)
                                 }
 
@@ -1702,17 +2057,17 @@ private struct VoiceSnippetsTabView: View {
                                 .buttonStyle(.plain)
                             }
                             .padding(6)
-                            .background(Color.black.opacity(0.25))
+                            .background(palette.sunkenRow)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(VoiceStationTokens.gold.opacity(0.2), lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.rule, lineWidth: 1))
                         }
                     }
                     .padding(6)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(VoiceStationTokens.consoleBg)
+                .background(palette.well)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(VoiceStationTokens.gold.opacity(0.4), lineWidth: 1.5))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1.5))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1935,6 +2290,7 @@ private struct TelemetryHeaderView: View {
         }
     }
 
+
     /// The cloud row: which model answers, in measured order, and whether the key is
     /// stored. It lives here rather than on the mint canvas because it explains the
     /// readings above it, and because a dark ground is where these chips read.
@@ -1950,7 +2306,11 @@ private struct TelemetryHeaderView: View {
                     detail: model.measuredNote,
                     isOn: viewModel.selectedGeminiModel == model
                 ) {
-                    guard viewModel.isSelectionEnabled else { return }
+                    guard viewModel.isSelectionEnabled else {
+                        viewModel.reportRefusal(
+                            "this run keeps Gemini \(viewModel.selectedGeminiModel.shortName) · the model changes once it is delivered")
+                        return
+                    }
                     viewModel.selectedGeminiModel = model
                     viewModel.onGeminiModelSelect?(model)
                     viewModel.addLog("cloud model: \(model.rawValue)")
@@ -2210,4 +2570,3 @@ private struct LogEntryRowView: View {
         }
     }
 }
-

@@ -131,6 +131,175 @@ The window is usable from its floor to full screen, and the chrome is fixed at b
 - Header `72px` and footer `40px` are fixed. Everything the window gains or loses in
   height is absorbed by the middle section.
 
+## Focus Home — selected 2026-09-08, built 2026-09-16
+
+The Focus Home shell replaces the station window's always-visible two-card layout.
+Its implementation is `macos/Sources/VoiceFlowMac/FocusHomeView.swift`, composed with the
+existing capture, engine, console and snippet controls. The floating HUD is unchanged.
+
+Default content size `1100 × 800`; the `760 × 700` floor and the fixed header and footer
+are unchanged, and a reachable saved frame is still respected.
+
+### Sidebar
+
+`184pt` wide, dusty blue, navy ink, `14pt` horizontal and `24pt` vertical padding. Rows
+are `43pt` high with `9pt` gaps, gold with navy ink when selected. A `2pt` navy edge
+divides it from the canvas.
+
+Destinations, in this order: **Station · Settings · History · Snippets · Modes ·
+Diagnostics**. Declaration order in `Page` is the displayed order. Counts come from the
+live stores. Each row that shows a count also names what it counts to VoiceOver —
+"History, 3 dictations" — because the badge is read on its own, where a bare digit
+beside a name counts nothing.
+
+Navigation is never locked. A run in flight used to freeze the whole sidebar; it now
+refuses exactly one move, leaving Station while the capsule is physically held, because
+that button is the control that delivers the release.
+
+The system keyboard focus ring is suppressed on every control in the shell. macOS paints
+that ring in the viewer's own accent colour, so the selected row carried a second
+selection language in a colour the palette never chose — green on this machine, and
+whatever the next person set on theirs.
+
+### The chassis
+
+Five sections are drawn as a screen set into a chassis, `PaperChassis`. It is the chrome
+the owner's site uses, without its outer frame: the window is already the frame, and a
+frame inside a frame inside a frame spends the height the station needs.
+
+- Title strip: dark olive, `14pt` horizontal and `11pt` vertical padding, `NAME.SYS` in
+  the pixel face at `9pt` gold, the subtitle in the same face at 50% gold, and a trailing
+  slot for a count or an action.
+- The strip continues down both sides at `18pt` and across the foot as a band of the same
+  olive. The screen inside has an `8pt` radius and `14pt` of padding.
+- The foot carries the console's own status line — state at the left in gold, delivery at
+  the right in mint. The band is the console's ground, so nothing is re-tinted to read
+  on it.
+- Outer: `14pt` radius, `3pt` navy outline, `5pt` solid navy extrusion.
+
+**The title strip replaces the page heading rather than sitting above it.** A section is
+named once. The shell has no page headings.
+
+### Two grounds, and what the difference means
+
+`ConsolePalette` carries the six values a console surface is drawn with, so one view
+serves both grounds without a second copy of it.
+
+- **Paper** — Settings, History, Snippets and Modes. Ground `panelBg`, sunken blocks
+  `inputCream`, ink navy, secondary `textMuted`, rules and field outlines the terminal's
+  own olive at 45% and 60%. A field on paper is cream on cream, so the outline is what
+  draws the box; on the dark ground the fill already did, and the outline is transparent.
+- **Terminal** — Diagnostics. The log keeps its dark screen. Its category badges — gold,
+  mint, violet, emerald, red — were chosen for a near-black field, and they are what the
+  eye scans for a failure.
+
+Paper is what the speaker operates; the dark screen is what the machine emits. The
+difference is deliberate rather than left over.
+
+### Station
+
+No title strip and no heading: the signal chain, the engine row, the control card and the
+console are all present at once, and the page must not spend height naming itself.
+
+Composition, top to bottom: signal chain · engine row · control card and console split
+38/62 with a `320pt` floor and `16pt` gutter · the history reminder in dusty blue at the
+foot, `9pt` padding, separated by `20pt`.
+
+The control card holds the state badge, CANCEL while recording, the microphone, the meter
+and the mode switch. **System permissions are not here** — they live in Settings, and
+here they were the one block that made the card outgrow its own frame. Its scroll view
+stays as a floor for a held-back cleanup, which the card carries.
+
+**A held-back cleanup is drawn on Station and in History, and inside the chassis in both
+— never on the canvas outside it.** It used to appear above every other page as well. The
+result was the same card on six screens, each one outside that section's chassis and
+pushing it down to make room. Station carries it in the control card, beside the
+microphone and the USE THIS / KEEP MINE buttons that answer it. History carries it inside
+the screen above the list, because History is where a delivery is reviewed and the card
+is a question about the most recent one.
+
+### The microphone
+
+A ribbon capsule behind a bezel of 36 notches, in a `138pt` box.
+
+It moves like a speaker cone. At rest the swell is ambient and reaches `0.55`; while
+recording it is the measured input level, over an ambient floor of `0.12` so that an open
+microphone hearing silence reads as powered rather than stopped. Against
+`AudioRecorder.currentAudioLevel`, which maps -50 dB to 0, that floor sits near -44 dB —
+below ordinary speech, but the margin has not been measured on this machine. The ring expands to
+`0.16` of the drive and fades as it goes, the bezel pushes `0.03`, the capsule `0.09`.
+
+R9 applies to motion as much as to figures.
+
+### The meter
+
+Twelve bars with a per-bar phase offset, so one bar rises while its neighbour falls.
+
+How much of the height the wave owns is the state: **65% at rest**, where nothing is being
+measured and the movement is decoration, and **22% while recording**, where the height is
+a reading of the speaker's voice and a wave large enough to see would be a wave large
+enough to lie.
+
+### A delivered transcript in History
+
+A row whose cleanup was replaced by the deterministic transcript carries a coral
+`FALLBACK` badge and, beside it, which side refused — the guard rejecting text the
+provider did return, or the provider failing to answer. Without it the row was identical
+to a successful cleanup: same mode badge, same engine name, and no sign the engine's text
+never arrived. The two call for opposite responses, so the record stores the reason
+rather than one bit.
+
+### What each section holds
+
+- **Settings** — `SETTINGS.SYS`. Engine; cloud model and API key when a cloud engine is
+  selected; shortcut and permissions. Beside them, at a workspace width of `720pt` or
+  more, a `280pt` column stating in plain words what this Mac does with what it hears:
+  processing, recording audio, recent dictations. The cloud models are drawn as the
+  engines are — same pill, same lamp, same weight — because they are the same kind of
+  choice. The key is a card of its own: it is the one control that decides whether text
+  leaves the Mac, and it was previously the smallest element on the page.
+- **History** — `HISTORY.SYS`. The tray, with CLEAR on the title strip when there is
+  something to clear.
+- **Snippets** — `SNIPPETS.SYS`. The store editor.
+- **Modes** — `MODES.SYS`. The five modes with their descriptions, and personal memory.
+  Personalize was a destination that explained its own editor did not exist; modes and
+  memory answer one question, which is what happens to what was just said. Engine
+  selection is not repeated here.
+- **Diagnostics** — `DIAGNOSTICS.SYS`. Telemetry gauges, category filters, the log.
+
+**The five chassis sections do not repeat one another.** Engine selection and permissions
+are in Settings, the gauges in Diagnostics, the API key in Settings, the console's tabs
+only on Station. Station is the exception by design: it is the station itself, so it
+carries the engine row, the mode switch and — when the selected engine is Gemini — the
+console's MODEL row, which are also in Settings, in Modes and in Settings respectively.
+
+The MODEL row is on the dark console rather than the mint canvas because it explains the
+readings directly above it: which model answers, what each one measured, the order the
+engine walks when the chosen one is busy, and whether the key is in the keychain. It
+appears only when the engine is a cloud one, and disappears with it.
+
+### Refusals
+
+A control a run has locked stays live and answers the press. A gold strip with a navy
+edge appears above the page, holds the reason for four seconds and clears itself, and the
+same sentence is written to the activity log, where it stays.
+
+This replaces `.disabled`, which refused in silence: the press produced no switch and no
+reason, which from the speaker's side is indistinguishable from a broken button. R3c asks
+for both halves — the switch refused, and the refusal reported. Three switches use it:
+the mode, the engine and the Gemini model.
+
+### What this does not include
+
+A visual correction editor, audio recovery retention, an editable shortcut, and pickers
+for the speech and cleanup models. The last three are engine work rather than interface
+work and are not in this section's scope.
+
+This section supersedes the earlier main-window composition and mode-selection fill rules
+below. Those rules still describe the retained console, engine controls and HUD where
+applicable. The separate UI-only preview uses simulated states and never connects capture,
+personal stores, keychain, clipboard or providers.
+
 ## Floating HUD contract
 
 The HUD renders over other applications and must stay legible on any wallpaper, so it is
