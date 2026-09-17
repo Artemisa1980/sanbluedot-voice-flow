@@ -12,19 +12,36 @@
       {
         "title": "sanblueᵈᵒᵗ VoiceFlow HUD",
         "label": "main",
+        "url": "index.html",
         "width": 330,
         "height": 88,
+        "center": false,
+        "x": 20,
+        "y": 40,
         "resizable": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false,
-        "visible": true
+        "visible": false,
+        "focus": false
+      },
+      {
+        "label": "station",
+        "title": "sanblueᵈᵒᵗ — retro voice-station",
+        "url": "station.html",
+        "width": 1180,
+        "height": 840,
+        "minWidth": 760,
+        "minHeight": 700,
+        "center": true,
+        "visible": true,
+        "resizable": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'"
     }
   }
 }

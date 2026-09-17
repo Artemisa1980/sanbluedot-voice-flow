@@ -70,14 +70,29 @@ def detected_language(completed: object) -> str | None:
     return None
 
 
+def is_executable_file(path: Path) -> bool:
+    """Whether this path is a file the system can actually execute.
+
+    `os.access(path, os.X_OK)` answers true for every existing file on Windows, so it
+    decides nothing there and would admit a text file named after the binary. Windows
+    decides by extension instead, and `PATHEXT` is the list it decides from.
+    """
+    if not path.is_file():
+        return False
+    if os.name != "nt":
+        return os.access(path, os.X_OK)
+    extensions = [
+        extension.strip().lower()
+        for extension in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(os.pathsep)
+        if extension.strip()
+    ]
+    return path.suffix.lower() in extensions
+
+
 def resolve_binary(value: str) -> Path | None:
     candidate = Path(value).expanduser()
     if candidate.parent != Path("."):
-        return (
-            candidate.resolve()
-            if candidate.is_file() and os.access(candidate, os.X_OK)
-            else None
-        )
+        return candidate.resolve() if is_executable_file(candidate) else None
     resolved = shutil.which(value)
     return Path(resolved) if resolved else None
 
@@ -109,8 +124,16 @@ class WhisperCppTranscriber:
             raise DependencyUnavailable(f"Audio file not found: {audio_path}")
         if not self.model_path.is_file():
             raise DependencyUnavailable(f"Whisper model not found: {self.model_path}")
-        if not os.access(self.model_path, os.R_OK):
-            raise DependencyUnavailable(f"Whisper model is not readable: {self.model_path}")
+        # Reading one byte is what proves the file readable. `os.access(path, os.R_OK)`
+        # answers true on Windows for a file whose owner is the caller whatever its
+        # permissions say, so it lets an unreadable model through to the subprocess.
+        try:
+            with self.model_path.open("rb") as handle:
+                handle.read(1)
+        except OSError as error:
+            raise DependencyUnavailable(
+                f"Whisper model is not readable: {self.model_path}"
+            ) from error
         if is_effectively_silent(audio_path):
             raise TranscriptionError("The recording contains no audible speech.")
 
@@ -147,6 +170,7 @@ class WhisperCppTranscriber:
                     capture_output=True,
                     text=True,
                     timeout=self.timeout_seconds,
+                    cwd=str(binary_path.parent),
                 )
             except FileNotFoundError as exc:
                 raise DependencyUnavailable(f"Whisper binary not found: {binary_path}") from exc

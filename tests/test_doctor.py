@@ -1,10 +1,11 @@
+import os
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sanbluedot_voiceflow.doctor import inspect_whisper_model, run_checks
+from sanbluedot_voiceflow.doctor import inspect_whisper_model, bundled_binary, bundled_model, run_checks
 
 
 def write_model(
@@ -155,6 +156,30 @@ class WhisperModelInspectionTests(unittest.TestCase):
 
         model_check = next(check for check in checks if check.name == "Whisper model")
         self.assertFalse(model_check.ok)
+
+
+class BundledDependencyTests(unittest.TestCase):
+    """The adapter keeps the binary and the weights beside the sources, not on PATH."""
+
+    def test_the_projects_own_binary_wins_over_a_path_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self.assertEqual(bundled_binary("whisper-cli", root), "whisper-cli")
+            installed = root / ("whisper-cli.exe" if os.name == "nt" else "whisper-cli")
+            installed.touch()
+            self.assertEqual(bundled_binary("whisper-cli", root), str(installed))
+
+    def test_an_absent_model_still_reads_as_unconfigured(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            # None rather than a guessed path: a name that is not there must not be
+            # reported as a model that failed its header check.
+            self.assertIsNone(bundled_model(root))
+            (root / "ggml-large-v3-turbo.bin").touch()
+            self.assertEqual(bundled_model(root), root / "ggml-large-v3-turbo.bin")
+            # Base is the adapter's first choice, so it wins once both are installed.
+            (root / "ggml-base.bin").touch()
+            self.assertEqual(bundled_model(root), root / "ggml-base.bin")
 
 
 class DoctorTests(unittest.TestCase):

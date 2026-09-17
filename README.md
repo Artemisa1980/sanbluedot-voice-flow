@@ -72,7 +72,9 @@ The native macOS runner can:
 - opt into a private acceptance log that keeps raw, personalized, and final output,
   release-to-result latency, and the recording behind each numbered result.
 
-A settings interface and Windows integration are later gated phases.
+The Windows development adapter now includes the selected A station, local capture,
+session recovery, personal-memory controls and shortcut settings. Its live acceptance
+remains open; see `windows/README.md` for current commands and limitations.
 
 ## Personal memory
 
@@ -513,7 +515,7 @@ continuing recorded work.
 - `macos/` — native menu-bar runner and dependency-free checks.
 - `macos/Sources/VoiceFlowMacCore/PasteTarget.swift` — which applications may receive a keystroke.
 - `macos/Sources/VoiceFlowMacCore/VoiceAction.swift` — spoken-intent parsing.
-- `windows/` — Windows platform adapter scaffold: written and audited, never compiled.
+- `windows/` — Windows platform adapter: builds locally; Gate 5 live acceptance remains open.
 - `scripts/build-macos-app.sh` — stable local `.app` packaging and Apple Development signing.
 - `acceptance/` — one runbook and report per framework gate; `acceptance/README.md` indexes them.
 - `docs/` — HTML previews of interface surfaces, built from the `design-system.md` tokens.

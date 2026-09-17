@@ -86,6 +86,91 @@ def inspect_whisper_model(model_path: Path | None) -> Check:
     )
 
 
+# The engine is also driven by the Windows adapter, which keeps the binary and the
+# weights beside the sources and passes both as absolute paths. `doctor` resolved only
+# through PATH and an explicit flag, so it reported both as missing on the machine where
+# they were installed, and could not diagnose the surface under repair.
+PROJECT_MODELS = Path(__file__).resolve().parents[2] / "models"
+# Base first, then the larger candidate, matching how the adapter picks a default.
+BUNDLED_MODELS = ("ggml-base.bin", "ggml-large-v3-turbo.bin")
+
+
+def bundled_binary(name: str, directory: Path = PROJECT_MODELS) -> str:
+    """The project's own copy of `name`, or `name` unchanged for a PATH lookup."""
+    for candidate in (directory / f"{name}.exe", directory / name):
+        if candidate.is_file():
+            return str(candidate)
+    return name
+
+
+def bundled_model(directory: Path = PROJECT_MODELS) -> Path | None:
+    """The first installed candidate, or None so an absent one still reads as unconfigured."""
+    for name in BUNDLED_MODELS:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def ollama_status(base_url: str, model: str | None = None, timeout: float = 1.5) -> dict:
+    """Whether the local service answers, and which models it already holds.
+
+    Reads the service's own inventory and nothing else: it never pulls a model, and a
+    service that does not answer is reported as unreachable rather than as a missing
+    model, because the two call for different things from the reader.
+    """
+    try:
+        with urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("Ollama returned a non-object response.")
+        entries = payload.get("models", [])
+        if not isinstance(entries, list):
+            raise ValueError("Ollama returned a non-list models field.")
+        names = sorted(
+            entry["name"]
+            for entry in entries
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+        )
+    except (
+        HTTPError,
+        URLError,
+        TimeoutError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ):
+        return {
+            "reachable": False,
+            "models": [],
+            "model": model,
+            "ready": False,
+            "state": "unreachable",
+            "detail": "service not reachable",
+        }
+
+    # The caller needs to tell these apart to say anything useful, and matching on the
+    # sentence below would break the moment its wording improved.
+    if model is None and not names:
+        state, detail = "no_model_installed", "service available; no model installed"
+    elif model is None:
+        state, detail = "no_model_chosen", f"service available; {len(names)} model(s) installed"
+    elif model in names:
+        state, detail = "ready", f"available with {model}"
+    else:
+        state, detail = "model_missing", f"service available; model not installed: {model}"
+    return {
+        "reachable": True,
+        "models": names,
+        "model": model,
+        "ready": state == "ready",
+        "state": state,
+        "detail": detail,
+    }
+
+
 def run_checks(
     *,
     whisper_binary: str,
@@ -112,36 +197,7 @@ def run_checks(
 
     checks.append(inspect_whisper_model(whisper_model))
 
-    try:
-        with urlopen(f"{ollama_url.rstrip('/')}/api/tags", timeout=1.5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("Ollama returned a non-object response.")
-        models = payload.get("models", [])
-        if not isinstance(models, list):
-            raise ValueError("Ollama returned a non-list models field.")
-        names = {
-            model.get("name")
-            for model in models
-            if isinstance(model, dict)
-        }
-        model_present = ollama_model in names
-        detail = (
-            f"available with {ollama_model}"
-            if model_present
-            else f"service available; model missing: {ollama_model}"
-        )
-        checks.append(Check("Ollama", model_present, detail))
-    except (
-        HTTPError,
-        URLError,
-        TimeoutError,
-        OSError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        TypeError,
-        ValueError,
-    ):
-        checks.append(Check("Ollama", False, "service not reachable"))
+    status = ollama_status(ollama_url, ollama_model)
+    checks.append(Check("Ollama", status["ready"], status["detail"]))
 
     return checks

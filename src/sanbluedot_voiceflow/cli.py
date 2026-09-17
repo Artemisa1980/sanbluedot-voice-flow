@@ -22,7 +22,7 @@ from .distill import (
     create_ollama_model,
     write_modelfile,
 )
-from .doctor import run_checks
+from .doctor import bundled_binary, bundled_model, run_checks
 from .errors import CleanupFailed, VoiceFlowError
 from .memory import (
     DEFAULT_VOCABULARY,
@@ -67,8 +67,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     doctor = subparsers.add_parser("doctor", help="Inspect local engine dependencies.")
-    doctor.add_argument("--whisper-bin", default="whisper-cli")
-    doctor.add_argument("--whisper-model", type=Path)
+    # Defaults fall back to the project's own `models/` before PATH, so a bare `doctor`
+    # reports the files the adapter actually runs. An explicit flag still wins.
+    doctor.add_argument("--whisper-bin", default=bundled_binary("whisper-cli"))
+    doctor.add_argument("--whisper-model", type=Path, default=bundled_model())
     doctor.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     doctor.add_argument("--ollama-model", default="qwen3:4b")
 

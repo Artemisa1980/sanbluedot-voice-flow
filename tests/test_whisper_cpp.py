@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -13,13 +14,18 @@ from sanbluedot_voiceflow.transcribers.whisper_cpp import (
 )
 
 
+# A stand-in binary has to be one the resolver accepts on the platform running the tests.
+# POSIX decides by mode and Windows by extension, so the name carries `.exe` there.
+BINARY_NAME = "whisper-cli.exe" if os.name == "nt" else "whisper-cli"
+
+
 class WhisperCppTranscriberTests(unittest.TestCase):
     def test_builds_command_and_reads_generated_transcript(self) -> None:
         commands: list[list[str]] = []
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary = root / "whisper-cli"
+            binary = root / BINARY_NAME
             model = root / "model.bin"
             audio = root / "sample.wav"
             binary.touch()
@@ -52,7 +58,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_automatic_mode_recovers_the_language_whisper_detected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -81,7 +87,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_an_explicit_language_ignores_engine_detection_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -110,7 +116,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_a_runner_without_captured_output_reports_an_unknown_language(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -134,7 +140,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_reports_the_useful_tail_of_whisper_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary = root / "whisper-cli"
+            binary = root / BINARY_NAME
             model = root / "model.bin"
             audio = root / "sample.wav"
             binary.touch()
@@ -162,7 +168,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -192,7 +198,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_a_hung_whisper_becomes_a_transcription_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary = root / "whisper-cli"
+            binary = root / BINARY_NAME
             model = root / "model.bin"
             audio = root / "sample.wav"
             binary.touch()
@@ -218,7 +224,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_invalid_transcript_encoding_becomes_a_transcription_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -233,7 +239,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
     def test_transcript_read_failure_becomes_a_transcription_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -253,10 +259,14 @@ class WhisperCppTranscriberTests(unittest.TestCase):
                         runner=runner,
                     ).transcribe(audio)
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "Windows does not deny the file's owner read access through chmod",
+    )
     def test_unreadable_model_raises_dependency_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
             binary.chmod(0o755)
@@ -327,6 +337,22 @@ class SilenceGuardTests(unittest.TestCase):
 
             self.assertFalse(is_effectively_silent(speech))
 
+    def test_a_level_inside_the_rejected_band_is_still_silence(self) -> None:
+        # The cases above sit at 0 and at 0.020 RMS, and both answer the same way
+        # whatever the floor is set to, so neither one measures the floor. This level
+        # sits between them, where the floor is the only thing deciding: a floor moved
+        # away from SILENCE_RMS fails here instead of passing unnoticed.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            faint = self.write_wav(Path(temp_dir) / "faint.wav", int(0.001 * 32768))
+
+            self.assertTrue(is_effectively_silent(faint))
+
+    def test_a_level_just_above_the_floor_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            soft = self.write_wav(Path(temp_dir) / "soft.wav", int(0.005 * 32768))
+
+            self.assertFalse(is_effectively_silent(soft))
+
     def test_unreadable_audio_fails_open_rather_than_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             broken = Path(temp_dir) / "broken.wav"
@@ -337,7 +363,7 @@ class SilenceGuardTests(unittest.TestCase):
     def test_silent_audio_never_reaches_the_engine(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            binary, model = root / "whisper-cli", root / "model.bin"
+            binary, model = root / BINARY_NAME, root / "model.bin"
             binary.touch()
             binary.chmod(0o755)
             model.touch()
@@ -355,6 +381,7 @@ class SilenceGuardTests(unittest.TestCase):
 
 
 class BinaryResolutionTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "chmod does not remove execute permission on Windows")
     def test_explicit_binary_must_be_executable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Path(temp_dir) / "whisper-cli"
@@ -363,6 +390,17 @@ class BinaryResolutionTests(unittest.TestCase):
             self.assertIsNone(resolve_binary(str(binary)))
             binary.chmod(0o755)
             self.assertEqual(resolve_binary(str(binary)), binary.resolve())
+
+    @unittest.skipUnless(os.name == "nt", "PATHEXT is what decides executability on Windows")
+    def test_explicit_binary_must_carry_an_executable_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            rejected = Path(temp_dir) / "whisper-cli"
+            accepted = Path(temp_dir) / "whisper-cli.exe"
+            rejected.write_text("not executable", encoding="utf-8")
+            accepted.write_text("stands in for the real binary", encoding="utf-8")
+
+            self.assertIsNone(resolve_binary(str(rejected)))
+            self.assertEqual(resolve_binary(str(accepted)), accepted.resolve())
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="hud-container" id="hud">
+  <div class="hud-container" id="hud" data-tauri-drag-region>
     <!-- 44px Vintage Microphone Disc -->
     <div class="mic-disc" id="micDisc">
       <div class="vintage-ribbon-mic">
@@ -29,7 +29,7 @@
       <div class="status-row">
         <div class="status-badge" id="statusBadge">
           <span class="status-dot" id="statusDot"></span>
-          <span class="status-text" id="statusText">READY</span>
+          <span class="status-text" id="statusText" role="status" aria-live="polite">READY</span>
           <span class="context-pill" id="contextPill">DESKTOP</span>
         </div>
 

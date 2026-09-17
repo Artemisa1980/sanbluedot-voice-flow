@@ -22,6 +22,11 @@ Provide personal, low-friction dictation on macOS and Windows. A configurable pu
   process. This single-button behavior is an explicit owner decision.
 - The trigger remains configurable. Other modifier keys alone are rejected to avoid
   collisions with ordinary keyboard use.
+- The default Windows trigger is right Ctrl alone. The Windows adapter has no Fn/Globe
+  equivalent to bind, so it satisfies the rule above by taking the modifier that collides
+  least: right Ctrl types no character on any keyboard layout and, unlike a released Alt,
+  opens no menu bar. This is an explicit platform exception to that rule, and Gate 5
+  measures the collisions it still carries rather than assuming there are none.
 - The application exposes recording, processing, success, and failure states.
 - The first implementation target is macOS; Windows uses a platform adapter after the Mac gate.
 
