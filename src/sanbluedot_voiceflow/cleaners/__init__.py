@@ -6,22 +6,27 @@ finding every `if cleaner ==` in the codebase and hoping none was missed.
 """
 
 from ..contracts import Cleaner
+from .apple import DEFAULT_BINARY as DEFAULT_APPLE_BINARY
+from .apple import AppleCleaner
 from .gemini import DEFAULT_MODEL as DEFAULT_GEMINI_MODEL
 from .gemini import GeminiCleaner
 from .literal import LiteralCleaner
-from .ollama import OllamaCleaner
 
 __all__ = [
+    "AppleCleaner",
     "CLEANER_NAMES",
     "CLOUD_CLEANER_NAMES",
+    "DEFAULT_APPLE_BINARY",
     "DEFAULT_GEMINI_MODEL",
     "GeminiCleaner",
     "LiteralCleaner",
-    "OllamaCleaner",
     "build_cleaner",
 ]
 
-CLEANER_NAMES = ("literal", "ollama", "gemini")
+# Ollama was removed on 2026-10-01 by the owner's decision: cleanup time grows with every
+# word a model rewrites, and Apple's on-device model and Gemini cover the cases that
+# still need one.
+CLEANER_NAMES = ("literal", "apple", "gemini")
 CLEANER_MODES = ("clean", "translate", "meeting")
 # Named separately so a caller can warn, gate, or refuse before anything leaves the
 # device, without hard-coding which providers happen to be remote today.
@@ -32,12 +37,11 @@ def build_cleaner(
     name: str,
     *,
     mode: str = "clean",
-    ollama_model: str = "qwen3:4b",
-    ollama_url: str = "http://127.0.0.1:11434",
     gemini_model: str = DEFAULT_GEMINI_MODEL,
+    apple_binary: str = DEFAULT_APPLE_BINARY,
 ) -> Cleaner:
-    if name == "ollama":
-        return OllamaCleaner(model=ollama_model, base_url=ollama_url, mode=mode)
+    if name == "apple":
+        return AppleCleaner(binary=apple_binary, mode=mode)
     if name == "gemini":
         return GeminiCleaner(model=gemini_model, mode=mode)
     return LiteralCleaner()

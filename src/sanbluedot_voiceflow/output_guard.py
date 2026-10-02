@@ -4,6 +4,7 @@ import re
 import unicodedata
 
 from .errors import CleanupError
+from .take_back import deletable, take_back_spans
 
 
 _TOKEN = re.compile(
@@ -12,11 +13,28 @@ _TOKEN = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _PROTECTED_PREFIXES = ("http://", "https://", "www.")
+# The Spanish written accent, and only that one.
+#
+# whisper.cpp writes Spanish without it, so a cleaner that puts it back was reported as
+# having invented words and every such cleanup was refused — which is most of them, for a
+# Spanish speaker. Folding it for the comparison lets `reunion` and `reunión` count as
+# one word while the guard keeps judging invention, reordering and deletion.
+#
+# Deliberately not the other marks: `ñ` and `ü` are letters here, not accents. `ano`
+# against `año` and `pinguino` against `pingüino` are different words, and folding them
+# would let a cleaner change one into the other unseen.
+_ACUTE_ACCENT = "\u0301"
 _IGNORABLE_TERMINAL_MARKS = frozenset(".!?")
 _CLOSING_MARKS = frozenset("\"'”’)]}»")
 # Keep this deliberately narrow. Words such as "like", "este", or "pues" can be
 # content in ordinary English or Spanish and are therefore not safe to erase.
-_REMOVABLE_FILLERS = frozenset({"um", "uh", "uhm", "erm", "hmm", "mmm"})
+#
+# `eh` joined the list on 2026-09-18, by the owner's decision. It was English only until
+# then, which cost the speaker every cleanup that removed the one filler she actually
+# says: the guard read `eh` as content, refused the whole result and delivered the raw
+# transcript. It is an interjection in Spanish, never a content word, which is what
+# separates it from `este` and `pues` above.
+_REMOVABLE_FILLERS = frozenset({"um", "uh", "uhm", "erm", "hmm", "mmm", "eh"})
 
 
 def _is_ignorable_presentation_mark(text: str, index: int) -> bool:
@@ -57,6 +75,14 @@ def _append_protected_gaps(
         tokens.append((character.casefold(), False))
 
 
+def _fold(token: str) -> str:
+    """The form two words are compared in: lowercase, without the written accent."""
+    decomposed = unicodedata.normalize("NFD", token.casefold())
+    return unicodedata.normalize(
+        "NFC", "".join(ch for ch in decomposed if ch != _ACUTE_ACCENT)
+    )
+
+
 def _tokens(text: str) -> list[tuple[str, bool]]:
     tokens: list[tuple[str, bool]] = []
     normalized = unicodedata.normalize("NFKC", text)
@@ -79,7 +105,7 @@ def _tokens(text: str) -> list[tuple[str, bool]]:
         elif "@" in token:
             tokens.append((token, False))
         else:
-            folded = token.casefold()
+            folded = _fold(token)
             # An all-caps token such as UM may be an acronym, not a spoken filler.
             removable = (
                 folded in _REMOVABLE_FILLERS
@@ -138,4 +164,60 @@ def guard_conservative_cleanup(source: str, candidate: str) -> str:
             "Cleanup deleted lexical content that is not an unambiguous filler: "
             f"{unsafe_tail[0]!r}."
         )
+    return candidate
+
+
+def guard_fix_cleanup(source: str, candidate: str) -> str:
+    """Accept deletion only: every word of the fix must be the speaker's, in order.
+
+    A fix exists to drop what the speaker took back — "no, mejor", "scratch that" — so
+    deleting words is its purpose and cannot be refused here. What stays refused is every
+    word the speaker never said and every word moved out of its place. That is also what
+    catches a model handing back its own example instead of the dictation. The speaker
+    asked for the fix on one row, sees the result, and keeps the original.
+    """
+    if not isinstance(candidate, str):
+        raise CleanupError("The fix returned a non-text result.")
+
+    source_tokens = _tokens(source)
+    candidate_tokens = _tokens(candidate)
+    if source_tokens and not candidate_tokens:
+        raise CleanupError("The fix removed every word.")
+
+    # Matched from the end. The corrected version is what the speaker said last, so
+    # when a phrase is spoken twice — "el meeting para las 4… borra eso… el meeting a
+    # las 6" — the kept words are the later ones and the deleted ones the withdrawn copy.
+    kept: set[int] = set()
+    source_index = len(source_tokens) - 1
+    for candidate_token, _ in reversed(candidate_tokens):
+        while source_index >= 0 and source_tokens[source_index][0] != candidate_token:
+            source_index -= 1
+        if source_index < 0:
+            raise CleanupError(
+                f"The fix introduced or reordered a word: {candidate_token!r}."
+            )
+        kept.add(source_index)
+        source_index -= 1
+
+    # A take-back withdraws the words just before it, never the dictation. Every word
+    # deleted must sit within reach of a cue, in one unbroken run up to it; a filler may
+    # go from anywhere.
+    def gone(index: int) -> bool:
+        return index not in kept or source_tokens[index][1]
+
+    def withdrew_before(index: int) -> bool:
+        earlier = index - 1
+        while earlier >= 0 and source_tokens[earlier][1]:
+            earlier -= 1
+        return earlier >= 0 and earlier not in kept
+
+    spans = take_back_spans([token for token, _ in source_tokens], withdrew_before)
+
+    for index, (token, removable) in enumerate(source_tokens):
+        if index in kept or removable:
+            continue
+        if not deletable(index, spans, gone):
+            raise CleanupError(
+                f"The fix deleted {token!r}, which no take-back withdrew."
+            )
     return candidate

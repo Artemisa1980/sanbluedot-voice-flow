@@ -58,7 +58,6 @@ final class FloatingHUDController {
         cleanerName: String,
         mode: ProcessingMode = .clean,
         context: AppContext? = nil,
-        selectionCharacters: Int? = nil,
         levelProvider: @escaping () -> Float
     ) {
         animationGeneration += 1
@@ -71,7 +70,6 @@ final class FloatingHUDController {
         viewModel.cleanerName = cleanerName
         viewModel.processingMode = mode
         viewModel.targetContext = context
-        viewModel.selectionCharacters = selectionCharacters
         viewModel.audioLevel = 0.0
 
         positionPanel()
@@ -194,6 +192,7 @@ final class FloatingHUDController {
     /// Say the recording was taken back, briefly. Silence here would read the same as a
     /// trigger that failed.
     func showCancelled() {
+        animationGeneration += 1
         meterTimer?.invalidate()
         meterTimer = nil
         processingTimer?.invalidate()
@@ -202,6 +201,7 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.mode = .cancelled
+        positionPanel()
         showAtFullOpacity()
 
         let work = DispatchWorkItem { [weak self] in
@@ -211,7 +211,11 @@ final class FloatingHUDController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
     }
 
+    /// Say a run failed or was refused. Like a mode change, the capsule may be summoned
+    /// with nothing on screen — the microphone refusing to start, a refused pairing — so
+    /// it raises the generation, positions the panel and shows it (D-04).
     func showFailed(message: String) {
+        animationGeneration += 1
         meterTimer?.invalidate()
         meterTimer = nil
         processingTimer?.invalidate()
@@ -220,6 +224,8 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.mode = .failed(message)
+        positionPanel()
+        showAtFullOpacity()
 
         let work = DispatchWorkItem { [weak self] in
             self?.fadeOut()

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoiceFlow History Redesign</title>
+<style>
+  @font-face {
+    font-family: "Press Start 2P";
+    src: url("../macos/Resources/Fonts/PressStart2P-Regular.ttf") format("truetype");
+  }
+  /* Approved tokens only, named as `VoiceStationTokens` names them. One look: this is a
+     picture of the app, which does not change with the viewer's theme. */
+  :root {
+    --appBg: #A9D3C0;
+    --panelBg: #F8ECCF;
+    --inputCream: #FFF9E9;
+    --navy: #16213E;
+    --textMuted: #405147;
+    --consoleBg: #262319;
+    --gold: #EFC15E;
+    --dotBlue: #7CB3E8;
+    --ok: #5F7050;
+    --rec: #FF7B6B;
+    --danger: #C0392B;
+    --rule: rgba(38, 35, 25, 0.45);
+    --fieldStroke: rgba(38, 35, 25, 0.6);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --pixel: "Press Start 2P", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    background: var(--appBg);
+    font-family: var(--mono);
+    color: var(--navy);
+  }
+
+  /* The chassis is today's, unchanged. */
+  .chassis {
+    max-width: 920px;
+    margin: 0 auto;
+    background: var(--consoleBg);
+    border: 3px solid var(--navy);
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--navy);
+    padding: 0 16px 14px;
+  }
+  .strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 18px 4px 14px;
+  }
+  .strip h1 {
+    margin: 0;
+    font: 13px var(--pixel);
+    color: var(--gold);
+    letter-spacing: 0.5px;
+    line-height: 1.6;
+  }
+  .strip h1 span { color: rgba(239, 193, 94, 0.6); }
+  .strip .spacer { flex: 1; }
+  .strip .clear {
+    font: 700 11px var(--mono);
+    background: var(--danger);
+    color: var(--inputCream);
+    border-radius: 6px;
+    padding: 5px 10px;
+  }
+  .strip .count {
+    font: 700 11px var(--mono);
+    background: var(--gold);
+    color: var(--navy);
+    border-radius: 6px;
+    padding: 5px 9px;
+  }
+  .well {
+    background: var(--panelBg);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 12px 4px 0;
+    font: 700 12px var(--mono);
+    color: var(--gold);
+  }
+  .footer .engine { color: var(--appBg); }
+
+  /* ——— Proposal: what changes is only inside the well ——— */
+
+  .ledger { display: grid; gap: 10px; }
+  .entry {
+    display: grid;
+    grid-template-columns: 5px 1fr;
+    background: var(--inputCream);
+    border: 1px solid var(--fieldStroke);
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  .rail { background: var(--ok); }
+  .entry.fallback .rail { background: var(--rec); }
+  .content {
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px;
+    min-width: 0;
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  .time {
+    font: 700 13px var(--mono);
+    color: var(--navy);
+    font-variant-numeric: tabular-nums;
+  }
+  /* A state is a filled pill with a navy hairline, and ink follows the fill. */
+  .pill {
+    font: 700 10px var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border: 1.5px solid var(--navy);
+    border-radius: 6px;
+    color: var(--navy);
+    background: var(--dotBlue);
+  }
+  .pill.fallback { background: var(--rec); }
+  .engine-name {
+    font: 12px var(--mono);
+    color: var(--textMuted);
+  }
+  .grow { flex: 1; }
+  .total {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .total small {
+    font: 700 9px var(--mono);
+    letter-spacing: 0.12em;
+    color: var(--textMuted);
+  }
+  .total b {
+    font: 15px var(--pixel);
+    color: var(--navy);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .reason {
+    margin: 0;
+    font: 12px var(--mono);
+    line-height: 1.5;
+    color: var(--textMuted);
+  }
+  .text {
+    margin: 0;
+    font: 15px var(--mono);
+    line-height: 1.7;
+    color: var(--navy);
+    white-space: pre-wrap;
+    max-width: 78ch;
+  }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  details { display: contents; }
+  summary {
+    list-style: none;
+    font: 700 10px var(--mono);
+    letter-spacing: 0.1em;
+    color: var(--textMuted);
+    cursor: pointer;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▸ "; }
+  details[open] summary::before { content: "▾ "; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .btn {
+    font: 700 10px var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--navy);
+    background: var(--inputCream);
+    border: 1.5px solid var(--navy);
+    border-radius: 5px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--panelBg); }
+  .btn:focus-visible { outline: 2px solid var(--dotBlue); outline-offset: 2px; }
+  .btn.primary { background: var(--gold); }
+
+  .layers {
+    order: 3;
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    background: var(--panelBg);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    display: grid;
+    gap: 3px;
+  }
+  .layers dt {
+    font: 700 9px var(--mono);
+    letter-spacing: 0.12em;
+    color: var(--textMuted);
+  }
+  .layers dd {
+    margin: 0 0 8px;
+    font: 13px var(--mono);
+    line-height: 1.6;
+    color: var(--navy);
+  }
+  .layers dd:last-child { margin-bottom: 0; }
+  .layers .same { color: var(--textMuted); font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="chassis">
+  <div class="strip">
+    <h1>HISTORY.SYS <span>— RECENT DICTATIONS</span></h1>
+    <div class="spacer"></div>
+    <div class="clear">CLEAR</div>
+    <div class="count">4</div>
+  </div>
+
+  <div class="well">
+    <div class="ledger">
+
+      <article class="entry">
+        <div class="rail"></div>
+        <div class="content">
+          <div class="head">
+            <span class="time">[17:41:44]</span>
+            <span class="pill">Clean</span>
+            <span class="engine-name">apple · pasted</span>
+            <span class="grow"></span>
+            <span class="total"><small>TOTAL</small><b>4.4 s</b></span>
+          </div>
+          <p class="text">Bueno, la reunión es el viernes, no, el sábado. Te mando el enlace por correo.</p>
+          <div class="foot">
+            <details>
+              <summary>ORIGINAL</summary>
+              <dl class="layers">
+                <dt>HEARD</dt>
+                <dd>eh bueno la reunion es el viernes no el sabado te mando el enlace por correo</dd>
+                <dt>CORRECTED</dt>
+                <dd class="same">no corrections applied</dd>
+              </dl>
+            </details>
+            <span class="actions">
+              <button class="btn primary" type="button">COPY</button>
+              <button class="btn" type="button">RAW</button>
+              <button class="btn" type="button">RE-PASTE</button>
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <article class="entry fallback">
+        <div class="rail"></div>
+        <div class="content">
+          <div class="head">
+            <span class="time">[17:40:18]</span>
+            <span class="pill">Clean</span>
+            <span class="pill fallback">Fallback</span>
+            <span class="engine-name">apple · pasted</span>
+            <span class="grow"></span>
+            <span class="total"><small>TOTAL</small><b>5.0 s</b></span>
+          </div>
+          <p class="reason">The cleanup changed too much to verify · the transcript was delivered instead.</p>
+          <p class="text">¿Cuál es la diferencia entre el plan mensual y el anual? Quiero ver los dos precios juntos.</p>
+          <div class="foot">
+            <details open>
+              <summary>ORIGINAL</summary>
+              <dl class="layers">
+                <dt>HEARD</dt>
+                <dd>¿Cuál es la diferencia entre el plan mensual y el anual? Quiero ver los dos precios juntos.</dd>
+                <dt>CORRECTED</dt>
+                <dd class="same">no corrections applied</dd>
+              </dl>
+            </details>
+            <span class="actions">
+              <button class="btn primary" type="button">COPY</button>
+              <button class="btn" type="button">RE-PASTE</button>
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="rail"></div>
+        <div class="content">
+          <div class="head">
+            <span class="time">[12:26:45]</span>
+            <span class="pill">ES➔EN</span>
+            <span class="engine-name">gemini-3.5-flash · copied</span>
+            <span class="grow"></span>
+            <span class="total"><small>TOTAL</small><b>4.3 s</b></span>
+          </div>
+          <p class="text">Please send me the project files before noon so I can review the budget.</p>
+          <div class="foot">
+            <details>
+              <summary>ORIGINAL</summary>
+              <dl class="layers">
+                <dt>HEARD</dt>
+                <dd>por favor mándame los archivos del proyecto antes del mediodía para revisar el presupuesto</dd>
+                <dt>CORRECTED</dt>
+                <dd class="same">no corrections applied</dd>
+              </dl>
+            </details>
+            <span class="actions">
+              <button class="btn primary" type="button">COPY</button>
+              <button class="btn" type="button">RAW</button>
+              <button class="btn" type="button">RE-PASTE</button>
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="rail"></div>
+        <div class="content">
+          <div class="head">
+            <span class="time">[11:02:09]</span>
+            <span class="pill">Clean</span>
+            <span class="engine-name">apple · pasted</span>
+            <span class="grow"></span>
+            <span class="total"><small>TOTAL</small><b>3.9 s</b></span>
+          </div>
+          <p class="text">Revisa el repo de sanblueᵈᵒᵗ antes del commit, por favor.</p>
+          <div class="foot">
+            <details>
+              <summary>ORIGINAL</summary>
+              <dl class="layers">
+                <dt>HEARD</dt>
+                <dd>revisa el repo de sun blue dot antes del commit por favor</dd>
+                <dt>CORRECTED</dt>
+                <dd>revisa el repo de sanblueᵈᵒᵗ antes del commit por favor</dd>
+              </dl>
+            </details>
+            <span class="actions">
+              <button class="btn primary" type="button">COPY</button>
+              <button class="btn" type="button">RAW</button>
+              <button class="btn" type="button">RE-PASTE</button>
+            </span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>● Hold Fn/Globe anywhere, or hold the button below.</span>
+    <span class="engine">100% Local (Whisper)</span>
+  </div>
+</div>
+
+</body>
+</html>

@@ -22,12 +22,11 @@ against the same recordings rather than against a fresh, incomparable set.
 | `phase-2-acceptance.md` | Gate 2 — macOS push-to-talk: 20 recordings, latency, word error rate, clipboard delivery | PASS 2026-08-29 |
 | `phase-3-acceptance.md` | Gate 3 — correction memory, with control items that must not move | PASS 2026-08-29 |
 | `phase-4-acceptance.md` | Gate 4 — cloud cleanup: privacy boundary, fallback, output guard, corpus quality | PASS 2026-08-31 |
-| `phase-5-acceptance.md` | Gate 5 — Windows platform adapter: trigger, capture, clipboard, insertion limits, packaging, permissions | OPEN 2026-09-04 · machine and applications named |
+| `phase-5-acceptance.md` | Gate 5 — platform adapter | OPEN · owned and measured on the other machine, not from this Mac |
 | `phase-6-acceptance.local.md` | Gate 6 — pronunciation practice: recording, word-level report, deletability, formatting separated | PASS 2026-09-02 · local |
 
-Gate 5's first condition closed on 2026-09-04: the machine and its target applications
-are named in its runbook. Every row after that is measured on that machine, so the file
-stays a runbook until the machine turns it into a report.
+Gate 5 is measured on the machine it targets, not here. Its runbook holds everything
+that gate needs; nothing about it is briefed, audited or planned from this Mac.
 
 ## What stays out of version control
 

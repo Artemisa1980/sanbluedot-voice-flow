@@ -179,25 +179,5 @@ class FallbackReasonTests(unittest.TestCase):
         failure = CleanupFailed("something went wrong", raw_text="hola")
         self.assertEqual(failure.reason, "provider")
 
-    def test_transform_mode_formats_context_text(self) -> None:
-        class RecordingCleaner(FakeCleaner):
-            mode = "transform"
-            received: str = ""
-            def clean(self, text: str, language_hint: str | None = None) -> str:
-                self.received = text
-                return "- Bullet point"
-
-        cleaner = RecordingCleaner()
-        pipeline = DictationPipeline(
-            FakeTranscriber("make it bullet points", "en"),
-            cleaner,
-            context_text="Sample text to transform",
-        )
-        result = pipeline.process(Path("unused.wav"))
-        self.assertEqual(result.final_text, "- Bullet point")
-        self.assertIn("Original text:\nSample text to transform", cleaner.received)
-        self.assertIn("Instruction:\nmake it bullet points", cleaner.received)
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -20,14 +20,14 @@ struct FocusHomeView: View {
         case settings = "Settings"
         case history = "History"
         case snippets = "Snippets"
-        case modes = "Modes"
+        case words = "Words"
         case diagnostics = "Diagnostics"
 
         var symbol: String {
             switch self {
             case .home: return "house"
             case .history: return "clock.arrow.circlepath"
-            case .modes: return "square.on.square"
+            case .words: return "textformat"
             case .snippets: return "text.quote"
             case .settings: return "gearshape"
             case .diagnostics: return "waveform.path.ecg"
@@ -57,8 +57,8 @@ struct FocusHomeView: View {
                     snippetsPanel
                 case .history:
                     historyPanel
-                case .modes:
-                    modesPanel
+                case .words:
+                    wordsPanel
                 case .settings:
                     settingsPanel
                 case .diagnostics:
@@ -70,6 +70,12 @@ struct FocusHomeView: View {
         }
         .foregroundColor(T.navy)
         .background(T.appBg)
+        // FIX on a History row, on either surface, opens Words with that dictation.
+        .onChange(of: viewModel.pageRequest) { request in
+            guard request != nil else { return }
+            viewModel.pageRequest = nil
+            navigate(to: .words)
+        }
         // The existing console's shortcuts and tabs share one route with the sidebar.
         .onChange(of: viewModel.activeRightTab) { tab in
             guard page == .history || page == .snippets || page == .diagnostics else { return }
@@ -208,53 +214,549 @@ struct FocusHomeView: View {
         }
     }
 
-    /// Modes and personal memory in one section: both answer the same question, which is
-    /// what happens to what was just said. Engine selection is not here — it lives in
-    /// Settings, so one control is not offered in two places.
-    private var modesPanel: some View {
+    /// Words: what the engine hears and what it should write, in one section.
+    ///
+    /// Corrections are the guide every engine shares — applied before any model sees the
+    /// text — so they are taught and edited here, and FIX on a History row opens this
+    /// page with that dictation. Vocabulary is what Whisper reads before it listens, and
+    /// the modes sit beside them because all three answer what happens to what was said.
+    private var wordsPanel: some View {
         PaperChassis(
             viewModel: viewModel,
-            system: "MODES.SYS",
-            subtitle: "DICTATION & MEMORY"
+            system: "WORDS.SYS",
+            subtitle: "WHAT IT HEARS, WHAT IT WRITES"
         ) {
-            ChassisCount(value: ProcessingMode.allCases.count, noun: "modes")
+            if let count = viewModel.words?.corrections.count {
+                ChassisCount(value: count, noun: "corrections")
+            }
         } content: {
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Choose what your next dictation does")
-                        .font(T.mono(size: 16, weight: .bold))
-                    modeBank
-                    ForEach(ProcessingMode.allCases, id: \.self) { mode in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(mode.displayName).font(T.mono(size: 12, weight: .bold))
-                            Text(modeDescription(mode))
-                                .font(T.mono(size: 12))
-                                .foregroundColor(T.textMuted)
-                                .fixedSize(horizontal: false, vertical: true)
+            GeometryReader { geo in
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        wordsTabs
+                        if geo.size.width >= 820 {
+                            HStack(alignment: .top, spacing: 16) {
+                                wordsMain.frame(maxWidth: .infinity, alignment: .leading)
+                                wordsSide.frame(width: 280)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 16) {
+                                wordsMain
+                                wordsSide
+                            }
                         }
                     }
-
-                    Divider().overlay(T.navy.opacity(0.25))
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("YOUR MEMORY").font(T.mono(size: 11, weight: .bold))
-                        Text("Vocabulary and confirmed corrections live in the engine commands. Nothing is learned from your edits, your screen or your keystrokes.")
-                            .font(T.mono(size: 12))
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack(spacing: 12) {
-                            action("VIEW HISTORY") { navigate(to: .history) }
-                            action("EDIT SNIPPETS", fill: T.dotBlue) { navigate(to: .snippets) }
-                        }
-                    }
-
-                    Text("Modes cannot change while a dictation is in flight.")
-                        .font(T.mono(size: 11))
-                        .foregroundColor(T.textMuted)
+                    .padding(.trailing, 6)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 6)
             }
         }
+    }
+
+    private var wordsTabs: some View {
+        HStack(spacing: 8) {
+            ForEach(WordsTab.allCases, id: \.self) { tab in
+                Button {
+                    viewModel.wordsTab = tab
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(wordsTabTitle(tab)).font(T.mono(size: 10, weight: .bold)).tracking(0.8)
+                        if tab == .vocabulary {
+                            Text("· what Whisper listens for")
+                                .font(T.mono(size: 9))
+                                .foregroundColor(viewModel.wordsTab == tab ? T.gold : T.textMuted)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(viewModel.wordsTab == tab ? T.navy : T.inputCream)
+                    .foregroundColor(viewModel.wordsTab == tab ? T.inputCream : T.navy)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(T.navy, lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .voiceFlowNoFocusRing()
+                .accessibilityAddTraits(viewModel.wordsTab == tab ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) { T.consoleBg.opacity(0.45).frame(height: 1) }
+    }
+
+    private func wordsTabTitle(_ tab: WordsTab) -> String {
+        if tab == .corrections, let count = viewModel.words?.corrections.count {
+            return "CORRECTIONS \(count)"
+        }
+        return tab.rawValue
+    }
+
+    @ViewBuilder
+    private var wordsMain: some View {
+        switch viewModel.wordsTab {
+        case .corrections: correctionsTab
+        case .vocabulary: vocabularyTab
+        case .modes: modesTab
+        }
+    }
+
+    // MARK: Corrections
+
+    private var correctionsTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            teachCard
+            if let notice = viewModel.wordsNotice {
+                Text(notice)
+                    .font(T.mono(size: 10.5, weight: .bold))
+                    .foregroundColor(T.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                wordsLabel("SEARCH")
+                TextField("heard or written", text: $viewModel.wordsSearch)
+                    .textFieldStyle(.plain)
+                    .font(T.mono(size: 11))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: 220)
+                    .background(T.inputCream)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(T.consoleBg.opacity(0.6), lineWidth: 1.5))
+                Spacer(minLength: 8)
+                ForEach(WordsFilter.allCases, id: \.self) { filter in
+                    Button { viewModel.wordsFilter = filter } label: {
+                        Text(filter.rawValue)
+                            .font(T.mono(size: 9.5, weight: .bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(viewModel.wordsFilter == filter ? T.navy : T.inputCream)
+                            .foregroundColor(viewModel.wordsFilter == filter ? T.inputCream : T.navy)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(T.navy, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .voiceFlowNoFocusRing()
+                    .accessibilityAddTraits(viewModel.wordsFilter == filter ? .isSelected : [])
+                }
+            }
+            correctionsList
+        }
+    }
+
+    private var teachCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                wordsLabel(viewModel.editingHeard == nil ? "TEACH A CORRECTION" : "EDIT A CORRECTION")
+                if let context = viewModel.teachContext {
+                    wordsTag("FROM HISTORY · \(context.timeString)", fill: T.gold)
+                }
+                Spacer(minLength: 0)
+            }
+            if let context = viewModel.teachContext {
+                sentenceFix(context)
+            } else {
+                typedPair
+            }
+            Toggle(isOn: $viewModel.teachEverywhere) {
+                Text(viewModel.teachContext == nil
+                     ? "One word: replace it wherever it is heard"
+                     : "A one-word change: replace that word wherever it is heard")
+                    .font(T.mono(size: 10.5))
+                    .foregroundColor(T.textMuted)
+            }
+            .toggleStyle(.checkbox)
+            if viewModel.editingHeard != nil || viewModel.teachContext != nil {
+                wordsButton("CANCEL") {
+                    viewModel.teachHeard = ""
+                    viewModel.teachIntended = ""
+                    viewModel.teachSentence = ""
+                    viewModel.teachEverywhere = false
+                    viewModel.teachContext = nil
+                    viewModel.editingHeard = nil
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(T.inputCream)
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(T.consoleBg.opacity(0.6), lineWidth: 1))
+    }
+
+    /// FIX from History: the speaker clicks into what the engine heard and corrects it in
+    /// place. Each run of changed words becomes a pair, shown before LEARN stores it.
+    private func sentenceFix(_ context: DictationRecord) -> some View {
+        let pairs = CorrectionDiff.pairs(
+            original: context.rawText,
+            edited: viewModel.teachSentence,
+            everywhere: viewModel.teachEverywhere
+        )
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                wordsLabel("WHAT IT HEARD · CLICK AND CORRECT IT")
+                TextField("", text: $viewModel.teachSentence, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(T.mono(size: 12))
+                    .lineLimit(1...8)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(T.panelBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(T.consoleBg.opacity(0.6), lineWidth: 1.5))
+            }
+            HStack(alignment: .center, spacing: 10) {
+                if pairs.isEmpty {
+                    Text("Change the words it got wrong. Each change is learned, and fixed in that dictation.")
+                        .font(T.mono(size: 10.5))
+                        .foregroundColor(T.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        wordsLabel("WILL LEARN")
+                        ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                            HStack(spacing: 8) {
+                                Text(pair.heard)
+                                    .font(T.mono(size: 11))
+                                    .strikethrough(true, color: T.rec)
+                                    .foregroundColor(T.textMuted)
+                                Text("→").font(T.mono(size: 11)).foregroundColor(T.textMuted)
+                                Text(pair.intended).font(T.mono(size: 11, weight: .bold))
+                                if pair.isOneWord { wordsTag("EVERYWHERE", fill: T.panelBg) }
+                            }
+                        }
+                    }
+                }
+                Spacer(minLength: 8)
+                wordsButton("LEARN", primary: true) {
+                    viewModel.onLearnCorrection?(
+                        WordsLearnRequest(
+                            pairs: pairs,
+                            everywhere: viewModel.teachEverywhere,
+                            source: .fix,
+                            replacing: nil,
+                            dictation: context.id
+                        )
+                    )
+                }
+                .disabled(pairs.isEmpty)
+                .opacity(pairs.isEmpty ? 0.5 : 1)
+            }
+        }
+    }
+
+    /// A pair typed in the Words section, or one being edited from the list.
+    private var typedPair: some View {
+        let heard = viewModel.teachHeard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let intended = viewModel.teachIntended.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A one-word trigger rewrites that word everywhere, so the engine asks for a
+        // second consent. The box is that consent. LEARN stays pressable without it and
+        // says so: greyed out in silence, it read as FIX doing nothing, and most fixes
+        // are one word.
+        let oneWord = heard.split(whereSeparator: \.isWhitespace).count == 1
+        let ready = !heard.isEmpty && !intended.isEmpty
+
+        return HStack(alignment: .bottom, spacing: 10) {
+            teachField("IT HEARD", placeholder: "e.g. Oyama", text: $viewModel.teachHeard)
+            Text("→").font(T.mono(size: 12)).foregroundColor(T.textMuted).padding(.bottom, 8)
+            teachField("IT SHOULD WRITE", placeholder: "e.g. Ollama", text: $viewModel.teachIntended)
+            wordsButton("LEARN", primary: true) {
+                guard !oneWord || viewModel.teachEverywhere else {
+                    NSSound.beep()
+                    viewModel.wordsNotice = "\"\(heard)\" is one word, so it will be replaced "
+                        + "wherever it is heard. Tick \"One word: replace it wherever it is "
+                        + "heard\" to confirm, then LEARN."
+                    return
+                }
+                viewModel.onLearnCorrection?(
+                    WordsLearnRequest(
+                        pairs: [CorrectionPair(heard: heard, intended: intended)],
+                        everywhere: oneWord && viewModel.teachEverywhere,
+                        source: .window,
+                        replacing: viewModel.editingHeard,
+                        dictation: nil
+                    )
+                )
+            }
+            .disabled(!ready)
+            .opacity(ready ? 1 : 0.5)
+        }
+    }
+
+    private func teachField(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            wordsLabel(label)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(T.mono(size: 12))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(T.panelBg)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(T.consoleBg.opacity(0.6), lineWidth: 1.5))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var correctionsList: some View {
+        if let snapshot = viewModel.words {
+            let pairs = snapshot.corrections(filter: viewModel.wordsFilter, search: viewModel.wordsSearch)
+            if pairs.isEmpty {
+                Text(snapshot.corrections.isEmpty
+                     ? "No corrections yet. Press FIX on a dictation in History, or teach one above."
+                     : "No correction matches.")
+                    .font(T.mono(size: 11))
+                    .foregroundColor(T.textMuted)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(pairs.enumerated()), id: \.element.id) { index, pair in
+                        correctionRow(pair)
+                        if index < pairs.count - 1 {
+                            T.consoleBg.opacity(0.45).frame(height: 1)
+                        }
+                    }
+                }
+                .background(T.inputCream)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(T.consoleBg.opacity(0.6), lineWidth: 1))
+            }
+        } else {
+            Text("Reading your corrections…")
+                .font(T.mono(size: 11))
+                .foregroundColor(T.textMuted)
+        }
+    }
+
+    private func correctionRow(_ pair: WordsCorrection) -> some View {
+        HStack(spacing: 10) {
+            Text(pair.heard)
+                .font(T.mono(size: 11.5))
+                .strikethrough(true, color: T.rec)
+                .foregroundColor(T.textMuted)
+            Text("→").font(T.mono(size: 11)).foregroundColor(T.textMuted)
+            Text(pair.intended).font(T.mono(size: 11.5, weight: .bold))
+            Spacer(minLength: 8)
+            if pair.source == CorrectionSource.fix.rawValue { wordsTag("FIX", fill: T.dotBlue) }
+            if pair.everywhere { wordsTag("EVERYWHERE", fill: T.panelBg) }
+            if let day = pair.confirmedDay {
+                Text(day).font(T.mono(size: 10)).foregroundColor(T.textMuted)
+            }
+            wordsButton("EDIT") {
+                viewModel.teachHeard = pair.heard
+                viewModel.teachIntended = pair.intended
+                viewModel.teachEverywhere = pair.everywhere
+                viewModel.teachContext = nil
+                viewModel.editingHeard = pair.heard
+                viewModel.wordsNotice = nil
+            }
+            wordsButton("DELETE") { viewModel.onForgetCorrection?(pair.heard) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+    }
+
+    // MARK: Vocabulary
+
+    private var vocabularyTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                wordsLabel("ADD A WORD")
+                HStack(spacing: 10) {
+                    TextField("e.g. PowerShell, Gim", text: $viewModel.newWord)
+                        .textFieldStyle(.plain)
+                        .font(T.mono(size: 12))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(T.panelBg)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(T.consoleBg.opacity(0.6), lineWidth: 1.5))
+                    let word = viewModel.newWord.trimmingCharacters(in: .whitespacesAndNewlines)
+                    wordsButton("+ ADD", primary: true) { viewModel.onAddWord?(word) }
+                        .disabled(word.isEmpty)
+                        .opacity(word.isEmpty ? 0.5 : 1)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(T.inputCream)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(T.consoleBg.opacity(0.6), lineWidth: 1))
+
+            if let notice = viewModel.wordsNotice {
+                Text(notice)
+                    .font(T.mono(size: 10.5, weight: .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let snapshot = viewModel.words {
+                vocabularyBudget(snapshot)
+                VStack(spacing: 0) {
+                    ForEach(Array(snapshot.vocabulary.enumerated()), id: \.offset) { index, term in
+                        let read = index < snapshot.inPrompt
+                        HStack(spacing: 10) {
+                            Text(term)
+                                .font(T.mono(size: 11.5, weight: read ? .bold : .regular))
+                                .foregroundColor(read ? T.navy : T.textMuted)
+                            Spacer(minLength: 8)
+                            wordsTag(read ? "READ" : "UNREAD", fill: read ? T.dotBlue : T.panelBg)
+                            wordsButton("DELETE") { viewModel.onRemoveWord?(term) }
+                            wordsButton("TO CORRECTION") {
+                                viewModel.teachHeard = ""
+                                viewModel.teachIntended = term
+                                viewModel.teachEverywhere = false
+                                viewModel.teachContext = nil
+                                viewModel.editingHeard = nil
+                                viewModel.wordsNotice = nil
+                                viewModel.wordsTab = .corrections
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        if index < snapshot.vocabulary.count - 1 {
+                            T.consoleBg.opacity(0.45).frame(height: 1)
+                        }
+                    }
+                }
+                .background(T.inputCream)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(T.consoleBg.opacity(0.6), lineWidth: 1))
+            } else {
+                Text("Reading your vocabulary…").font(T.mono(size: 11)).foregroundColor(T.textMuted)
+            }
+        }
+    }
+
+    private func vocabularyBudget(_ snapshot: WordsSnapshot) -> some View {
+        let total = snapshot.vocabulary.count
+        let share = total == 0 ? 0 : CGFloat(snapshot.inPrompt) / CGFloat(total)
+        return VStack(alignment: .leading, spacing: 7) {
+            wordsLabel("WHAT WHISPER READS BEFORE IT LISTENS")
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 5).fill(T.panelBg)
+                    RoundedRectangle(cornerRadius: 5).fill(T.ok).frame(width: geo.size.width * share)
+                }
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(T.navy, lineWidth: 1.5))
+            }
+            .frame(height: 10)
+            Text(snapshot.inPrompt >= total
+                 ? "All \(total) words fit in what Whisper reads."
+                 : "\(snapshot.inPrompt) of \(total) words fit in what Whisper reads. The rest are stored but unread, so a word added now changes nothing yet. A word it keeps getting wrong works today as a correction.")
+                .font(T.mono(size: 11))
+                .foregroundColor(T.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(T.inputCream)
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(T.consoleBg.opacity(0.6), lineWidth: 1))
+    }
+
+    // MARK: Modes
+
+    private var modesTab: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Choose what your next dictation does")
+                .font(T.mono(size: 14, weight: .bold))
+            modeBank
+            ForEach(ProcessingMode.allCases, id: \.self) { mode in
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(mode.displayName).font(T.mono(size: 12, weight: .bold))
+                    Text(modeDescription(mode))
+                        .font(T.mono(size: 11.5))
+                        .foregroundColor(T.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Modes cannot change while a dictation is in flight.")
+                .font(T.mono(size: 11))
+                .foregroundColor(T.textMuted)
+        }
+    }
+
+    // MARK: Side panels
+
+    private var wordsSide: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("HOW IT WORKS").font(T.pixel(9)).padding(.bottom, 2)
+                Text("The speech model writes what it heard. Every phrase on the heard side is swapped for what it should write before anything is pasted, on every engine.")
+                    .font(T.mono(size: 11))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Fastest way to add one: press FIX on a dictation in History. It opens here with what it heard.")
+                    .font(T.mono(size: 11))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(T.inputCream)
+            .clipShape(RoundedRectangle(cornerRadius: 11))
+            .overlay(RoundedRectangle(cornerRadius: 11).stroke(T.navy, lineWidth: 2))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("TAKE IT BACK OUT LOUD").font(T.pixel(9)).foregroundColor(T.gold)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 6)], alignment: .leading, spacing: 6) {
+                    ForEach(["borra eso", "me equivoqué", "no, mejor", "perdón, no", "scratch that", "sorry, no"], id: \.self) { cue in
+                        Text(cue)
+                            .font(T.mono(size: 9.5))
+                            .lineLimit(1)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .overlay(Capsule().stroke(T.inputCream, lineWidth: 1))
+                    }
+                }
+                (Text("\"a las tres, ") + Text("perdón, no,").strikethrough(true, color: T.rec) + Text(" a las cuatro\"\n→ ") + Text("\"a las cuatro\"").bold().foregroundColor(T.gold))
+                    .font(T.mono(size: 10.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Said in a CLEAN dictation, the part you took back is gone before it is pasted.")
+                    .font(T.mono(size: 10))
+                    .opacity(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(T.navy)
+            .foregroundColor(T.inputCream)
+            .clipShape(RoundedRectangle(cornerRadius: 11))
+
+            Text("Nothing is learned from your screen or your keys. A correction is kept only when you press LEARN.")
+                .font(T.mono(size: 10))
+                .foregroundColor(T.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Words pieces
+
+    private func wordsLabel(_ title: String) -> some View {
+        Text(title)
+            .font(T.mono(size: 9, weight: .bold))
+            .tracking(1.1)
+            .foregroundColor(T.textMuted)
+    }
+
+    private func wordsTag(_ title: String, fill: Color) -> some View {
+        Text(title)
+            .font(T.mono(size: 8.5, weight: .bold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(fill)
+            .foregroundColor(T.navy)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(T.navy, lineWidth: 1))
+    }
+
+    private func wordsButton(_ title: String, primary: Bool = false, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Text(title)
+                .font(T.mono(size: 9.5, weight: .bold))
+                .tracking(0.6)
+                .padding(.horizontal, 10)
+                .padding(.vertical, primary ? 8 : 4)
+                .background(primary ? T.gold : T.inputCream)
+                .foregroundColor(T.navy)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(T.navy, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+        .voiceFlowNoFocusRing()
     }
 
     /// Settings: the decisions, and a plain statement of what the app does with what it
@@ -288,9 +790,62 @@ struct FocusHomeView: View {
 
     private var settingsControls: some View {
         VStack(alignment: .leading, spacing: 20) {
+            // What turns the recording into text, chosen before the cleanup that follows.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SPEECH").font(T.mono(size: 11, weight: .bold))
+                HStack(spacing: 10) {
+                    ForEach(SpeechEngine.allCases, id: \.self) { engine in
+                        enginePill(
+                            title: engine.shortName,
+                            detail: engine.measuredNote,
+                            isOn: viewModel.selectedSpeechEngine == engine
+                        ) {
+                            guard viewModel.isSelectionEnabled else {
+                                viewModel.reportRefusal(
+                                    "this run keeps \(viewModel.selectedSpeechEngine.shortName) · the speech engine changes once it is delivered")
+                                return
+                            }
+                            viewModel.selectedSpeechEngine = engine
+                            viewModel.onSpeechEngineSelect?(engine)
+                        }
+                    }
+                }
+                Text("Words wrong / engine time on your 19 recordings, measured \(SpeechEngine.measurementDate). Nothing re-measures, so read them as that day's figures.")
+                    .font(T.mono(size: 10))
+                    .foregroundColor(T.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Whisper reads your vocabulary before it listens. Parakeet reads none and writes its own punctuation, so with it CLEAN asks no engine: fillers go by rule. The engine below is asked only when you take words back, and for ES➔EN and NOTES. Your corrections apply to both.")
+                    .font(T.mono(size: 10))
+                    .foregroundColor(T.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("ENGINE").font(T.mono(size: 11, weight: .bold))
                 providers
+            }
+
+            // A local engine has no model to choose and still has something to say.
+            // Selecting Apple used to leave this page blank below the engine row, while
+            // Gemini filled it: the same page answered one choice and ignored another.
+            if let model = viewModel.selectedCleaner.localModelName {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("LOCAL MODEL").font(T.mono(size: 11, weight: .bold))
+                    Text(model)
+                        .font(T.mono(size: 12, weight: .bold))
+                        .foregroundColor(T.navy)
+                    if let corpus = viewModel.selectedCleaner.corpusNote,
+                       let day = viewModel.selectedCleaner.factsMeasuredOn {
+                        Text("\(corpus), measured \(day). Nothing re-measures, so read them as that day's figures.")
+                            .font(T.mono(size: 10))
+                            .foregroundColor(T.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Cleanup that changes more than punctuation is refused by the output guard, and the refused text is offered on the station so you can read it and decide.")
+                        .font(T.mono(size: 10))
+                        .foregroundColor(T.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             // The key used to be the smallest thing on this page, inside the dark
@@ -495,6 +1050,13 @@ struct FocusHomeView: View {
                             "this run keeps \(modeTitle(viewModel.selectedMode)) · the mode changes once it is delivered")
                         return
                     }
+                    // The engine refuses this pairing, so selecting it here buys a failed
+                    // dictation and a recording the speaker has to make twice. Declined
+                    // where the choice is made, and out loud, as R3c asks.
+                    if let refusal = mode.refusal(with: viewModel.selectedCleaner) {
+                        viewModel.reportRefusal(refusal)
+                        return
+                    }
                     viewModel.selectedMode = mode
                     viewModel.onModeSelect?(mode)
                     viewModel.addLog("mode switched to: \(mode.rawValue)")
@@ -526,6 +1088,7 @@ struct FocusHomeView: View {
         }
         page = destination
         switch destination {
+        case .words: viewModel.onRefreshWords?()
         case .history: viewModel.activeRightTab = .historyTray
         case .snippets: viewModel.activeRightTab = .snippets
         case .diagnostics: viewModel.activeRightTab = .activityLog
@@ -542,7 +1105,7 @@ struct FocusHomeView: View {
         switch destination {
         case .history: return "\(destination.rawValue), \(count) dictations"
         case .snippets: return "\(destination.rawValue), \(count) snippets"
-        case .modes: return "\(destination.rawValue), \(count) modes"
+        case .words: return "\(destination.rawValue), \(count) corrections"
         default: return destination.rawValue
         }
     }
@@ -550,7 +1113,7 @@ struct FocusHomeView: View {
     private func count(for destination: Page) -> Int? {
         switch destination {
         case .history: return viewModel.recentDictations.count
-        case .modes: return ProcessingMode.allCases.count
+        case .words: return viewModel.words?.corrections.count
         case .snippets: return viewModel.snippets.count
         default: return nil
         }
@@ -591,7 +1154,6 @@ struct FocusHomeView: View {
         case .translate: return "ES → EN"
         case .meeting: return "NOTES"
         case .actions: return "ACTIONS"
-        case .transform: return "TRANSFORM"
         }
     }
 
@@ -601,7 +1163,6 @@ struct FocusHomeView: View {
         case .translate: return "Translate Spanish or mixed speech into English. Choose a text-cleanup engine."
         case .meeting: return "Structure spoken notes into a summary and checklist. This is not meeting audio capture."
         case .actions: return "Explicitly interpret supported spoken actions, such as opening an app or searching."
-        case .transform: return "Apply a spoken instruction to text selected in another app. Requires a text-cleanup engine; with Gemini, the selection is sent to the cloud."
         }
     }
 }

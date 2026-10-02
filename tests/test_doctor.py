@@ -36,20 +36,6 @@ def write_model(
     return path
 
 
-class FakeResponse:
-    def __init__(self, body: bytes) -> None:
-        self.body = body
-
-    def __enter__(self) -> "FakeResponse":
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return self.body
-
-
 class WhisperModelInspectionTests(unittest.TestCase):
     def test_a_well_formed_model_passes_and_reports_its_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -136,52 +122,17 @@ class WhisperModelInspectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             model = Path(temp_dir) / "ggml-small.bin"
             model.touch()
-            with (
-                patch(
-                    "sanbluedot_voiceflow.doctor.resolve_binary",
-                    return_value=Path("/usr/local/bin/whisper-cli"),
-                ),
-                patch(
-                    "sanbluedot_voiceflow.doctor.urlopen",
-                    return_value=FakeResponse(b"[]"),
-                ),
+            with patch(
+                "sanbluedot_voiceflow.doctor.resolve_binary",
+                return_value=Path("/usr/local/bin/whisper-cli"),
             ):
                 checks = run_checks(
                     whisper_binary="whisper-cli",
                     whisper_model=model,
-                    ollama_url="http://127.0.0.1:11434",
-                    ollama_model="qwen3:4b",
                 )
 
         model_check = next(check for check in checks if check.name == "Whisper model")
         self.assertFalse(model_check.ok)
-
-
-class DoctorTests(unittest.TestCase):
-    def test_wrong_shape_ollama_json_is_reported_without_crashing(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model = Path(temp_dir) / "model.bin"
-            model.touch()
-            with (
-                patch(
-                    "sanbluedot_voiceflow.doctor.resolve_binary",
-                    return_value=Path("/usr/local/bin/whisper-cli"),
-                ),
-                patch(
-                    "sanbluedot_voiceflow.doctor.urlopen",
-                    return_value=FakeResponse(b"[]"),
-                ),
-            ):
-                checks = run_checks(
-                    whisper_binary="whisper-cli",
-                    whisper_model=model,
-                    ollama_url="http://127.0.0.1:11434",
-                    ollama_model="qwen3:4b",
-                )
-
-        ollama = next(check for check in checks if check.name == "Ollama")
-        self.assertFalse(ollama.ok)
-        self.assertEqual(ollama.detail, "service not reachable")
 
 
 if __name__ == "__main__":

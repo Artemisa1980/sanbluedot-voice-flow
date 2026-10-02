@@ -142,3 +142,57 @@ class MemoryCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WordsCommandTests(MemoryCommandTests):
+    """What the Words section reads and writes, against a temporary store only."""
+
+    def test_memory_json_carries_what_the_words_section_draws(self) -> None:
+        self.run_command(
+            cli._correct,
+            Namespace(heard="sun blue dot", intended="sanblueᵈᵒᵗ", allow_global=False, source="fix"),
+        )
+        status, text = self.run_command(cli._memory, Namespace(json=True))
+
+        payload = json.loads(text)
+        self.assertEqual(status, 0)
+        self.assertEqual(payload["vocabulary"], ["UTEL", "Gim"])
+        self.assertEqual(payload["in_prompt"], 2)
+        self.assertEqual(
+            payload["corrections"],
+            [{
+                "heard": "sun blue dot",
+                "intended": "sanblueᵈᵒᵗ",
+                "confirmed_at": payload["corrections"][0]["confirmed_at"],
+                "source": "fix",
+                "everywhere": False,
+            }],
+        )
+
+    def test_a_source_survives_the_next_confirmation(self) -> None:
+        """Rewriting the store for one pair must not drop another pair's source."""
+        self.store.add("sun blue dot", "sanblueᵈᵒᵗ", source="fix")
+        self.store.add("olama", "Ollama", source="window")
+
+        sources = {item.heard: item.source for item in self.store.load()}
+
+        self.assertEqual(sources, {"sun blue dot": "fix", "olama": "window"})
+
+    def test_an_unknown_source_is_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            self.store.add("x", "y", source="screen")
+
+    def test_vocab_add_and_remove_keep_order_and_comments(self) -> None:
+        self.vocabulary.write_text("# priority first\nUTEL\nGim\n", encoding="utf-8")
+        with patch.object(cli, "DEFAULT_VOCABULARY", self.vocabulary):
+            added, _ = self.run_command(cli._vocab, Namespace(action="add", term="PowerShell"))
+            again, text = self.run_command(cli._vocab, Namespace(action="add", term="powershell"))
+            removed, _ = self.run_command(cli._vocab, Namespace(action="remove", term="gim"))
+            missing, _ = self.run_command(cli._vocab, Namespace(action="remove", term="nothing"))
+
+        self.assertEqual((added, again, removed, missing), (0, 0, 0, 1))
+        self.assertIn("Already stored", text)
+        self.assertEqual(
+            self.vocabulary.read_text(encoding="utf-8"),
+            "# priority first\nUTEL\nPowerShell\n",
+        )

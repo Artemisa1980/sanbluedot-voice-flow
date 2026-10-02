@@ -1,7 +1,7 @@
 # SANDY.SYSDEV v0.10.0 — retro voice-station
 
 **retro voice-station** — personal push-to-talk dictation, built by Sandy E. Quintero.
-Local-first on macOS and Windows: the speech never leaves the machine, and cloud cleanup
+Local-first on macOS: the speech never leaves the machine, and cloud cleanup
 is an explicit, visible choice taken one dictation at a time.
 
 > The engine, this README and the interface are in English. The speaker dictates in
@@ -9,8 +9,8 @@ is an explicit, visible choice taken one dictation at a time.
 
 Gates 1 to 4 are closed. Automatic paste ships, and since 2026-09-01 it reaches terminal
 emulators too, under a single-line flattening guard; applications that report no bundle
-identifier, and VoiceFlow's own window, stay on clipboard delivery. Windows and
-pronunciation practice remain open gates.
+identifier, and VoiceFlow's own window, stay on clipboard delivery. Pronunciation
+practice remains an open gate.
 
 The version in the title above is a copy of `CFBundleShortVersionString` in
 `macos/Resources/Info.plist`, and moves with it at each release.
@@ -21,7 +21,7 @@ The Python engine can:
 
 - inspect local dependencies with `doctor`;
 - transcribe an existing audio file through a configured `whisper.cpp` binary;
-- return the literal transcript or clean it through a local Ollama model;
+- return the literal transcript or clean it through Apple's on-device model or Gemini;
 - print the result or copy it to the operating-system clipboard;
 - retain raw engine text, deterministic personalization, and final output separately;
 - report the language the engine detected, or leave it unknown when the engine
@@ -47,8 +47,7 @@ The native macOS runner can:
   VoiceFlow's own window, stay on clipboard delivery;
 - transform instead of clean when asked: `translate` turns Spanish speech into
   professional English, `meeting` structures it into Markdown bullets and `- [ ]`
-  action items, and `transform` applies what you say to the text you highlighted in
-  another application. Only `clean` passes the conservative output guard;
+  action items. Only `clean` passes the conservative output guard;
 - name the application the text is going to, on the capsule, when it recognizes it —
   `ON AIR • VSCODE`, `PASTED ➔ TERMINAL`. Detection only: what you say is never rewritten
   because of where it is going;
@@ -62,8 +61,8 @@ The native macOS runner can:
 - show, in the station window, only telemetry it measured: the recognition and cleanup
   seconds the engine reported for that dictation, and words over the time actually
   spoken. Before the first dictation those indicators are empty;
-- let the speaker pick literal, local, or Gemini cleanup in the window, and store
-  that provider's API key in the macOS keychain;
+- let the speaker pick literal, local Apple, or Gemini cleanup in the
+  window, and store that provider's API key in the macOS keychain;
 - let the speaker pick the Gemini model — 3.7, 3.6 or 3.5 — with each button showing its
   measured delivery, remember that choice across launches, and walk the remaining models
   automatically when Google reports capacity, naming the model that answered in the HUD
@@ -72,18 +71,18 @@ The native macOS runner can:
 - opt into a private acceptance log that keeps raw, personalized, and final output,
   release-to-result latency, and the recording behind each numbered result.
 
-The station window is now a shell with six destinations in a sidebar — Station,
-Settings, History, Snippets, Modes and Diagnostics. Station carries the whole station at
+The station window is a shell with six destinations in a sidebar — Station, Settings,
+History, Snippets, Words and Diagnostics. Station carries the whole station at
 once: the signal chain, the engine row, the control card and the console. The other five
 are drawn as a screen set into a chassis, with a title strip that names the section, so
-nothing is named twice. Settings holds the engine, the cloud model, the API key and the
-permissions, and states in plain words what this Mac does with what it hears; Diagnostics
+nothing is named twice. Settings holds the speech engine, the cleanup engine, the cloud
+model, the API key and the permissions, and states in plain words what this Mac does with what it hears; Diagnostics
 keeps the dark log, whose category colours were chosen for that ground. The five chassis
 sections do not repeat one another; Station carries the whole station, engine row and mode
 switch included. `design-system.md` records the contract.
 
-An editable shortcut and pickers for the speech and cleanup models are engine work and
-are not part of this shell. This shell is not installed for daily use.
+This shell is the daily app's window. The shortcut is shown in Settings, not edited
+there.
 
 Build an isolated UI-only app with `zsh scripts/build-focus-home-preview.sh`. Its printed
 path is under `dist/previews/`; it never replaces `dist/sanblueᵈᵒᵗ VoiceFlow.app`.
@@ -103,6 +102,9 @@ which stays empty unless distillation recording is switched on.
 ./vf memory
 ./vf correct --heard "meditation" --intended "dictation" --allow-global
 ./vf forget --heard "meditation"
+./vf vocab add --term "PowerShell"
+./vf vocab remove --term "PowerShell"
+./vf memory --json                     # what the Words section reads
 ./vf export --to ~/Desktop/voiceflow-memory.json
 ```
 
@@ -166,34 +168,6 @@ unresolved macro is visible in the text instead of arriving as a blank you would
 notice. `{day}` is the day of the month: it returned an English weekday name until
 2026-09-03, which put "Thursday" inside Spanish templates regardless of the language
 being spoken.
-
-## Transform a selection
-
-Highlight text anywhere, hold the trigger in `transform` mode, and say what to do with
-it: "hazlo más formal", "resume esto en tres puntos", "make it bullet points". The
-speech is the instruction and the highlighted text is the material; the result replaces
-the selection through the usual paste.
-
-The selection is read at the moment you press, while the other window still has focus,
-and it is handed to the engine on standard input rather than as a command-line argument
-— `ps -ww -ax` prints arguments in full to every process you run, and your screen
-content does not belong there. Reading it uses a synthetic copy, so whatever was on the
-clipboard is captured first and put back afterwards, including images and files.
-
-While the recording is still cancellable, the capsule states how much it captured —
-`⚡ LIVE · 412 CHARS · WHISPER` — in dot blue, or in the on-air red past two thousand
-characters. Every other mode sends what you just said, which you can check by
-remembering it; this one sends what was on screen, and the size is what tells you it
-took the sentence you highlighted and not the whole file. Escape still cancels.
-
-Transform needs a cleaner that can rewrite text. With `literal` it is refused rather
-than run: the pairing produced an ordinary dictation while the capsule said `TRANSFORM`.
-With `ollama` nothing leaves the Mac at all.
-
-```bash
-printf '%s' "$SELECTED" | ./vf process take.wav --whisper-model models/ggml-small.bin \
-  --cleaner gemini --mode transform --context-text-stdin
-```
 
 ## Voice actions
 
@@ -313,12 +287,13 @@ The development Mac passed the engine checks on 2026-08-29 with:
 - Python 3.14.7;
 - `whisper.cpp` 1.9.2;
 - Whisper large-v3-turbo, 1.5 GB, at `models/ggml-large-v3-turbo.bin`;
-- Ollama 0.33.0 with `qwen3:4b`, approximately 2.5 GB.
+- Ollama 0.33.0 with `qwen3:4b`, approximately 2.5 GB, the local cleaner until it was
+  removed on 2026-10-01.
 
-Whisper Small and large-v3 are also present and kept for comparison. Replaying one
-fixed 20-recording set put turbo ahead of both: 10.1% mean WER against 14.8% for Small
-and 15.1% for large-v3, at 1.98 seconds of engine time against 0.80 and 3.02. Model
-files remain local and are ignored by version control.
+Whisper Small is also present. Replaying one fixed 20-recording set put turbo ahead of
+both it and large-v3: 10.1% mean WER against 14.8% for Small and 15.1% for large-v3, at
+1.98 seconds of engine time against 0.80 and 3.02. large-v3 was measured then and is no
+longer kept on this Mac. Model files remain local and are ignored by version control.
 
 ## Run from source
 
@@ -329,6 +304,40 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m compileall -q src tests scripts
 PYTHONPATH=src python3 -m sanbluedot_voiceflow doctor
 ```
+
+### The Xcode project, and what it is for
+
+`macos/VoiceFlow.xcodeproj` exists for one reason: App Intents. Siri, Spotlight and
+Shortcuts read metadata that `appintentsmetadataprocessor` produces as an Xcode build
+phase, and neither `swift build` nor `xcodebuild` on the package produces it, because a
+SwiftPM executable is not an app target. Both were tried on 2026-09-18 and neither did.
+
+```bash
+./scripts/build-macos-app.sh        # regenerates, builds, verifies, installs
+```
+
+It builds the complete bundle: the app, the Apple cleanup and Parakeet helpers, the Python engine
+under signed Resources, and `Contents/Resources/Metadata.appintents`, which names three
+actions the system can run.
+
+| Action | Siri phrase | What it does |
+|---|---|---|
+| Clean Up Text | "Clean up this text with…" | Fillers and punctuation, nothing else |
+| Translate to English | "Translate this to English with…" | Spanish or mixed → professional US English |
+| Turn Into Meeting Notes | "Turn this into meeting notes with…" | Summary bullets and a `- [ ]` checklist |
+
+Each runs `voiceflow clean --no-memory`, which enters the pipeline after transcription:
+the conservative output guard applies exactly as it does to a dictation, and confirmed
+corrections and snippets do not, because they repair and expand speech and this text was
+written (`framework.md` R3d). The engine is the one selected in the window, read from the
+same preference the app writes, and a cloud engine is refused rather than swapped for a
+local one.
+
+`scripts/build-macos-app.sh` is still the one command that installs the app, and it now
+builds through this project: it regenerates the project, builds, refuses to install a
+bundle whose signature fails or whose App Intents metadata is missing, and only then
+replaces `dist/`. There is one way to build, so there is no lesser build to install by
+accident.
 
 Build and check the native macOS runner:
 
@@ -375,7 +384,7 @@ Measure what a cleanup model changes, on the fixed recorded corpus:
 ```bash
 PYTHONPATH=src python3 scripts/cleaner_gate.py \
   --whisper-model models/ggml-large-v3-turbo.bin \
-  --cleaner ollama
+  --cleaner apple
 ```
 
 Each sample is transcribed once and every cleaner is then run on that identical
@@ -392,20 +401,128 @@ PYTHONPATH=src python3 -m sanbluedot_voiceflow process sample.wav \
   --cleaner literal
 ```
 
-Use local Ollama cleanup and copy the result:
+Use Apple's on-device cleanup and copy the result:
 
 ```bash
 PYTHONPATH=src python3 -m sanbluedot_voiceflow process sample.wav \
   --whisper-model /absolute/path/to/model.bin \
-  --cleaner ollama \
-  --ollama-model qwen3:4b \
+  --cleaner apple \
   --copy
 ```
+
+## Ollama, removed
+
+Ollama was a local cleanup engine until 2026-10-01, when the owner removed it. A cleanup
+model writes every word again, so its time grows with the dictation: 80 words took Ollama
+2.8 s and Apple 1.8–2.4 s, and Parakeet now supplies the punctuation that was most of
+the reason to clean. Apple covers local cleanup and Gemini the cloud. The Apple-against-
+Ollama table below is kept as the measurement that made Apple the default.
+
+## Faster speech with Parakeet Ultra
+
+Settings › SPEECH chooses what turns the recording into text: Whisper turbo, which reads
+your vocabulary first, or NVIDIA's Parakeet Ultra, which runs on the Neural Engine through
+FluidAudio and writes its own punctuation and capitals. Both stay on this Mac, and your
+confirmed corrections apply to both.
+
+**Measured on the 19 recorded samples, 2026-10-01** (`scripts/replay.py`, same corrections):
+
+| | Parakeet Ultra | Whisper turbo + vocabulary |
+|---|---|---|
+| Word error rate | **9.3%** | 10.6% |
+| Mixed Spanish and English | **3.7%** | 7.6% |
+| Engine time, median | **0.24 s** | 2.37 s |
+| Punctuation F1 on recovered words | 100% (20 of 20 marks) | 34.8% |
+
+Parakeet's punctuation is why `clean` asks no model when Parakeet hears the dictation:
+fillers are deleted by rule, and the selected engine is asked only for a spoken
+take-back, ES➔EN and NOTES. Apple's cleanup existed mainly to add the punctuation
+Whisper's vocabulary prompt suppresses. On a 12.7-second
+clip the whole engine run took 0.47 s with Literal, against about 4.2 s for Whisper and
+Apple.
+
+The first Parakeet run after each new build took 15.7 s on 2026-10-01 while macOS
+prepared the model for the Neural Engine; every run after it took 0.29–0.34 s. Running
+the smoke test with Parakeet after a rebuild pays that cost before a dictation does.
+
+The model lives under `models/fluidaudio/parakeet-ultra/` and is fetched once, never
+during a dictation. The helper is built from `macos/ParakeetHelper/`, a package of its own,
+so FluidAudio never enters the app's own build:
+
+```bash
+swift build --package-path macos/ParakeetHelper -c release
+macos/ParakeetHelper/.build/release/VoiceFlowParakeet --models models/fluidaudio/parakeet-ultra --download
+PYTHONPATH=src python3 -m sanbluedot_voiceflow process sample.wav \
+  --transcriber parakeet \
+  --parakeet-bin macos/ParakeetHelper/.build/release/VoiceFlowParakeet
+PYTHONPATH=src python3 scripts/replay.py --transcriber parakeet \
+  --parakeet-bin macos/ParakeetHelper/.build/release/VoiceFlowParakeet
+```
+
+## Local cleanup with Apple's on-device model
+
+Since macOS 26 the system carries a language model that runs on the Mac, needs no
+credential and reaches no network. It is an engine beside literal and Gemini, and it is
+selected the same way.
+
+It is reached the way `whisper.cpp` is: the engine runs a small binary and reads what it
+prints. Cleanup therefore stays in the engine, behind the same output guard, instead of
+moving into the application where the guard would cover only one of the two paths.
+
+```bash
+swift build --package-path macos            # builds the helper
+PYTHONPATH=src python3 -m sanbluedot_voiceflow process sample.wav \
+  --whisper-model models/ggml-large-v3-turbo.bin \
+  --cleaner apple \
+  --apple-bin macos/.build/debug/VoiceFlowAppleCleaner
+```
+
+`scripts/build-macos-app.sh` installs the helper into the bundle as
+`Contents/MacOS/voiceflow-apple-cleaner` and the app hands the engine its absolute path,
+so a packaged run needs no `--apple-bin` and finds nothing through `PATH`.
+
+The instruction it receives is the same text every other provider gets, from
+`cleaners/prompt.py`: two engines cannot be compared on one corpus if they are told
+different things. Guided generation constrains the answer to a Swift structure, so there
+is no fenced-code stripping and no second parse of a string the provider formatted its
+own way.
+
+**Measured on the fixed Phase 2 corpus, 2026-09-26.** Both local engines transcribed
+once and run on that identical transcript, so only the cleaner varies:
+
+| | Apple | Ollama |
+|---|---|---|
+| Accepted by the output guard | 18/19 | 17/19 |
+| Samples whose text actually changed | **12** | **2** |
+| Median cleanup time | 0.61s | 0.54s |
+| Punctuation F1, engine → delivered | 34.8% → **84.8%** | 34.8% → 48.0% |
+| Verdict | **PASS** | PASS |
+
+The cleanup instruction asks only for what the output guard accepts: the guard's own
+fillers deleted, every other word kept in order — repeated words and self-corrections
+included — and punctuation added. It used to ask for self-corrections to be resolved and
+repetitions removed, which the guard refuses by construction, so each such dictation lost
+its whole cleanup. On the same transcripts the same day, the old instruction measured
+Apple at 16/19 and 69.0%, and Ollama changed nothing.
+
+A stutter such as `el el` is still refused. Both models delete it even when told not to,
+and the guard reads the deletion as lost content. An example that kept the repetition
+made both engines worse, so accepting a stutter is a guard decision, not a prompt one.
+
+The one Apple refusal is the model inserting a word, and the guard is right to catch it.
+Greedy sampling at temperature zero makes a refusal reproducible but does not prevent it.
+The speaker sees the refused text on the held-back card and can accept it when she agrees
+with it.
+
+Two guard changes were made for Spanish by the owner's decision on 2026-09-18: `eh`
+joined the removable fillers, and the written accent is
+folded before words are compared, so `reunion → reunión` passes. `ñ` and `ü` are letters
+rather than accents, so `ano → año` and `pinguino → pingüino` are still refused.
 
 ## Cloud cleanup with Gemini
 
 Cloud cleanup is off until it is chosen. The app window carries a provider list —
-literal, local Ollama, or Gemini — and the choice takes effect on the next recording,
+literal, local Apple, or Gemini — and the choice takes effect on the next recording,
 never mid-dictation. Selecting Gemini without a key changes nothing except a warning:
 dictation keeps working on this Mac.
 
@@ -427,10 +544,9 @@ run with no app around reads the item directly.
 What leaves the device is the transcript text and a language hint. Audio never does.
 Before each request the engine prints which provider and model are about to receive the
 text. A timeout, a refused key, a provider error or a missing key all return the
-deterministic local transcript, so a cloud failure costs the cleanup and nothing else.
-Gemini 3.7 Flash runs with `thinking_level: low` for this narrow latency-sensitive task,
-omits its deprecated temperature setting, and sends `store: false` because VoiceFlow
-does not use the Interactions API's server-side conversation state.
+deterministic local transcript, so a cloud failure costs the cleanup and nothing else. The request carries the transcript,
+the system instruction and a JSON response schema, and nothing else; `cleaners/gemini.py`
+is the only place that builds it.
 
 ```bash
 PYTHONPATH=src python3 -m sanbluedot_voiceflow process sample.wav \
@@ -455,10 +571,12 @@ Open the locally built app:
 open 'dist/sanblueᵈᵒᵗ VoiceFlow.app'
 ```
 
-The app starts in literal mode. Opt into local Ollama cleanup explicitly:
+The app starts on Apple's on-device cleanup and remembers whichever engine you pick
+afterwards, so the choice survives a relaunch. A named engine on the command line wins
+for that run:
 
 ```bash
-open -n 'dist/sanblueᵈᵒᵗ VoiceFlow.app' --args --cleaner ollama
+open -n 'dist/sanblueᵈᵒᵗ VoiceFlow.app' --args --cleaner literal
 ```
 
 On first launch, grant **Microphone** access to `sanblueᵈᵒᵗ VoiceFlow`. The visible
@@ -515,13 +633,16 @@ project under `~/Library/Application Support/sanblue.voiceflow/`.
 
 Start here when arriving cold: `AGENTS.md` for the rules that bind any model working
 in this project, then `framework.md` for what the product must do, then this file for
-what currently works. `relay-log.md` holds the resumable state and is read only when
-continuing recorded work.
+what currently works, then `backlog.md` for what is known to be wrong and what is worth
+building. `relay-log.md` holds the resumable state and is read only when continuing
+recorded work.
 
 - `AGENTS.md` — project rules: privacy, version control, required checks.
-- `CLAUDE.md` — routing adapter into the shared workspace contract.
+- `CLAUDE.md` — routing adapter into the shared workspace contract; local, excluded from version control.
 - `framework.md` — normative behavior and acceptance gates.
 - `proposal.md` — product direction and delivery sequence.
+- `backlog.md` — the task list: every known defect with its fix and every improvement with
+  its reason, as a checklist ticked with the date and how each fix was verified.
 - `src/sanbluedot_voiceflow/` — engine implementation.
 - `src/sanbluedot_voiceflow/output_guard.py` — deterministic conservative-cleanup guard.
 - `src/sanbluedot_voiceflow/snippets.py` — voice snippet store and expansion.
@@ -529,7 +650,6 @@ continuing recorded work.
 - `macos/` — native menu-bar runner and dependency-free checks.
 - `macos/Sources/VoiceFlowMacCore/PasteTarget.swift` — which applications may receive a keystroke.
 - `macos/Sources/VoiceFlowMacCore/VoiceAction.swift` — spoken-intent parsing.
-- `windows/` — Windows platform adapter scaffold: written and audited, never compiled.
 - `scripts/build-macos-app.sh` — stable local `.app` packaging and Apple Development signing.
 - `acceptance/` — one runbook and report per framework gate; `acceptance/README.md` indexes them.
 - `docs/` — HTML previews of interface surfaces, built from the `design-system.md` tokens.
@@ -540,7 +660,7 @@ continuing recorded work.
 - `scripts/replay.py` — replay a saved run's audio under a different configuration.
 - `vf` — short wrapper for the engine commands.
 - `tests/` — dependency-free unit tests.
-- `relay-log.md` — current resumable handoff; read only when resuming work.
+- `relay-log.md` — current resumable handoff; local, excluded from version control, read only when resuming work.
 
 ## Private data
 

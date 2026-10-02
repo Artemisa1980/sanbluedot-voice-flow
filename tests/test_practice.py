@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -234,6 +236,27 @@ class OrphanTakeTests(unittest.TestCase):
         stranded = self._take("001.wav", age_seconds=MAX_TAKE_SECONDS + 60)
         self.assertEqual(store.sweep_orphans(), [stranded])
         self.assertFalse(stranded.exists())
+
+    def test_an_unreadable_index_never_sweeps_the_takes_it_may_claim(self) -> None:
+        # A corrupt index is quarantined and reads as empty; sweeping against that
+        # deleted every kept recording while the index itself survived (D-54).
+        store = PracticeStore(self.directory)
+        kept = self._take("001.wav", age_seconds=MAX_TAKE_SECONDS + 60)
+        store.index.write_text('{"schema_version": 1, "sessions": [{"id": 1', encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(store.sweep_orphans(), [])
+        self.assertTrue(kept.exists())
+
+    def test_an_incomplete_entry_still_claims_its_take(self) -> None:
+        store = PracticeStore(self.directory)
+        kept = self._take("002.wav", age_seconds=MAX_TAKE_SECONDS + 60)
+        store.index.write_text(json.dumps({
+            "schema_version": 1,
+            "sessions": [{"id": 2, "audio_file": "002.wav", "recorded_at": "x",
+                          "reference": "y"}],
+        }), encoding="utf-8")
+        self.assertEqual(store.sweep_orphans(), [])
+        self.assertTrue(kept.exists())
 
     def test_a_take_is_capped_so_it_cannot_hold_the_microphone(self) -> None:
         self.assertLessEqual(MAX_TAKE_SECONDS, 600)

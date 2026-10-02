@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoiceFlow Words Section</title>
+<style>
+  @font-face {
+    font-family: "Press Start 2P";
+    src: url("../macos/Resources/Fonts/PressStart2P-Regular.ttf") format("truetype");
+  }
+  /* Approved tokens only, named as `VoiceStationTokens` names them. One look: this is a
+     picture of the app, which does not change with the viewer's theme. */
+  :root {
+    --appBg: #A9D3C0;
+    --panelBg: #F8ECCF;
+    --panelHeader: #98AAB2;
+    --inputCream: #FFF9E9;
+    --navy: #16213E;
+    --textMuted: #405147;
+    --consoleBg: #262319;
+    --gold: #EFC15E;
+    --dotBlue: #7CB3E8;
+    --ok: #5F7050;
+    --rec: #FF7B6B;
+    --danger: #C0392B;
+    --rule: rgba(38, 35, 25, 0.45);
+    --fieldStroke: rgba(38, 35, 25, 0.6);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --pixel: "Press Start 2P", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px 16px;
+    background: var(--appBg);
+    font-family: var(--mono);
+    color: var(--navy);
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  /* Sidebar: Words takes the place of Modes. */
+  .sidebar {
+    background: var(--panelHeader);
+    border: 3px solid var(--navy);
+    border-radius: 14px;
+    padding: 16px 12px;
+    display: grid;
+    gap: 6px;
+  }
+  .sidebar h2 {
+    margin: 0 8px 10px;
+    font: 700 11px var(--mono);
+    letter-spacing: 0.18em;
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    font: 13px var(--mono);
+  }
+  .nav .count { margin-left: auto; font-size: 11px; }
+  .nav.on {
+    background: var(--gold);
+    border: 2px solid var(--navy);
+    box-shadow: 3px 3px 0 var(--navy);
+    font-weight: 700;
+  }
+  .nav svg { width: 16px; height: 16px; flex: none; }
+
+  /* The chassis, unchanged from every other section. */
+  .chassis {
+    background: var(--consoleBg);
+    border: 3px solid var(--navy);
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--navy);
+    padding: 0 16px 14px;
+    min-width: 0;
+  }
+  .strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 18px 4px 14px;
+  }
+  .strip h1 {
+    margin: 0;
+    font: 12px var(--pixel);
+    color: var(--gold);
+    letter-spacing: 0.5px;
+    line-height: 1.6;
+  }
+  .strip h1 span { color: rgba(239, 193, 94, 0.6); }
+  .strip .spacer { flex: 1; }
+  .strip .count {
+    font: 700 11px var(--mono);
+    background: var(--gold);
+    color: var(--navy);
+    border-radius: 6px;
+    padding: 5px 9px;
+  }
+  .well {
+    background: var(--panelBg);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px 12px;
+    padding: 12px 4px 0;
+    font: 700 11px var(--mono);
+    color: var(--gold);
+  }
+  .footer .engine { color: var(--appBg); }
+
+  /* ——— Proposal: the Words section ——— */
+
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .tab {
+    font: 700 10px var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--navy);
+    background: var(--inputCream);
+    border: 1.5px solid var(--navy);
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  .tab small { font-weight: 400; color: var(--textMuted); letter-spacing: 0; }
+  .tab[aria-selected="true"] { background: var(--navy); color: var(--inputCream); }
+  .tab[aria-selected="true"] small { color: var(--gold); }
+  .tab:focus-visible, .btn:focus-visible, .chip:focus-visible {
+    outline: 2px solid var(--dotBlue);
+    outline-offset: 2px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 290px;
+    gap: 16px;
+    padding-top: 14px;
+  }
+  .main { display: grid; gap: 12px; min-width: 0; align-content: start; }
+
+  .card {
+    background: var(--inputCream);
+    border: 1px solid var(--fieldStroke);
+    border-radius: 9px;
+    padding: 14px;
+  }
+  .label {
+    font: 700 9px var(--mono);
+    letter-spacing: 0.12em;
+    color: var(--textMuted);
+  }
+  .from {
+    display: inline-block;
+    margin-left: 8px;
+    font: 700 9px var(--mono);
+    letter-spacing: 0.08em;
+    padding: 3px 7px;
+    border: 1px solid var(--navy);
+    border-radius: 4px;
+    background: var(--gold);
+    color: var(--navy);
+  }
+  .teach {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    align-items: end;
+    margin-top: 10px;
+  }
+  .field { display: grid; gap: 5px; min-width: 0; }
+  .input {
+    font: 12px var(--mono);
+    color: var(--navy);
+    background: var(--panelBg);
+    border: 1.5px solid var(--fieldStroke);
+    border-radius: 6px;
+    padding: 8px 10px;
+    width: 100%;
+  }
+  .input.filled { background: var(--inputCream); border-color: var(--navy); }
+  .arrow { padding-bottom: 8px; color: var(--textMuted); }
+  .btn {
+    font: 700 10px var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--navy);
+    background: var(--inputCream);
+    border: 1.5px solid var(--navy);
+    border-radius: 5px;
+    padding: 8px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn.primary { background: var(--gold); }
+  .btn.small { padding: 4px 9px; font-size: 9px; }
+  .check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+    font: 11px var(--mono);
+    color: var(--textMuted);
+  }
+  .check input { accent-color: var(--navy); }
+
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .tools .input { max-width: 240px; }
+  .tools .grow { flex: 1; }
+  .chip {
+    font: 700 9.5px var(--mono);
+    color: var(--navy);
+    background: var(--inputCream);
+    border: 1.5px solid var(--navy);
+    border-radius: 999px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--navy); color: var(--inputCream); }
+
+  .list {
+    background: var(--inputCream);
+    border: 1px solid var(--fieldStroke);
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  .pair {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+    padding: 10px 14px;
+    border-top: 1px solid var(--rule);
+    font: 12px var(--mono);
+  }
+  .pair .words {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .pair:first-child { border-top: none; }
+  .heard { color: var(--textMuted); text-decoration: line-through; text-decoration-color: var(--rec); text-decoration-thickness: 2px; }
+  .wrote { font-weight: 700; }
+  .meta { display: flex; gap: 6px; align-items: center; font-size: 10px; color: var(--textMuted); }
+  .tag {
+    font: 700 8.5px var(--mono);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--navy);
+    background: var(--dotBlue);
+    color: var(--navy);
+  }
+  .tag.everywhere { background: var(--panelBg); }
+  .row-actions { display: flex; gap: 6px; }
+
+  /* Side panels */
+  .side { display: grid; gap: 12px; align-content: start; }
+  .panel {
+    border: 2px solid var(--navy);
+    border-radius: 11px;
+    padding: 14px;
+    background: var(--inputCream);
+  }
+  .panel h3 {
+    margin: 0 0 8px;
+    font: 10px var(--pixel);
+    letter-spacing: 0.5px;
+    line-height: 1.6;
+  }
+  .panel p { margin: 0 0 8px; font: 11.5px var(--mono); line-height: 1.55; }
+  .panel p:last-child { margin-bottom: 0; }
+  .panel.dark { background: var(--navy); color: var(--inputCream); }
+  .panel.dark h3 { color: var(--gold); }
+  .cues { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .cue {
+    font: 10px var(--mono);
+    padding: 3px 8px;
+    border: 1px solid var(--inputCream);
+    border-radius: 999px;
+  }
+  .example { font: 11px var(--mono); line-height: 1.6; }
+  .example .gone { text-decoration: line-through; text-decoration-color: var(--rec); opacity: 0.75; }
+  .example .kept { color: var(--gold); font-weight: 700; }
+  .note { font: 10.5px var(--mono); color: var(--textMuted); line-height: 1.5; margin: 0; }
+
+  /* Vocabulary */
+  .budget {
+    display: grid;
+    gap: 6px;
+  }
+  .bar {
+    height: 10px;
+    border: 1.5px solid var(--navy);
+    border-radius: 5px;
+    background: var(--panelBg);
+    overflow: hidden;
+  }
+  .bar span { display: block; height: 100%; width: 28%; background: var(--ok); }
+  .budget p { margin: 0; font: 11px var(--mono); line-height: 1.5; color: var(--textMuted); }
+  .word {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--rule);
+    font: 700 12px var(--mono);
+  }
+  .word:first-child { border-top: none; }
+  .word .grow { flex: 1; }
+  .word.unread { color: var(--textMuted); font-weight: 400; }
+  .word .tag.off { background: var(--panelBg); }
+
+  /* Modes */
+  .modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .mode {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1.5px solid var(--navy);
+    border-radius: 9px;
+    background: var(--inputCream);
+  }
+  .mode b { font: 700 12px var(--mono); }
+  .mode p { margin: 0; font: 11px var(--mono); color: var(--textMuted); line-height: 1.5; }
+  .mode.on { background: var(--navy); color: var(--inputCream); }
+  .mode.on p { color: var(--panelBg); }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .layout { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 620px) {
+    .teach { grid-template-columns: 1fr; }
+    .arrow { display: none; }
+    .modes { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <nav class="sidebar" aria-label="Sections">
+    <h2>VOICEFLOW</h2>
+    <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg>Station</div>
+    <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Settings</div>
+    <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>History<span class="count">10</span></div>
+    <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M4 12h16M4 18h12"/></svg>Snippets<span class="count">0</span></div>
+    <div class="nav on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5h14M12 5v14M9 19h6"/></svg>Words<span class="count">6</span></div>
+    <div class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l3-8 4 16 3-8h6"/></svg>Diagnostics</div>
+  </nav>
+
+  <section class="chassis">
+    <div class="strip">
+      <h1>WORDS.SYS <span>— WHAT IT HEARS, WHAT IT WRITES</span></h1>
+      <div class="spacer"></div>
+      <div class="count">6</div>
+    </div>
+
+    <div class="well">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" data-tab="corrections" type="button">CORRECTIONS 6</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="vocabulary" type="button">VOCABULARY <small>· what Whisper listens for</small></button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="modes" type="button">MODES</button>
+      </div>
+
+      <div class="layout">
+        <div class="main">
+
+          <!-- CORRECTIONS -->
+          <div data-panel="corrections">
+            <div class="main">
+              <div class="card">
+                <span class="label">TEACH A CORRECTION</span><span class="from">FROM HISTORY · 20:03:43</span>
+                <div class="teach">
+                  <label class="field"><span class="label">IT HEARD</span>
+                    <input class="input filled" id="heard" value="Oyama" aria-label="It heard"></label>
+                  <span class="arrow">→</span>
+                  <label class="field"><span class="label">IT SHOULD WRITE</span>
+                    <input class="input" id="intended" placeholder="e.g. Ollama" aria-label="It should write"></label>
+                  <button class="btn primary" type="button">LEARN</button>
+                </div>
+                <label class="check"><input type="checkbox" id="everywhere"> One word: replace it wherever it is heard</label>
+              </div>
+
+              <div class="tools">
+                <span class="label">SEARCH</span>
+                <input class="input" id="search" placeholder="heard or written" aria-label="Search corrections">
+                <span class="grow"></span>
+                <button class="chip" aria-pressed="true" type="button">All</button>
+                <button class="chip" aria-pressed="false" type="button">Learned from a fix</button>
+                <button class="chip" aria-pressed="false" type="button">Added here</button>
+              </div>
+
+              <div class="list">
+                <div class="pair"><span class="words"><span class="heard">sun blue dot</span><span class="sep">→</span><span class="wrote">sanblueᵈᵒᵗ</span></span><span class="meta"><span class="tag">FIX</span>26 Sept</span><span class="row-actions"><button class="btn small" type="button">EDIT</button><button class="btn small" type="button">DELETE</button></span></div>
+                <div class="pair"><span class="words"><span class="heard">chequeen</span><span class="sep">→</span><span class="wrote">checking</span></span><span class="meta"><span class="tag everywhere">EVERYWHERE</span>18 Sept</span><span class="row-actions"><button class="btn small" type="button">EDIT</button><button class="btn small" type="button">DELETE</button></span></div>
+                <div class="pair"><span class="words"><span class="heard">Olama</span><span class="sep">→</span><span class="wrote">Ollama</span></span><span class="meta"><span class="tag everywhere">EVERYWHERE</span>18 Sept</span><span class="row-actions"><button class="btn small" type="button">EDIT</button><button class="btn small" type="button">DELETE</button></span></div>
+                <div class="pair"><span class="words"><span class="heard">u tel</span><span class="sep">→</span><span class="wrote">UTEL</span></span><span class="meta"><span class="tag">FIX</span>18 Sept</span><span class="row-actions"><button class="btn small" type="button">EDIT</button><button class="btn small" type="button">DELETE</button></span></div>
+                <div class="pair"><span class="words"><span class="heard">ha tomado nitro</span><span class="sep">→</span><span class="wrote">tomó el dictado</span></span><span class="meta">18 Sept</span><span class="row-actions"><button class="btn small" type="button">EDIT</button><button class="btn small" type="button">DELETE</button></span></div>
+                <div class="pair"><span class="words"><span class="heard">litrao</span><span class="sep">→</span><span class="wrote">Literal</span></span><span class="meta"><span class="tag everywhere">EVERYWHERE</span>18 Sept</span><span class="row-actions"><button class="btn small" type="button">EDIT</button><button class="btn small" type="button">DELETE</button></span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- VOCABULARY -->
+          <div data-panel="vocabulary" hidden>
+            <div class="main">
+              <div class="card">
+                <span class="label">ADD A WORD</span>
+                <div class="teach" style="grid-template-columns: minmax(0,1fr) auto;">
+                  <label class="field"><input class="input" id="word" placeholder="e.g. PowerShell, Gim" aria-label="Word to add"></label>
+                  <button class="btn primary" type="button">+ ADD</button>
+                </div>
+              </div>
+              <div class="card budget">
+                <span class="label">WHAT WHISPER READS BEFORE IT LISTENS</span>
+                <div class="bar" aria-hidden="true"><span></span></div>
+                <p><b>64 of 226 words</b> fit in what Whisper reads. The rest are stored but unread until the budget is fixed, so a word added now changes nothing yet. A word it keeps getting wrong works today as a correction.</p>
+              </div>
+              <div class="list">
+                <div class="word">UTEL<span class="grow"></span><span class="tag">READ</span><button class="btn small" type="button">DELETE</button><button class="btn small" type="button">TO CORRECTION</button></div>
+                <div class="word">Gim<span class="grow"></span><span class="tag">READ</span><button class="btn small" type="button">DELETE</button><button class="btn small" type="button">TO CORRECTION</button></div>
+                <div class="word">sanblueᵈᵒᵗ<span class="grow"></span><span class="tag">READ</span><button class="btn small" type="button">DELETE</button><button class="btn small" type="button">TO CORRECTION</button></div>
+                <div class="word unread">PowerShell<span class="grow"></span><span class="tag off">UNREAD</span><button class="btn small" type="button">DELETE</button><button class="btn small" type="button">TO CORRECTION</button></div>
+                <div class="word unread">terminal<span class="grow"></span><span class="tag off">UNREAD</span><button class="btn small" type="button">DELETE</button><button class="btn small" type="button">TO CORRECTION</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODES -->
+          <div data-panel="modes" hidden>
+            <div class="modes">
+              <div class="mode on"><b>CLEAN</b><p>Punctuation and fillers. Says "borra eso" and the part you took back is gone.</p></div>
+              <div class="mode"><b>ES ➔ EN</b><p>Spanish or mixed speech into professional English.</p></div>
+              <div class="mode"><b>NOTES</b><p>Summary bullets and a checklist of action items.</p></div>
+              <div class="mode"><b>ACTIONS</b><p>Opens apps, sites and searches you ask for out loud.</p></div>
+            </div>
+          </div>
+
+        </div>
+
+        <aside class="side">
+          <div class="panel">
+            <h3>HOW IT WORKS</h3>
+            <p>The speech model writes what it heard. Every phrase on the <b>heard</b> side is swapped for what it <b>should write</b> before anything is pasted, on every engine.</p>
+            <p>Fastest way to add one: press <b>FIX</b> on a dictation in History. It opens here with what it heard.</p>
+          </div>
+          <div class="panel dark">
+            <h3>TAKE IT BACK OUT LOUD</h3>
+            <div class="cues">
+              <span class="cue">borra eso</span><span class="cue">me equivoqué</span><span class="cue">no, mejor</span>
+              <span class="cue">perdón, no</span><span class="cue">scratch that</span><span class="cue">sorry, no</span>
+            </div>
+            <p class="example">"a las tres, <span class="gone">perdón, no,</span> a las cuatro"<br>→ <span class="kept">"a las cuatro"</span></p>
+          </div>
+          <p class="note">Nothing is learned from your screen or your keys. A correction is kept only when you press LEARN.</p>
+        </aside>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>● Hold Fn/Globe anywhere, or hold the button below.</span>
+      <span class="engine">100% Local (Whisper)</span>
+    </div>
+  </section>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[data-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+      });
+    });
+  });
+  document.querySelectorAll('.chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+    });
+  });
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 > **Owner:** private  
 > **Status:** Approved for phased implementation  
-> **Platforms:** macOS first; Windows after the engine passes its Mac gate  
+> **Platforms:** macOS. The Windows adapter is owned and measured on the Windows machine and is not worked from here.  
 > **Updated:** 2026-08-31
 
 ## Purpose
@@ -18,7 +18,7 @@ The product is for one user on two known computers. It does not need multi-tenan
 1. **Local first:** audio and personal vocabulary remain on the device by default.
 2. **Literal before clever:** the raw transcript is always available; cleanup must not change meaning.
 3. **Fast path first:** ordinary dictation uses local models. Cloud rewriting is explicit and optional.
-4. **One working platform at a time:** the Mac implementation must pass before the Windows adapter begins.
+4. **One working platform at a time:** this repository's work is the Mac implementation.
 5. **Explicit learning:** corrections enter memory only after the user confirms them.
 6. **Replaceable providers:** speech and cleanup models sit behind small interfaces rather than controlling the application architecture.
 
@@ -88,17 +88,15 @@ This is prompt and correction memory, not continuous acoustic-model training. Si
 | 3 | Confirmed vocabulary and correction memory | Repeated test terms improve without regressions |
 | 4 | One optional cloud cleanup provider | No audio leaves the device; failure returns to the local path |
 | 5 | Menu-bar interface and settings | Packaged Mac app passes the acceptance matrix |
-| 6 | Windows platform adapter | Same engine contract passes on the named Windows computer |
 
 **These phase numbers are not the gate numbers in `framework.md`, and the two must not
-be read as one sequence.** Phase 6 here is Windows; Gate 6 there is pronunciation
-practice, while Windows is Gate 5. When they disagree, `framework.md` governs, because
-it is the normative specification.
+be read as one sequence.** When they disagree, `framework.md` governs, because it is the
+normative specification.
 
 ## Pronunciation practice
 
 Added 2026-08-29 as `framework.md` R8 and Gate 6, outside the phase sequence above and
-independent of cloud and Windows work. A mis-transcription against a text the speaker
+independent of cloud work. A mis-transcription against a text the speaker
 chose is acoustic evidence about the speaker, and the engine already produces it for
 free. The application reports which words it failed to recover and keeps the recording
 to replay; it assigns no score and states no phonetic diagnosis, because teaching
@@ -146,23 +144,10 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
   25.6% raw WER, and 26.9% cleaned WER. The local cleaner did not improve aggregate
   accuracy. Later fixed-audio replay points to English, not mixed speech, as the main
   remaining recognition weakness; the cleaner remains opt-in until separately accepted.
-- The Windows machine is named, which closes Gate 5's first condition. Lenovo IdeaPad 1
-  15IAU7 (`82QD`), Windows 11 Home 25H2, build `10.0.26200.9278`, x64: Intel Core
-  i3-1215U with AVX2, 6 cores and 8 threads; 7.73 GiB usable RAM; Intel UHD integrated
-  graphics and no NVIDIA GPU; 1920 × 1080; 67.6 GiB free on `C:`. Verified 2026-09-04.
-- Its target applications for the gate are Notepad, VS Code and a browser text field.
-- That machine carries the tools and not the payload. Python 3.13, Git, Node, VS Code,
-  WebView2, MSVC Build Tools 2019 and the Windows SDK are installed; Rust, the Tauri CLI,
-  `whisper-cli.exe` and the model weights are not, and the last two are excluded from
-  version control by design. They are provisioned there, not shipped from here.
-- Its transcription budget is not this Mac's. `large-v3-turbo` is the default because it
-  was measured on an M3 Pro. On integrated graphics with 8 GiB the first measurement is
-  `ggml-small`, and which model becomes the Windows default follows what that machine
-  reports rather than what this one did.
-- Windows work continues on that machine, not from the Mac: a copy of this project plus
-  Claude Code running there can build and test the adapter in place, which is what the
-  gate requires. The Python engine is unchanged and shared; only the platform shell —
-  global hotkey, capture, paste, window — is new.
+- Gate 5 is owned, measured and reported on the Windows machine, which works from its
+  own copy and needs no briefing from here. `acceptance/phase-5-acceptance.md` is its
+  runbook and the only place its state is recorded. A session working on this Mac does
+  not read `windows/`, audit it, report on it or plan it.
 - macOS microphone and Accessibility permissions require visible user consent.
 
 ## Noted for later — Shortcuts, Xcode, and local intent parsing
@@ -170,8 +155,14 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
 Recorded 2026-09-16. Not scheduled, not authorized, and not part of the interface work
 in progress. It is written here so the reasoning is not lost, not because it is next.
 
-**Siri cannot be the transcriber.** `NOT VERIFIED`: no Apple documentation was opened for
-this. The claim is that Apple exposes no way for an application to receive what Siri
+**Siri cannot be the transcriber, and the question was the wrong one.** Verified
+2026-09-18 against Apple's documentation: `SpeechAnalyzer` and its `SpeechTranscriber`
+module, both introduced in version 26, are a supported on-device transcription API. Siri
+itself still exposes nothing an application can receive, but the platform does, so the
+alternative to `whisper.cpp` is that framework rather than Siri. It is a candidate like
+any other and faces `scripts/cleaner_gate.py`'s corpus before it replaces anything.
+
+The original claim, kept because its reasoning still applies to Siri itself: The claim is that Apple exposes no way for an application to receive what Siri
 heard, which would make this a platform limit before a privacy one. Check it against
 Apple's developer documentation before the note is acted on. The owner stated
 on 2026-09-16 that Siri reaching Apple's servers is acceptable to her, which removes the
@@ -194,9 +185,17 @@ spoken intents to be parsed *deterministically*, so this is a framework decision
 is an implementation: a model is not deterministic, and the requirement would have to say
 what replaces that guarantee.
 
-**The packaging blocks App Intents, and this is unverified.** `macos/Package.swift` builds
-a plain SPM executable and `scripts/build-macos-app.sh` assembles the bundle by hand. App
-Intents rely on metadata that Xcode's build system generates and embeds; without it the
-actions exist in code and the system never sees them. Migrating to an Xcode target, or
-reproducing that step in the script, is the open question. The cheap test is one trivial
-intent through the current packaging, before any of the above is designed.
+**The packaging blocks App Intents. Verified 2026-09-18.** The cheap test was run:
+`PingVoiceFlowIntent` in `Sources/VoiceFlowMac/VoiceFlowIntents.swift` compiles cleanly,
+and the SwiftPM build produces no App Intents metadata at all — the product directory
+holds the executables and nothing else. Xcode generates that metadata with
+`appintentsmetadataprocessor`, which ships in its toolchain and which SwiftPM never runs.
+So the actions exist in code and the system cannot see them.
+
+Siri, Spotlight and Shortcuts therefore need an Xcode project for this app. The intent
+stays in place as the first thing to check once that project exists; it performs nothing.
+Two facts make the migration cheaper than it sounds: the Swift sources are unchanged by
+Xcode, which compiles the same files the script does, and `Package.swift` now publishes
+`VoiceFlowMacCore` as a library, which is what an Xcode target links. Apple's
+`AppIntentsPackage` covers intents declared outside the app bundle, so the intents may
+live in that library rather than in the executable.

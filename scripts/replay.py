@@ -33,7 +33,8 @@ from sanbluedot_voiceflow.memory import (
     load_vocabulary,
 )
 from sanbluedot_voiceflow.pipeline import DictationPipeline
-from sanbluedot_voiceflow.transcribers import WhisperCppTranscriber
+from sanbluedot_voiceflow.transcribers import ParakeetTranscriber, WhisperCppTranscriber
+from sanbluedot_voiceflow.transcribers.parakeet import DEFAULT_MODEL_DIR as PARAKEET_MODELS
 
 
 def load_samples(
@@ -128,6 +129,13 @@ def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
         if (args.no_memory or args.no_vocab_prompt)
         else build_initial_prompt(load_vocabulary(), args.prompt_budget)
     )
+    if getattr(args, "transcriber", "whisper") == "parakeet":
+        # The same helper the application runs; Parakeet reads no vocabulary prompt.
+        transcriber = ParakeetTranscriber(model_dir=args.parakeet_models, binary=args.parakeet_bin)
+        cleaner = build_cleaner(
+            args.cleaner, gemini_model=args.gemini_model
+        )
+        return DictationPipeline(transcriber=transcriber, cleaner=cleaner, corrections=corrections)
     transcriber = WhisperCppTranscriber(
         model_path=args.whisper_model,
         binary=args.whisper_bin,
@@ -138,7 +146,6 @@ def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
     )
     cleaner = build_cleaner(
         args.cleaner,
-        ollama_model=args.ollama_model,
         gemini_model=args.gemini_model,
     )
     return DictationPipeline(transcriber=transcriber, cleaner=cleaner, corrections=corrections)
@@ -148,11 +155,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
-    parser.add_argument("--whisper-model", type=Path, required=True)
+    parser.add_argument("--transcriber", default="whisper", choices=["whisper", "parakeet"])
+    parser.add_argument("--whisper-model", type=Path)
+    parser.add_argument("--parakeet-bin", default="voiceflow-parakeet")
+    parser.add_argument("--parakeet-models", type=Path, default=PARAKEET_MODELS)
     parser.add_argument("--whisper-bin", default="whisper-cli")
     parser.add_argument("--language", default="auto", choices=["auto", "en", "es"])
     parser.add_argument("--cleaner", default="literal", choices=list(CLEANER_NAMES))
-    parser.add_argument("--ollama-model", default="qwen3:4b")
     parser.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
     parser.add_argument("--no-vocab-prompt", action="store_true")
     parser.add_argument("--prompt-budget", type=int, default=PROMPT_CHAR_BUDGET)
@@ -174,6 +183,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    transcriber_name = getattr(args, "transcriber", "whisper")
+    if transcriber_name == "whisper" and args.whisper_model is None:
+        print("Whisper needs --whisper-model.", file=sys.stderr)
+        return 1
     try:
         samples = load_samples(
             args.corpus,
@@ -225,11 +238,14 @@ def main() -> int:
 
     print(f"\n{args.label}: {len(raw_wers)} samples replayed, {failures} failed")
     print(f"  safe fallbacks  {fallbacks}")
+    print(f"  transcriber    {transcriber_name}")
     print(f"  cleaner        {args.cleaner}")
     print(
         "  vocab prompt   "
         + (
-            "off"
+            "none, Parakeet reads no prompt"
+            if transcriber_name == "parakeet"
+            else "off"
             if (args.no_memory or args.no_vocab_prompt)
             else f"on, {args.prompt_budget} chars"
         )

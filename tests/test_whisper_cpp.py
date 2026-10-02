@@ -49,6 +49,31 @@ class WhisperCppTranscriberTests(unittest.TestCase):
         self.assertEqual(commands[0][commands[0].index("-l") + 1], "auto")
         self.assertIn("-otxt", commands[0])
 
+    def test_segments_on_separate_lines_are_joined_into_one_text(self) -> None:
+        """A line break is where whisper paused; delivered, it chopped the dictation."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text(
+                    " Ok, voy a comenzar con literal\n We want to change languages\n\n So, let's see\n",
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            result = WhisperCppTranscriber(
+                model_path=model, binary=str(binary), runner=runner
+            ).transcribe(audio)
+
+        self.assertEqual(
+            result.text,
+            "Ok, voy a comenzar con literal We want to change languages So, let's see",
+        )
+
     def test_automatic_mode_recovers_the_language_whisper_detected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -314,6 +339,33 @@ class SilenceGuardTests(unittest.TestCase):
             )
         return path
 
+    def write_samples(self, path: Path, samples: list[float]) -> Path:
+        import array
+        import wave
+
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(array.array(
+                "h", [max(-32768, min(32767, int(value * 32767))) for value in samples]
+            ).tobytes())
+        return path
+
+    def syllables(self, level: float, duty: float = 0.6, seconds: float = 2.0) -> list[float]:
+        """Bursts at `level` filling `duty` of every 250 ms, split by pauses, like words."""
+        samples = []
+        for index in range(int(16000 * seconds)):
+            loud = (index % 4000) < 4000 * duty
+            samples.append((level if index % 2 else -level) if loud else 0.0)
+        return samples
+
+    def noise(self, level: float, seconds: float = 2.0) -> list[float]:
+        import random
+
+        generator = random.Random(7)
+        return [generator.gauss(0.0, level) for _ in range(int(16000 * seconds))]
+
     def test_silence_is_rejected_before_the_engine_can_invent_text(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             quiet = self.write_wav(Path(temp_dir) / "quiet.wav", 0)
@@ -323,9 +375,26 @@ class SilenceGuardTests(unittest.TestCase):
     def test_a_real_recording_level_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             # The owner's quietest measured take sits near 0.020 RMS.
-            speech = self.write_wav(Path(temp_dir) / "speech.wav", int(0.020 * 32768))
+            speech = self.write_samples(Path(temp_dir) / "speech.wav", self.syllables(0.020))
 
             self.assertFalse(is_effectively_silent(speech))
+
+    def test_steady_noise_without_speech_is_rejected(self) -> None:
+        # Whisper turned this level of steady noise into "and the rest of the world."
+        with tempfile.TemporaryDirectory() as temp_dir:
+            hum = self.write_samples(Path(temp_dir) / "hum.wav", self.noise(0.012))
+
+            self.assertTrue(is_effectively_silent(hum))
+
+    def test_speech_under_noise_louder_than_the_voice_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Real speech is peaky: about 0.025 RMS overall with loud frames near 0.05.
+            voice, hum = self.syllables(0.05, duty=0.25), self.noise(0.030)
+            mixed = self.write_samples(
+                Path(temp_dir) / "mixed.wav", [a + b for a, b in zip(voice, hum)]
+            )
+
+            self.assertFalse(is_effectively_silent(mixed))
 
     def test_unreadable_audio_fails_open_rather_than_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

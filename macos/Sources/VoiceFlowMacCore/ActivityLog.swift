@@ -8,7 +8,7 @@ import Foundation
 public enum LogCategory: String, CaseIterable, Sendable {
     case stt = "WHISPER"
     case gemini = "GEMINI"
-    case ollama = "OLLAMA"
+    case apple = "APPLE"
     case action = "ACTION"
     case snippet = "SNIPPET"
     case paste = "PASTE"
@@ -37,7 +37,7 @@ public enum LogCategory: String, CaseIterable, Sendable {
     /// also says "failed".
     private static let orderedTriggers: [(LogCategory, Set<String>)] = [
         (.gemini, ["gemini"]),
-        (.ollama, ["ollama"]),
+        (.apple, ["apple"]),
         (.stt, ["whisper", "heard"]),
         (.action, ["action", "executed"]),
         (.snippet, ["snippet", "snippets", "expanded"]),
@@ -59,7 +59,6 @@ public enum HUDBadge {
         case .translate: return "ON AIR • ES➔EN"
         case .meeting: return "ON AIR • MEETING"
         case .actions: return "ON AIR • ACTION"
-        case .transform: return "ON AIR • TRANSFORM"
         }
     }
 
@@ -73,7 +72,6 @@ public enum HUDBadge {
         case .translate: return "ES➔EN • \(context.shortName)"
         case .meeting: return "MEETING • \(context.shortName)"
         case .actions: return "ACTION • \(context.shortName)"
-        case .transform: return "TRANSFORM • \(context.shortName)"
         }
     }
 
@@ -86,7 +84,6 @@ public enum HUDBadge {
         case .translate: return "TRANSLATING (\(provider))"
         case .meeting: return "STRUCTURING (\(provider))"
         case .actions: return "PARSING ACTION"
-        case .transform: return "TRANSFORMING (\(provider))"
         }
     }
 
@@ -98,12 +95,6 @@ public enum HUDBadge {
     /// about two thousand. Past that the selection is more likely a file than a passage,
     /// which is the case worth catching: a `⌘A` nobody meant, or an editor that copied
     /// more than was on screen. It colours the figure and blocks nothing — the speaker
-    /// may well mean to rewrite a long document, and Escape is the way out either way.
-    public static let largeSelectionCharacters = 2_000
-
-    public static func selectionIsLarge(_ characters: Int) -> Bool {
-        characters > largeSelectionCharacters
-    }
 
     public static func shortModelName(_ model: String) -> String {
         model

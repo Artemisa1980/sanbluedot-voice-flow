@@ -20,19 +20,31 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 # below any real take, so it rejects silence without rejecting a soft speaker.
 SILENCE_RMS = 0.003
 
+# Speech rises and falls with every word; steady noise does not. Across the 44
+# recordings kept on this Mac (2026-10-02), the loudest 30 ms frames sat at least 8.9
+# times above the quietest, while steady noise measured 1.1 — and Whisper turned that
+# noise into "and the rest of the world." A take below this ratio is refused like
+# silence. Speech under noise louder than the voice still measured 2.0, above it.
+SPEECH_VARIATION = 1.6
+FRAME_SECONDS = 0.03
+MINIMUM_FRAMES = 10
+
 
 def is_effectively_silent(audio_path: Path, floor: float = SILENCE_RMS) -> bool:
     """True when a 16-bit PCM WAV carries no speech worth transcribing.
 
     A near-silent take makes whisper.cpp invent text, and with an initial prompt loaded
-    it invents terms from that prompt. Without this guard, holding the shortcut by
-    accident copies fabricated vocabulary to the clipboard. Unreadable or unexpected
-    audio fails open, because a format this cannot parse is not evidence of silence.
+    it invents terms from that prompt. Steady background noise does the same at any
+    level, so a take that never rises above its own quiet frames counts as silent too.
+    Without this guard, holding the shortcut by accident copies fabricated text to the
+    clipboard. Unreadable or unexpected audio fails open, because a format this cannot
+    parse is not evidence of silence.
     """
     try:
         with wave.open(str(audio_path)) as source:
             if source.getsampwidth() != 2:
                 return False
+            rate = source.getframerate()
             frames = source.readframes(source.getnframes())
     except (wave.Error, OSError, EOFError):
         return False
@@ -41,7 +53,24 @@ def is_effectively_silent(audio_path: Path, floor: float = SILENCE_RMS) -> bool:
     if not samples:
         return True
     mean_square = sum(sample * sample for sample in samples) / len(samples)
-    return math.sqrt(mean_square) / 32768 < floor
+    if math.sqrt(mean_square) / 32768 < floor:
+        return True
+    return _is_steady(samples, rate)
+
+
+def _is_steady(samples: array, rate: int) -> bool:
+    """True when the loud frames never rise clearly above the quiet ones."""
+    size = max(1, int(rate * FRAME_SECONDS))
+    levels = sorted(
+        sum(sample * sample for sample in samples[start:start + size]) / size
+        for start in range(0, len(samples) - size + 1, size)
+    )
+    if len(levels) < MINIMUM_FRAMES:
+        return False
+    quiet = levels[int(0.10 * len(levels))]
+    loud = levels[min(len(levels) - 1, int(0.95 * len(levels)))]
+    # Compared as mean squares, so the amplitude ratio is squared.
+    return loud < (SPEECH_VARIATION ** 2) * max(quiet, 1.0)
 
 
 # whisper.cpp announces its automatic choice on stderr as
@@ -178,6 +207,12 @@ class WhisperCppTranscriber:
                 text = text[:-2]
             elif text.endswith("\n"):
                 text = text[:-1]
+            # Each segment — a stretch between two pauses — is written on a line of its
+            # own. That break is where the engine paused, not where the speaker began a
+            # paragraph, and delivered as written it chopped every dictation longer than
+            # one breath into lines. Segments are joined with one space.
+            if "\n" in text:
+                text = " ".join(line.strip() for line in text.splitlines() if line.strip())
 
         language = (
             detected_language(completed) if self.language == "auto" else self.language

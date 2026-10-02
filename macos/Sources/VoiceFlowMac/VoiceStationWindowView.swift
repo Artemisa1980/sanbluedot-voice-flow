@@ -71,7 +71,7 @@ extension LogCategory {
         switch self {
         case .stt: return VoiceStationTokens.dotBlue
         case .gemini: return VoiceStationTokens.gold
-        case .ollama: return VoiceStationTokens.appBg
+        case .apple: return VoiceStationTokens.inputCream
         case .action: return VoiceStationTokens.logAction
         case .snippet: return VoiceStationTokens.logSnippet
         case .paste: return VoiceStationTokens.logPaste
@@ -204,12 +204,45 @@ public enum RightCardTab: String, CaseIterable, Sendable {
 
 // MARK: - View Model
 @MainActor
+/// The Words section's three tabs.
+public enum WordsTab: String, CaseIterable, Sendable {
+    case corrections = "CORRECTIONS"
+    case vocabulary = "VOCABULARY"
+    case modes = "MODES"
+}
+
+/// A page another surface asks the shell to open.
+public enum StationPageRequest: Equatable, Sendable {
+    case words
+}
+
+/// One LEARN: the pairs, their consent, where they came from, and the pair they replace.
+public struct WordsLearnRequest: Equatable, Sendable {
+    /// One pair typed in the form, or every pair an edit of the dictation produced.
+    public let pairs: [CorrectionPair]
+    /// The second consent a one-word pair needs to rewrite that word everywhere.
+    public let everywhere: Bool
+    public let source: CorrectionSource
+    /// The heard side of an edited pair, when the edit changed it.
+    public let replacing: String?
+    /// The History dictation FIX opened this from. The pair is applied to it as well, so
+    /// FIX fixes the dictation in front of the speaker and not only the next ones.
+    public let dictation: UUID?
+}
+
 public final class VoiceStationViewModel: ObservableObject {
     @Published public var statusTitle: String = "Ready"
     @Published public var statusDetail: String = "Hold Fn/Globe anywhere, or hold the button below."
     @Published public var shortcutName: String = "Fn/Globe"
     @Published public var selectedCleaner: CleanerMode = .literal
     @Published public var selectedMode: ProcessingMode = .clean
+    @Published public var selectedSpeechEngine: SpeechEngine = .whisper
+    public var onSpeechEngineSelect: ((SpeechEngine) -> Void)?
+    /// Where the words go, in the status bar: the speech engine that heard them, or the
+    /// cloud provider they are sent to. It named Whisper whatever engine was chosen.
+    public var privacyLabel: String {
+        selectedCleaner.isCloud ? "Cloud (Gemini)" : "100% Local (\(selectedSpeechEngine.shortName))"
+    }
     /// A way out that does not need a keyboard permission.
     ///
     /// Escape reaches the controller through the global event tap, which requires Input
@@ -254,6 +287,26 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var targetAppName: String = "Desktop"
     @Published public var targetAppProfile: String = "Direct Auto-Paste"
     @Published public var recentDictations: [DictationRecord] = []
+    // MARK: Words
+    /// The vocabulary and corrections as the engine last reported them; nil until read.
+    @Published public var words: WordsSnapshot?
+    @Published public var wordsTab: WordsTab = .corrections
+    @Published public var wordsFilter: WordsFilter = .all
+    @Published public var wordsSearch: String = ""
+    @Published public var teachHeard: String = ""
+    @Published public var teachIntended: String = ""
+    @Published public var teachEverywhere: Bool = false
+    /// The History dictation a correction is being taught from, or nil when typed here.
+    @Published public var teachContext: DictationRecord?
+    /// That dictation's transcript as the speaker is fixing it, word by word.
+    @Published public var teachSentence: String = ""
+    /// The heard side of the pair being edited, so a changed key replaces the old pair.
+    @Published public var editingHeard: String?
+    @Published public var newWord: String = ""
+    /// What the last Words action did or why it was refused, in the engine's words.
+    @Published public var wordsNotice: String?
+    /// A page the next view update should open; cleared by the view that honours it.
+    @Published public var pageRequest: StationPageRequest?
     @Published public var snippets: [VoiceSnippet] = []
     @Published public var activityLogs: [ActivityLogItem] = [
         ActivityLogItem(message: "voice-station initialized · whisper local engine ready.", category: .system, tags: ["ggml-large-v3-turbo"], isHighlight: true),
@@ -274,6 +327,25 @@ public final class VoiceStationViewModel: ObservableObject {
     public var onCopyHistoryRecord: ((DictationRecord) -> Void)?
     public var onCopyRawRecord: ((DictationRecord) -> Void)?
     public var onRepasteHistoryRecord: ((DictationRecord) -> Void)?
+    public var onLearnCorrection: ((WordsLearnRequest) -> Void)?
+    public var onForgetCorrection: ((String) -> Void)?
+    public var onAddWord: ((String) -> Void)?
+    public var onRemoveWord: ((String) -> Void)?
+    public var onRefreshWords: (() -> Void)?
+
+    /// FIX on a History row: open Words with that dictation beside the form, so the
+    /// speaker can say which words it misheard and what they meant.
+    public func teach(from record: DictationRecord) {
+        teachContext = record
+        teachSentence = record.rawText
+        teachHeard = ""
+        teachIntended = ""
+        teachEverywhere = false
+        editingHeard = nil
+        wordsNotice = nil
+        wordsTab = .corrections
+        pageRequest = .words
+    }
     public var onClearHistory: (() -> Void)?
     public var onAddSnippet: ((String, String, String?) -> Void)?
     public var onDeleteSnippet: ((UUID) -> Void)?
@@ -367,7 +439,7 @@ public struct VoiceStationWindowView: View {
         // A root minimum taller than the container makes the view overflow, and an
         // overflowing VStack loses its first and last children first — which is exactly
         // the chrome the speaker needs to keep.
-        .frame(minWidth: 760, maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: ControlWindowController.contentFloor.width, maxWidth: .infinity, maxHeight: .infinity)
         .background(VoiceStationTokens.navy)
         .edgesIgnoringSafeArea(.all)
     }
@@ -454,7 +526,6 @@ public struct VoiceStationWindowView: View {
         case .translate: return "ES ➔ EN"
         case .meeting: return "NOTES"
         case .actions: return "ACTIONS"
-        case .transform: return "TRANSFORM"
         }
     }
 
@@ -637,7 +708,7 @@ public struct VoiceStationWindowView: View {
                 if let rejected = viewModel.rejectedCleanup {
                     rejectedCleanupCard(rejected)
                 }
-                DictationHistoryTabView(viewModel: viewModel, palette: .paper)
+                DictationHistoryTabView(viewModel: viewModel, palette: .paper, scale: .section)
             }
         }
     }
@@ -786,6 +857,12 @@ public struct VoiceStationWindowView: View {
                     "this run keeps \(shortTitle(for: viewModel.selectedMode)) · the mode changes once it is delivered")
                 return
             }
+            // D-23: the same rule the press reads, so the pairing is declined where it
+            // is chosen instead of at the next recording.
+            if let refusal = mode.refusal(with: viewModel.selectedCleaner) {
+                viewModel.reportRefusal(refusal)
+                return
+            }
             viewModel.selectedMode = mode
             viewModel.onModeSelect?(mode)
             viewModel.addLog("mode switched to: \(mode.rawValue)")
@@ -842,7 +919,7 @@ public struct VoiceStationWindowView: View {
             chainLink
             chainStage(
                 caption: "SPEECH · LOCAL",
-                name: "whisper turbo",
+                name: viewModel.selectedSpeechEngine.chainName,
                 fill: VoiceStationTokens.dotBlue,
                 inPath: true,
                 hasRun: viewModel.lastSTTLatency != nil
@@ -872,7 +949,7 @@ public struct VoiceStationWindowView: View {
     private var cleanupStageName: String {
         switch viewModel.selectedCleaner {
         case .literal: return "no cleanup"
-        case .ollama: return "ollama local"
+        case .apple: return "apple local"
         case .gemini: return "gemini \(viewModel.selectedGeminiModel.shortName)"
         }
     }
@@ -1055,27 +1132,56 @@ public struct VoiceStationWindowView: View {
     /// The chain is also the control: the engine and, for a cloud provider, the model
     /// and its stored key. Each option carries the delivery measured on 2026-08-31, so
     /// the choice stays informed rather than a guess.
+    ///
+    /// Four engines in one row where the row has room for their names, two by two where
+    /// it does not. The Settings column is narrower than the station, and there the row
+    /// cut every name down to "Liter…" and "on this…".
     private var patchBay: some View {
-        HStack(alignment: .top, spacing: 10) {
-            patchBank(label: "ENGINE") {
-                ForEach(CleanerMode.allCases, id: \.self) { cleaner in
-                    patchOption(
-                        title: cleaner.displayName,
-                        detail: nil,
-                        isOn: viewModel.selectedCleaner == cleaner,
-                        info: cleaner
-                    ) {
-                        guard viewModel.isSelectionEnabled else {
-                            viewModel.reportRefusal(
-                                "this run keeps \(viewModel.selectedCleaner.displayName) · the engine changes once it is delivered")
-                            return
+        ViewThatFits(in: .horizontal) {
+            engineBank(perRow: CleanerMode.allCases.count)
+            engineBank(perRow: 2)
+        }
+    }
+
+    private func engineBank(perRow: Int) -> some View {
+        let engines = CleanerMode.allCases
+        let rows = stride(from: 0, to: engines.count, by: perRow).map {
+            Array(engines[$0..<min($0 + perRow, engines.count)])
+        }
+        return patchBank(label: "ENGINE") {
+            Grid(horizontalSpacing: 7, verticalSpacing: 7) {
+                ForEach(rows, id: \.self) { row in
+                    GridRow {
+                        ForEach(row, id: \.self) { cleaner in
+                            engineOption(cleaner)
                         }
-                        viewModel.selectedCleaner = cleaner
-                        viewModel.onCleanerSelect?(cleaner)
-                        viewModel.addLog("provider: \(cleaner.displayName)")
                     }
                 }
             }
+        }
+    }
+
+    private func engineOption(_ cleaner: CleanerMode) -> some View {
+        patchOption(
+            title: cleaner.shortName,
+            detail: cleaner.kindName,
+            isOn: viewModel.selectedCleaner == cleaner,
+            info: cleaner
+        ) {
+            guard viewModel.isSelectionEnabled else {
+                viewModel.reportRefusal(
+                    "this run keeps \(viewModel.selectedCleaner.displayName) · the engine changes once it is delivered")
+                return
+            }
+            // D-23, the other direction: Literal cannot run the rewriting mode in use.
+            if viewModel.selectedMode.refusal(with: cleaner) != nil {
+                viewModel.reportRefusal(
+                    "\(cleaner.shortName) cannot run \(viewModel.selectedMode.badgeName) · switch the mode back to CLEAN first")
+                return
+            }
+            viewModel.selectedCleaner = cleaner
+            viewModel.onCleanerSelect?(cleaner)
+            viewModel.addLog("provider: \(cleaner.displayName)")
         }
     }
 
@@ -1127,13 +1233,16 @@ public struct VoiceStationWindowView: View {
                             )
                         )
 
-                    VStack(alignment: .leading, spacing: 0) {
+                    // The engine name is the thing being chosen, so it is read first.
+                    // It sat at 9.5pt because this row once carried the whole display
+                    // name and had to fit it; the short name leaves room to be legible.
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(title)
-                            .font(VoiceStationTokens.mono(size: 9.5, weight: .bold))
+                            .font(VoiceStationTokens.mono(size: 12, weight: .bold))
                             .lineLimit(1)
                         if let detail {
                             Text(detail)
-                                .font(VoiceStationTokens.mono(size: 7.5))
+                                .font(VoiceStationTokens.mono(size: 9))
                                 .opacity(0.65)
                                 .lineLimit(1)
                         }
@@ -1449,7 +1558,10 @@ public struct VoiceStationWindowView: View {
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .onChange(of: viewModel.activityLogs.count) { _ in
+                        // Keyed on the newest entry, not the count: the log is capped at
+                        // 50, so after that the count never changes and the console
+                        // stopped following new lines (D-56).
+                        .onChange(of: viewModel.activityLogs.last?.id) { _ in
                             if let last = filteredLogs.last {
                                 withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                             }
@@ -1480,7 +1592,7 @@ public struct VoiceStationWindowView: View {
                     .minimumScaleFactor(0.8)
                     .truncationMode(.tail)
                 Spacer(minLength: 6)
-                Text(viewModel.selectedCleaner.isCloud ? "Cloud (Gemini)" : "100% Local (Whisper)")
+                Text(viewModel.privacyLabel)
                     .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
                     .foregroundColor(VoiceStationTokens.appBg)
                     .lineLimit(1)
@@ -1548,7 +1660,7 @@ public struct VoiceStationWindowView: View {
     private func cleanerButtonLabel(for cleaner: CleanerMode) -> String {
         switch cleaner {
         case .literal: return "Literal (No AI)"
-        case .ollama: return "Ollama (Local)"
+        case .apple: return "Apple (Local)"
         case .gemini: return "Gemini (Cloud)"
         }
     }
@@ -1557,7 +1669,7 @@ public struct VoiceStationWindowView: View {
         switch viewModel.selectedFilter {
         case .all: return viewModel.activityLogs
         case .audio: return viewModel.activityLogs.filter { $0.category == .stt }
-        case .ai: return viewModel.activityLogs.filter { $0.category == .gemini || $0.category == .ollama }
+        case .ai: return viewModel.activityLogs.filter { [.gemini, .apple].contains($0.category) }
         case .actions: return viewModel.activityLogs.filter { $0.category == .action }
         case .snippets: return viewModel.activityLogs.filter { $0.category == .snippet }
         case .system: return viewModel.activityLogs.filter { $0.category == .system || $0.category == .paste }
@@ -1696,8 +1808,7 @@ struct PaperChassis<Trailing: View, Content: View>: View {
                     .minimumScaleFactor(0.8)
                     .truncationMode(.tail)
                 Spacer(minLength: 6)
-                Text(viewModel.selectedCleaner.isCloud
-                     ? "Cloud (Gemini)" : "100% Local (Whisper)")
+                Text(viewModel.privacyLabel)
                     .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
                     .foregroundColor(VoiceStationTokens.appBg)
                     .lineLimit(1)
@@ -1736,9 +1847,55 @@ struct ChassisCount: View {
     }
 }
 
+/// The type sizes of one History surface.
+///
+/// The History section is where a delivery is read and reviewed, so its text is large.
+/// The station's console tab sits beside the microphone at the size of the log it shares
+/// a screen with, so its text is small. One row design, two scales — changing one never
+/// resizes the other.
+private struct HistoryTypeScale {
+    let time: CGFloat
+    let pill: CGFloat
+    let pillPadding: (horizontal: CGFloat, vertical: CGFloat)
+    let meta: CGFloat
+    let totalLabel: CGFloat
+    let total: CGFloat
+    let reason: CGFloat
+    let text: CGFloat
+    let textLineSpacing: CGFloat
+    let control: CGFloat
+    let buttonPadding: (horizontal: CGFloat, vertical: CGFloat)
+    let stroke: CGFloat
+    let layerLabel: CGFloat
+    let layerText: CGFloat
+    let rowPadding: (horizontal: CGFloat, vertical: CGFloat)
+    let rowSpacing: CGFloat
+    let rail: CGFloat
+    let radius: CGFloat
+    let listSpacing: CGFloat
+    let listPadding: CGFloat
+
+    /// The History section.
+    static let section = HistoryTypeScale(
+        time: 10, pill: 8.5, pillPadding: (6, 2.5), meta: 9, totalLabel: 7.5, total: 10,
+        reason: 9, text: 12, textLineSpacing: 3.5, control: 8.5, buttonPadding: (8, 3.5),
+        stroke: 1.5, layerLabel: 7.5, layerText: 10, rowPadding: (13, 11), rowSpacing: 7,
+        rail: 5, radius: 9, listSpacing: 10, listPadding: 10
+    )
+
+    /// The station's console tab, at the size of the log beside it.
+    static let console = HistoryTypeScale(
+        time: 8.5, pill: 7.5, pillPadding: (5, 1.5), meta: 7.5, totalLabel: 6.5, total: 8,
+        reason: 8, text: 9, textLineSpacing: 2, control: 7.5, buttonPadding: (7, 3),
+        stroke: 1, layerLabel: 7, layerText: 8.5, rowPadding: (10, 8), rowSpacing: 6,
+        rail: 3, radius: 6, listSpacing: 6, listPadding: 8
+    )
+}
+
 private struct DictationHistoryTabView: View {
     @ObservedObject var viewModel: VoiceStationViewModel
     var palette: ConsolePalette = .terminal
+    var scale: HistoryTypeScale = .console
 
     var body: some View {
         if viewModel.recentDictations.isEmpty {
@@ -1763,150 +1920,265 @@ private struct DictationHistoryTabView: View {
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1.5))
         } else {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: scale.listSpacing) {
                     ForEach(viewModel.recentDictations) { record in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 6) {
-                                Text("[\(record.timeString)]")
-                                    .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
-                                    .foregroundColor(palette.label)
-
-                                Text(record.mode.uppercased())
-                                    .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(VoiceStationTokens.dotBlue.opacity(0.3))
-                                    .foregroundColor(VoiceStationTokens.dotBlue)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-
-                                Text(record.model ?? record.cleaner)
-                                    .font(VoiceStationTokens.mono(size: 7.5))
-                                    .foregroundColor(palette.inkDim)
-
-                                Spacer()
-
-                                Text(String(format: "%.1fs", record.latencySeconds))
-                                    .font(VoiceStationTokens.mono(size: 7.5))
-                                    .foregroundColor(palette.inkDim)
-                            }
-
-                            // A delivered transcript looked exactly like a successful
-                            // cleanup: same badges, same engine name, and nothing saying
-                            // the engine's text never arrived. framework.md asks for the
-                            // opposite — which side refused, because a guard rejection
-                            // and a provider failure call for opposite responses.
-                            if record.usedFallback {
-                                HStack(spacing: 5) {
-                                    Text("FALLBACK")
-                                        .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(VoiceStationTokens.rec.opacity(0.3))
-                                        .foregroundColor(VoiceStationTokens.rec)
-                                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                                    Text(record.fallbackReason
-                                         ?? "the cleanup did not arrive")
-                                        .font(VoiceStationTokens.mono(size: 7.5))
-                                        .foregroundColor(palette.inkDim)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.8)
-                                    Spacer(minLength: 0)
-                                }
-                                .accessibilityElement(children: .combine)
-                            }
-
-                            Text(record.finalText)
-                                .font(VoiceStationTokens.mono(size: 12, weight: .regular))
-                                .foregroundColor(palette.ink)
-                                .textSelection(.enabled)
-
-                            DisclosureGroup("VIEW ORIGINAL & PERSONALIZED TEXT") {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("ORIGINAL · speech recognition").fontWeight(.bold)
-                                    Text(record.rawText)
-                                    Text("PERSONALIZED · confirmed corrections").fontWeight(.bold)
-                                    Text(record.personalizedText)
-                                }
-                                .font(VoiceStationTokens.mono(size: 12))
-                                .foregroundColor(palette.ink)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 10)
-                            }
-                            .font(VoiceStationTokens.mono(size: 10, weight: .bold))
-                            .foregroundColor(VoiceStationTokens.gold)
-
-                            HStack(spacing: 6) {
-                                Button(action: {
-                                    viewModel.onCopyHistoryRecord?(record)
-                                    viewModel.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
-                                }) {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "doc.on.doc")
-                                            .font(.system(size: 8))
-                                        Text("COPY")
-                                            .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                                    }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(VoiceStationTokens.gold)
-                                    .foregroundColor(VoiceStationTokens.navy)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                }
-                                .buttonStyle(.plain)
-
-                                if record.rawText != record.finalText && !record.rawText.isEmpty {
-                                    Button(action: {
-                                        viewModel.onCopyRawRecord?(record)
-                                        viewModel.addLog("copied raw transcript from history", isHighlight: true)
-                                    }) {
-                                        HStack(spacing: 3) {
-                                            Image(systemName: "waveform")
-                                                .font(.system(size: 8))
-                                            Text("RAW")
-                                                .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                                        }
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3)
-                                        .background(VoiceStationTokens.panelHeader)
-                                        .foregroundColor(VoiceStationTokens.navy)
-                                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                Button(action: {
-                                    viewModel.onRepasteHistoryRecord?(record)
-                                }) {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "bolt.fill")
-                                            .font(.system(size: 8))
-                                        Text("RE-PASTE")
-                                            .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                                    }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(VoiceStationTokens.dotBlue)
-                                    .foregroundColor(VoiceStationTokens.navy)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(8)
-                        .background(palette.sunkenRow)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.rule, lineWidth: 1))
+                        HistoryEntryRow(
+                            record: record,
+                            viewModel: viewModel,
+                            palette: palette,
+                            scale: scale
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+                .padding(scale.listPadding)
             }
             .background(palette.well)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1.5))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// One delivered dictation, as approved in `docs/history-redesign-01.html`.
+///
+/// The text is the largest thing in the row; the time, mode and total sit on one line
+/// above it and the actions on one line below. The rail on the left carries the state —
+/// sage delivered, coral fallback — so a fallback is seen before a word of it is read.
+private struct HistoryEntryRow: View {
+    let record: DictationRecord
+    @ObservedObject var viewModel: VoiceStationViewModel
+    let palette: ConsolePalette
+    let scale: HistoryTypeScale
+    @State private var showsOriginal = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+                .fill(record.usedFallback ? VoiceStationTokens.rec : VoiceStationTokens.ok)
+                .frame(width: scale.rail)
+
+            VStack(alignment: .leading, spacing: scale.rowSpacing) {
+                header
+
+                // A delivered transcript looked exactly like a successful cleanup.
+                // framework.md asks which side refused, because a guard rejection and a
+                // provider failure call for opposite responses.
+                if record.usedFallback {
+                    Text(fallbackSentence)
+                        .font(VoiceStationTokens.mono(size: scale.reason))
+                        .foregroundColor(palette.inkDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text(record.currentText)
+                    .font(VoiceStationTokens.mono(size: scale.text))
+                    .lineSpacing(scale.textLineSpacing)
+                    .foregroundColor(palette.ink)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                footer
+
+                if showsOriginal {
+                    layers
+                }
+            }
+            .padding(.horizontal, scale.rowPadding.horizontal)
+            .padding(.vertical, scale.rowPadding.vertical)
+        }
+        .background(palette.sunkenRow)
+        .clipShape(RoundedRectangle(cornerRadius: scale.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: scale.radius, style: .continuous).stroke(palette.rule, lineWidth: 1))
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text("[\(record.timeString)]")
+                .font(VoiceStationTokens.mono(size: scale.time, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(palette.ink)
+
+            pill(modeBadge, fill: VoiceStationTokens.dotBlue)
+            if record.fixedText != nil {
+                pill("FIXED", fill: VoiceStationTokens.gold)
+            }
+            if record.usedFallback {
+                pill("FALLBACK", fill: VoiceStationTokens.rec)
+            }
+
+            Text(engineLine)
+                .font(VoiceStationTokens.mono(size: scale.meta))
+                .foregroundColor(palette.inkDim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 8)
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("TOTAL")
+                    .font(VoiceStationTokens.mono(size: scale.totalLabel, weight: .bold))
+                    .tracking(1.1)
+                    .foregroundColor(palette.inkDim)
+                Text(String(format: "%.1f s", record.latencySeconds))
+                    .font(VoiceStationTokens.pixel(scale.total))
+                    .foregroundColor(palette.ink)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Button(action: { showsOriginal.toggle() }) {
+                Text(showsOriginal ? "▾ ORIGINAL" : "▸ ORIGINAL")
+                    .font(VoiceStationTokens.mono(size: scale.control, weight: .bold))
+                    .tracking(1.0)
+                    .foregroundColor(palette.inkDim)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showsOriginal ? "Hide the original text" : "Show the original text")
+
+            Spacer(minLength: 8)
+
+            actionButton("COPY", primary: true) {
+                viewModel.onCopyHistoryRecord?(record)
+                viewModel.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
+            }
+            if record.rawText != record.finalText && !record.rawText.isEmpty {
+                actionButton("RAW") {
+                    viewModel.onCopyRawRecord?(record)
+                    viewModel.addLog("copied raw transcript from history", isHighlight: true)
+                }
+            }
+            // FIX teaches: it opens Words with this dictation, where the speaker writes
+            // what was misheard and what was meant. The pair then applies to every
+            // engine. A take-back said out loud is resolved as it is dictated.
+            if !record.rawText.isEmpty {
+                actionButton("FIX") {
+                    viewModel.teach(from: record)
+                }
+                .accessibilityLabel("Teach a correction from this dictation")
+            }
+            actionButton("RE-PASTE") {
+                viewModel.onRepasteHistoryRecord?(record)
+            }
+        }
+    }
+
+    private var layers: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            layerLabel("HEARD")
+            Text(record.rawText)
+                .font(VoiceStationTokens.mono(size: scale.layerText))
+                .lineSpacing(3)
+                .foregroundColor(palette.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            layerLabel("CORRECTED")
+                .padding(.top, 5)
+            if record.personalizedText == record.rawText {
+                Text("no corrections applied")
+                    .font(VoiceStationTokens.mono(size: scale.layerText))
+                    .italic()
+                    .foregroundColor(palette.inkDim)
+            } else {
+                Text(record.personalizedText)
+                    .font(VoiceStationTokens.mono(size: scale.layerText))
+                    .lineSpacing(3)
+                    .foregroundColor(palette.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let fixed = record.fixedText, fixed != record.finalText {
+                layerLabel("BEFORE FIX")
+                    .padding(.top, 5)
+                Text(record.finalText)
+                    .font(VoiceStationTokens.mono(size: scale.layerText))
+                    .lineSpacing(3)
+                    .foregroundColor(palette.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.well)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(palette.rule, lineWidth: 1))
+    }
+
+    /// The badge the HUD uses for the same mode, so a run reads the same in both places.
+    private var modeBadge: String {
+        if let mode = ProcessingMode(rawValue: record.mode) {
+            return mode.badgeName
+        }
+        return record.mode == "action" ? ProcessingMode.actions.badgeName : record.mode.uppercased()
+    }
+
+    /// The engine that answered and where the text went. An executed action pasted
+    /// nothing, so it names only the engine.
+    private var engineLine: String {
+        let engine = record.model ?? record.cleaner
+        if record.mode == "action" {
+            return engine
+        }
+        return "\(engine) · \(record.didAutoPaste ? "pasted" : "copied")"
+    }
+
+    private var fallbackSentence: String {
+        let reason = record.fallbackReason ?? "the cleanup did not arrive"
+        return reason.prefix(1).uppercased() + reason.dropFirst() + " · the transcript was delivered instead."
+    }
+
+    /// A state is a filled pill with a navy hairline, and ink follows the fill.
+    private func pill(_ title: String, fill: Color) -> some View {
+        Text(title)
+            .font(VoiceStationTokens.mono(size: scale.pill, weight: .bold))
+            .tracking(0.8)
+            .padding(.horizontal, scale.pillPadding.horizontal)
+            .padding(.vertical, scale.pillPadding.vertical)
+            .background(fill)
+            .foregroundColor(VoiceStationTokens.navy)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(VoiceStationTokens.navy, lineWidth: scale.stroke)
+            )
+    }
+
+    private func layerLabel(_ title: String) -> some View {
+        Text(title)
+            .font(VoiceStationTokens.mono(size: scale.layerLabel, weight: .bold))
+            .tracking(1.1)
+            .foregroundColor(palette.inkDim)
+    }
+
+    private func actionButton(
+        _ title: String,
+        primary: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(VoiceStationTokens.mono(size: scale.control, weight: .bold))
+                .tracking(0.8)
+                .padding(.horizontal, scale.buttonPadding.horizontal)
+                .padding(.vertical, scale.buttonPadding.vertical)
+                .background(primary ? VoiceStationTokens.gold : VoiceStationTokens.inputCream)
+                .foregroundColor(VoiceStationTokens.navy)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(VoiceStationTokens.navy, lineWidth: scale.stroke)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -2462,7 +2734,7 @@ private struct TacticalFilterChipsView: View {
         switch filter {
         case .all: return logs.count
         case .audio: return logs.filter { $0.category == .stt }.count
-        case .ai: return logs.filter { $0.category == .gemini || $0.category == .ollama }.count
+        case .ai: return logs.filter { [.gemini, .apple].contains($0.category) }.count
         case .actions: return logs.filter { $0.category == .action }.count
         case .snippets: return logs.filter { $0.category == .snippet }.count
         case .system: return logs.filter { $0.category == .system || $0.category == .paste }.count

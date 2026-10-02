@@ -8,6 +8,7 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     var onOpenInputMonitoring: (() -> Void)?
     var onOpenAccessibility: (() -> Void)?
     var onCleanerChange: ((CleanerMode) -> Void)?
+    var onSpeechEngineChange: ((SpeechEngine) -> Void)?
     var onModeChange: ((ProcessingMode) -> Void)?
     var onGeminiModelChange: ((GeminiModel) -> Void)?
     var onSetAPIKey: ((CleanerMode) -> Void)?
@@ -15,6 +16,11 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     var onCopyHistoryRecord: ((DictationRecord) -> Void)?
     var onCopyRawRecord: ((DictationRecord) -> Void)?
     var onRepasteHistoryRecord: ((DictationRecord) -> Void)?
+    var onLearnCorrection: ((WordsLearnRequest) -> Void)?
+    var onForgetCorrection: ((String) -> Void)?
+    var onAddWord: ((String) -> Void)?
+    var onRemoveWord: ((String) -> Void)?
+    var onRefreshWords: (() -> Void)?
     var onClearHistory: (() -> Void)?
     var onCancelRecording: (() -> Void)?
     var onAcceptRejectedCleanup: ((String) -> Void)?
@@ -32,7 +38,11 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     /// Raised from 560 to 700 on 2026-09-01, against two screenshots of the running window: at
     /// 560 the mode switch and the hold hint fall out of the control card, and at the
     /// measured 687 of the size she accepted they are all present. 700 keeps a margin.
-    static let contentFloor = NSSize(width: 760, height: 700)
+    ///
+    /// The width is the sidebar (184), the workspace padding (44), the 16 between the
+    /// cards and two 320 floors — the control card's and the console's. At the earlier
+    /// 760 the control card got 196 and spilled over the sidebar (D-57).
+    static let contentFloor = NSSize(width: 884, height: 700)
 
     /// Where the station was last left. macOS keeps the frame under this name in the
     /// application's own defaults, so the window reopens where it was put instead of
@@ -152,6 +162,10 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         viewModel.selectedMode = selected
     }
 
+    func configureSpeechEngine(selected: SpeechEngine) {
+        viewModel.selectedSpeechEngine = selected
+    }
+
     func configureGeminiModel(selected: GeminiModel) {
         viewModel.selectedGeminiModel = selected
     }
@@ -186,6 +200,31 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
 
     func updateRecentDictations(_ records: [DictationRecord]) {
         viewModel.recentDictations = records
+    }
+
+    /// Show the vocabulary and corrections the engine just reported.
+    func updateWords(_ snapshot: WordsSnapshot) {
+        viewModel.words = snapshot
+    }
+
+    /// Say what the last Words action did, or why the engine refused it.
+    func setWordsNotice(_ notice: String?) {
+        viewModel.wordsNotice = notice
+    }
+
+    /// Empty the teach form after a pair was stored, so the next one starts clean.
+    func clearTeachForm() {
+        viewModel.teachHeard = ""
+        viewModel.teachIntended = ""
+        viewModel.teachSentence = ""
+        viewModel.teachEverywhere = false
+        viewModel.teachContext = nil
+        viewModel.editingHeard = nil
+    }
+
+    /// Empty the add-a-word field after the word was stored.
+    func clearNewWord() {
+        viewModel.newWord = ""
     }
 
     func updateSnippets(_ snippets: [VoiceSnippet]) {
@@ -226,6 +265,9 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         viewModel.onCleanerSelect = { [weak self] cleaner in
             self?.onCleanerChange?(cleaner)
         }
+        viewModel.onSpeechEngineSelect = { [weak self] engine in
+            self?.onSpeechEngineChange?(engine)
+        }
         viewModel.onModeSelect = { [weak self] mode in
             self?.onModeChange?(mode)
         }
@@ -264,6 +306,21 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         }
         viewModel.onRepasteHistoryRecord = { [weak self] record in
             self?.onRepasteHistoryRecord?(record)
+        }
+        viewModel.onLearnCorrection = { [weak self] request in
+            self?.onLearnCorrection?(request)
+        }
+        viewModel.onForgetCorrection = { [weak self] heard in
+            self?.onForgetCorrection?(heard)
+        }
+        viewModel.onAddWord = { [weak self] term in
+            self?.onAddWord?(term)
+        }
+        viewModel.onRemoveWord = { [weak self] term in
+            self?.onRemoveWord?(term)
+        }
+        viewModel.onRefreshWords = { [weak self] in
+            self?.onRefreshWords?()
         }
         viewModel.onClearHistory = { [weak self] in
             self?.onClearHistory?()

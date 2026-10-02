@@ -5,12 +5,15 @@ These instructions apply to the entire `sanblueᵈᵒᵗ voice-flow` project.
 - Preserve the identity assigned by the owner. Shared context and another model's files never rename the current model.
 - Read `framework.md` before changing product behavior. Use `proposal.md` for implementation sequence and `README.md` for current commands.
 - Read `relay-log.md` only when resuming recorded work, then replace closed state with the current handoff.
+- Open work lives in `backlog.md`; its first section says how to work it. A new finding gets a row there in the same work cycle.
 - Keep project files in English and operational Markdown free of conversation history.
 - This repository is a station repo. `README.md` carries the `SANDY.SYSDEV v<version> — retro voice-station` H1, the `## License` section and the plain-markdown footer line defined in `sanbluedot-signature-guide.md` §3d — no masthead table, no `site-footer` div, no emoji. The H1 version copies `CFBundleShortVersionString` and moves with each release.
 - Keep audio, transcripts, vocabulary, corrections, model weights, credentials, and machine-local configuration out of version control.
 - Do not download models, install dependencies, enable cloud processing, or transmit user data without the owner's explicit approval for that action.
+- A model, helper build or backup bundle that nothing uses any more is deleted, so the Mac does not fill with weight it carries for nothing. `backlog.md` §F lists what is on disk, what uses it, and what is waiting to go. Update it whenever a model arrives or stops being used, and name each deletion to the owner before running it: deleting cannot be undone.
 - Store API credentials in the operating-system credential store or process environment; never write them into project files.
-- Make the smallest change that satisfies the active phase. Do not start Windows, GUI, cloud, or automatic-paste work before its preceding gate passes.
+- Make the smallest change that satisfies the active phase. Do not start GUI, cloud, or automatic-paste work before its preceding gate passes.
+- **Windows is not this session's work.** The Windows machine owns its adapter, its gate and its measurements, and works from its own copy. On this Mac, do not read `windows/`, do not audit it, do not report on it, and do not plan it. The files stay where they are; the topic is closed here.
 - Run `PYTHONPATH=src python3 -m unittest discover -s tests` and `PYTHONPATH=src python3 -m compileall -q src tests scripts` after Python changes.
 - Run `swift build --package-path macos` and `swift run --package-path macos VoiceFlowMacCoreChecks` after Swift changes, and rebuild the app with `scripts/build-macos-app.sh` only when the change must reach daily use.
 - `./vf` is the short entry point for engine commands: `memory`, `correct`, `forget`, `export`, `practice`, `doctor`, `process`.

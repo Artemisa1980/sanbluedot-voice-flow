@@ -17,6 +17,10 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
     /// field decode with nil rather than failing.
     public let fallbackReason: String?
     public let didAutoPaste: Bool
+    /// What FIX made of this dictation, kept in the row it came from. A fix that joined
+    /// History as a row of its own duplicated the dictation and, with ten slots, pushed
+    /// a real one out. Optional: records written before it decode with nil.
+    public let fixedText: String?
 
     public init(
         id: UUID = UUID(),
@@ -30,7 +34,8 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
         latencySeconds: Double,
         usedFallback: Bool = false,
         fallbackReason: String? = nil,
-        didAutoPaste: Bool = false
+        didAutoPaste: Bool = false,
+        fixedText: String? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -44,6 +49,48 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
         self.usedFallback = usedFallback
         self.fallbackReason = fallbackReason
         self.didAutoPaste = didAutoPaste
+        self.fixedText = fixedText
+    }
+
+    /// The text this row stands for now: the fix when there is one, else what was delivered.
+    public var currentText: String {
+        fixedText ?? finalText
+    }
+
+    /// The same dictation with its fix attached. Identity and time are kept, so the row
+    /// stays where it was.
+    public func withFix(_ text: String) -> DictationRecord {
+        DictationRecord(
+            id: id,
+            timestamp: timestamp,
+            rawText: rawText,
+            personalizedText: personalizedText,
+            finalText: finalText,
+            cleaner: cleaner,
+            mode: mode,
+            model: model,
+            latencySeconds: latencySeconds,
+            usedFallback: usedFallback,
+            fallbackReason: fallbackReason,
+            didAutoPaste: didAutoPaste,
+            fixedText: text
+        )
+    }
+
+    /// Whether two texts say the same words, ignoring case, accents and punctuation.
+    ///
+    /// A fix exists to drop what the speaker took back. One that only moved a comma or
+    /// restored an accent changed nothing worth a fix, and is reported as nothing to
+    /// correct rather than stored.
+    public static func sameWords(_ first: String, _ second: String) -> Bool {
+        words(first) == words(second)
+    }
+
+    private static func words(_ text: String) -> [String] {
+        text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
     }
 
     public var timeString: String {
@@ -61,7 +108,7 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
     /// Single-line compact snippet for menu display.
     public func menuPreview(maxLength: Int = 42) -> String {
         let limit = max(0, maxLength)
-        let sanitized = finalText
+        let sanitized = currentText
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if sanitized.count <= limit {
@@ -80,8 +127,8 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
             modeTag = "NOTES"
         case "action", "actions":
             modeTag = "ACTION"
-        case "transform":
-            modeTag = "TRANSFORM"
+        case "fix":
+            modeTag = "FIX"
         default:
             modeTag = "CLEAN"
         }
@@ -121,6 +168,13 @@ public struct DictationHistoryStore: Codable, Equatable, Sendable {
         if records.count > Self.maxCapacity {
             records.removeLast(records.count - Self.maxCapacity)
         }
+    }
+
+    /// Attach a fix to the row it belongs to. False when the row is no longer held.
+    public mutating func attachFix(_ text: String, to id: UUID) -> Bool {
+        guard let index = records.firstIndex(where: { $0.id == id }) else { return false }
+        records[index] = records[index].withFix(text)
+        return true
     }
 
     public mutating func clear() {

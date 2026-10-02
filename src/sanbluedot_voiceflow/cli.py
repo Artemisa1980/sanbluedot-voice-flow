@@ -4,7 +4,12 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from .cleaners import CLEANER_NAMES, DEFAULT_GEMINI_MODEL, build_cleaner
+from .cleaners import (
+    CLEANER_NAMES,
+    DEFAULT_APPLE_BINARY,
+    DEFAULT_GEMINI_MODEL,
+    build_cleaner,
+)
 from .clipboard import copy_text
 from .credentials import (
     KEYCHAIN_SERVICE,
@@ -25,12 +30,15 @@ from .distill import (
 from .doctor import run_checks
 from .errors import CleanupFailed, VoiceFlowError
 from .memory import (
+    CORRECTION_SOURCES,
     DEFAULT_VOCABULARY,
     CorrectionStore,
+    add_vocabulary_term,
     build_initial_prompt,
     correction_needs_global_confirmation,
     export_memory,
     load_vocabulary,
+    remove_vocabulary_term,
 )
 from .practice import (
     PracticeStore,
@@ -40,10 +48,22 @@ from .practice import (
 )
 from .pipeline import DictationPipeline
 from .snippets import Snippet, SnippetStore
-from .transcribers import WhisperCppTranscriber
+from .transcribers import ParakeetTranscriber, WhisperCppTranscriber
+from .transcribers.parakeet import DEFAULT_BINARY as DEFAULT_PARAKEET_BINARY
+from .transcribers.parakeet import DEFAULT_MODEL_DIR as DEFAULT_PARAKEET_MODEL_DIR
 
 
 DEFAULT_WHISPER_MODEL = Path("models/ggml-large-v3-turbo.bin")
+
+# The modes that ask a model to rewrite the text. `literal` returns what it was given, so
+# each of these paired with it produces an ordinary dictation under a label that promises
+# otherwise. `clean` is absent on purpose: it is the default pairing, and `actions`
+# reaches the engine as `clean`.
+REWRITING_MODES = ("translate", "meeting")
+# Resolves the self-corrections in one delivered dictation, on request from its History
+# row. It reaches the engine only through `clean`, never as a dictation mode, so it is
+# not in the list above, which mirrors the modes the app offers before recording.
+FIX_MODE = "fix"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -69,46 +89,41 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Inspect local engine dependencies.")
     doctor.add_argument("--whisper-bin", default="whisper-cli")
     doctor.add_argument("--whisper-model", type=Path)
-    doctor.add_argument("--ollama-url", default="http://127.0.0.1:11434")
-    doctor.add_argument("--ollama-model", default="qwen3:4b")
 
     process = subparsers.add_parser("process", help="Transcribe one local audio file.")
     process.add_argument("audio", type=Path)
+    process.add_argument(
+        "--transcriber",
+        choices=["whisper", "parakeet"],
+        default="whisper",
+        help="whisper (whisper.cpp, reads the vocabulary) or parakeet (Parakeet Ultra).",
+    )
     process.add_argument("--whisper-bin", default="whisper-cli")
-    process.add_argument("--whisper-model", type=Path, required=True)
+    process.add_argument("--whisper-model", type=Path)
+    process.add_argument("--parakeet-bin", default=DEFAULT_PARAKEET_BINARY)
+    process.add_argument("--parakeet-models", type=Path, default=DEFAULT_PARAKEET_MODEL_DIR)
     process.add_argument("--language", default="auto", choices=["auto", "en", "es"])
     process.add_argument("--cleaner", choices=list(CLEANER_NAMES), default="literal")
     process.add_argument(
         "--mode",
-        choices=["clean", "translate", "meeting", "transform"],
+        choices=["clean", "translate", "meeting"],
         default="clean",
-        help="Processing mode: clean, translate (ES -> EN), meeting (notes & action items), or transform (selection).",
-    )
-    process.add_argument(
-        "--context-text",
-        default=None,
-        help=(
-            "Reference text or highlighted selection to transform. Typed deliberately "
-            "at a terminal; the application uses --context-text-stdin instead."
-        ),
-    )
-    process.add_argument(
-        "--context-text-stdin",
-        action="store_true",
-        help=(
-            "Read the selection to transform from standard input. A caller that holds "
-            "the speaker's screen content uses this: an argument is visible to every "
-            "process the user runs, and `ps -ww -ax` prints it in full."
-        ),
+        help="Processing mode: clean, translate (ES -> EN), or meeting (notes & action items).",
     )
     process.add_argument(
         "--app-name",
         default=None,
         help="Frontmost application name, substituted for the {app} snippet macro.",
     )
-    process.add_argument("--ollama-url", default="http://127.0.0.1:11434")
-    process.add_argument("--ollama-model", default="qwen3:4b")
     process.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
+    process.add_argument(
+        "--apple-bin",
+        default=DEFAULT_APPLE_BINARY,
+        help=(
+            "The binary that reaches Apple's on-device model. Built by "
+            "`swift build --package-path macos` and installed beside the engine."
+        ),
+    )
     process.add_argument("--copy", action="store_true")
     process.add_argument(
         "--json",
@@ -139,7 +154,31 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    subparsers.add_parser("memory", help="Inspect the local vocabulary and corrections.")
+    clean = subparsers.add_parser(
+        "clean",
+        help="Clean, translate or structure text that is already written.",
+    )
+    clean.add_argument(
+        "--mode",
+        choices=["clean", "translate", "meeting", FIX_MODE],
+        default="clean",
+    )
+    clean.add_argument("--cleaner", choices=list(CLEANER_NAMES), default="apple")
+    clean.add_argument("--language", default=None, help="Language hint for the cleaner.")
+    clean.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
+    clean.add_argument("--apple-bin", default=DEFAULT_APPLE_BINARY)
+    clean.add_argument("--app-name", default=None)
+    clean.add_argument("--no-memory", action="store_true")
+    clean.add_argument("--json", action="store_true")
+
+    memory = subparsers.add_parser(
+        "memory", help="Inspect the local vocabulary and corrections."
+    )
+    memory.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the vocabulary, how much of it reaches the engine, and the corrections.",
+    )
 
     correct = subparsers.add_parser("correct", help="Confirm one correction pair.")
     correct.add_argument("--heard", required=True, help="What the engine wrote.")
@@ -149,6 +188,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Confirm that a single-word trigger may rewrite that word everywhere.",
     )
+    correct.add_argument(
+        "--source",
+        choices=list(CORRECTION_SOURCES),
+        default="",
+        help="Where the pair was confirmed: fix (a History row) or window (Words).",
+    )
+
+    vocab = subparsers.add_parser("vocab", help="Add or remove one vocabulary term.")
+    vocab.add_argument("action", choices=["add", "remove"])
+    vocab.add_argument("--term", required=True)
 
     forget = subparsers.add_parser("forget", help="Delete one confirmed correction.")
     forget.add_argument("--heard", required=True)
@@ -264,8 +313,6 @@ def _doctor(args: argparse.Namespace) -> int:
     checks = run_checks(
         whisper_binary=args.whisper_bin,
         whisper_model=args.whisper_model,
-        ollama_url=args.ollama_url,
-        ollama_model=args.ollama_model,
     )
     for check in checks:
         marker = "PASS" if check.ok else "MISSING"
@@ -274,10 +321,35 @@ def _doctor(args: argparse.Namespace) -> int:
 
 
 def _memory(args: argparse.Namespace) -> int:
-    del args
     terms = load_vocabulary()
     prompt = build_initial_prompt(terms)
     in_prompt = len(prompt.split(", ")) if prompt else 0
+
+    if getattr(args, "json", False):
+        # What the Words section draws. `in_prompt` is how many terms, from the top, the
+        # engine reads before it listens; the rest are stored and unread.
+        store = CorrectionStore()
+        print(
+            json.dumps(
+                {
+                    "vocabulary": terms,
+                    "in_prompt": in_prompt,
+                    "corrections": [
+                        {
+                            "heard": item.heard,
+                            "intended": item.intended,
+                            "confirmed_at": item.confirmed_at,
+                            "source": item.source,
+                            "everywhere": correction_needs_global_confirmation(item.heard),
+                        }
+                        for item in store.load()
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+
     print(f"Vocabulary: {len(terms)} terms, {in_prompt} fit the engine prompt.")
     print(f"  file: {DEFAULT_VOCABULARY}")
 
@@ -302,7 +374,9 @@ def _correct(args: argparse.Namespace) -> int:
         )
         return 1
     try:
-        confirmed = CorrectionStore().add(args.heard, args.intended)
+        confirmed = CorrectionStore().add(
+            args.heard, args.intended, source=getattr(args, "source", "")
+        )
     except (ValueError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -316,6 +390,22 @@ def _forget(args: argparse.Namespace) -> int:
         return 1
     print(f"Deleted: {args.heard!r}")
     return 0
+
+
+def _vocab(args: argparse.Namespace) -> int:
+    try:
+        if args.action == "add":
+            changed = add_vocabulary_term(args.term, DEFAULT_VOCABULARY)
+            print(f"Added: {args.term.strip()!r}" if changed else f"Already stored: {args.term.strip()!r}")
+            return 0
+        if remove_vocabulary_term(args.term, DEFAULT_VOCABULARY):
+            print(f"Removed: {args.term.strip()!r}")
+            return 0
+        print(f"No vocabulary term {args.term.strip()!r}.", file=sys.stderr)
+        return 1
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def _export(args: argparse.Namespace) -> int:
@@ -452,59 +542,55 @@ def _timings(
 
 def _process(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "clean")
-    # Transform asks a model to rewrite the selection. The literal cleaner has no model,
-    # so the pair produced a plain dictation while the interface said TRANSFORM: the
-    # selection was read, sent nowhere and silently dropped. Refused where the two are
+    # These modes ask a model to rewrite the text. The literal cleaner has no model, so
+    # the pair produced a plain dictation while the interface said ES➔EN or NOTES: the
+    # speaker kept her own Spanish back under an English label. Refused where the two are
     # first seen together rather than left to fail quietly downstream.
-    if mode == "transform" and args.cleaner == "literal":
+    if mode in REWRITING_MODES and args.cleaner == "literal":
         print(
-            "Transform needs a cleaner that can rewrite text. Choose gemini or ollama, "
-            "or switch the mode back to clean.",
+            f"The {mode} mode needs a cleaner that can rewrite text. Choose apple "
+            "or gemini, or switch the mode back to clean.",
             file=sys.stderr,
         )
         return 1
 
-    context_text = getattr(args, "context_text", None)
-    if getattr(args, "context_text_stdin", False):
-        # The selection arrives from another application's text storage, so it can be
-        # anything, including bytes that are not valid UTF-8. A traceback here would
-        # discard a recording the speaker already made; the run is refused in the same
-        # controlled shape as every other failure in this command.
-        try:
-            stdin_text = sys.stdin.read().strip()
-        except (OSError, UnicodeDecodeError) as exc:
-            print(
-                f"The highlighted selection could not be read: {exc}",
-                file=sys.stderr,
-            )
-            return 1
-        context_text = stdin_text or None
+    speech = getattr(args, "transcriber", "whisper")
+    if speech == "whisper" and args.whisper_model is None:
+        print("Whisper needs --whisper-model.", file=sys.stderr)
+        return 1
 
     corrections = () if args.no_memory else tuple(CorrectionStore().load())
     snippets = () if args.no_memory else tuple(SnippetStore().load())
-    use_prompt = not args.no_vocab_prompt and not args.no_memory
-    initial_prompt = build_initial_prompt(load_vocabulary()) if use_prompt else ""
 
-    transcriber = WhisperCppTranscriber(
-        model_path=args.whisper_model,
-        binary=args.whisper_bin,
-        language=args.language,
-        initial_prompt=initial_prompt,
-    )
+    if speech == "parakeet":
+        # Parakeet takes no vocabulary prompt; confirmed corrections still apply after it.
+        transcriber = ParakeetTranscriber(
+            model_dir=getattr(args, "parakeet_models", DEFAULT_PARAKEET_MODEL_DIR),
+            binary=getattr(args, "parakeet_bin", DEFAULT_PARAKEET_BINARY),
+        )
+    else:
+        use_prompt = not args.no_vocab_prompt and not args.no_memory
+        initial_prompt = build_initial_prompt(load_vocabulary()) if use_prompt else ""
+        transcriber = WhisperCppTranscriber(
+            model_path=args.whisper_model,
+            binary=args.whisper_bin,
+            language=args.language,
+            initial_prompt=initial_prompt,
+        )
     cleaner = build_cleaner(
         args.cleaner,
         mode=mode,
-        ollama_model=args.ollama_model,
-        ollama_url=args.ollama_url,
         gemini_model=args.gemini_model,
+        apple_binary=getattr(args, "apple_bin", DEFAULT_APPLE_BINARY),
     )
     pipeline = DictationPipeline(
         transcriber=transcriber,
         cleaner=cleaner,
         corrections=corrections,
         snippets=snippets,
-        context_text=context_text,
         app_name=getattr(args, "app_name", None),
+        # Parakeet punctuates, so an ordinary `clean` dictation asks no model.
+        model_only_for_take_back=speech == "parakeet",
     )
 
     try:
@@ -550,7 +636,16 @@ def _process(args: argparse.Namespace) -> int:
     # speaker chose a provider for one dictation, not a permanent archive of every
     # sentence. A failure to write is reported rather than swallowed, because a store
     # the speaker believes is filling and is not would make the dataset a lie.
-    if getattr(args, "distill", False) and result.cleaner == "gemini":
+    if getattr(args, "distill", False) and result.cleaner != "gemini":
+        # A pair is the cloud rewrite kept beside the engine transcript. A local cleaner
+        # has no cloud side, so this run had nothing to store — and a speaker who asked
+        # for the pair and is told nothing believes a store is filling that is not.
+        print(
+            f"No distillation pair was recorded: {result.cleaner!r} is not a cloud "
+            "cleaner, and a pair is the cloud rewrite kept beside the transcript.",
+            file=sys.stderr,
+        )
+    elif getattr(args, "distill", False):
         try:
             DistillationStore().record(
                 raw_text=result.raw_text,
@@ -593,6 +688,101 @@ def _process(args: argparse.Namespace) -> int:
         except VoiceFlowError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+    return 0
+
+
+def _clean(args: argparse.Namespace) -> int:
+    """Run the pipeline over text that was never spoken to this machine.
+
+    A shortcut hands over text that was written rather than dictated, so there is no
+    recording to transcribe. Entering through the pipeline rather than calling a cleaner
+    directly keeps the conservative output guard on this path. The app passes
+    `--no-memory`, because corrections and snippets repair and expand speech
+    (framework.md R3d).
+    """
+    mode = args.mode
+    if (mode in REWRITING_MODES or mode == FIX_MODE) and args.cleaner == "literal":
+        print(
+            f"The {mode} mode needs a cleaner that can rewrite text. Choose apple "
+            "or gemini.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        incoming = sys.stdin.read().strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"The text could not be read: {exc}", file=sys.stderr)
+        return 1
+    if not incoming:
+        print("No text arrived on standard input.", file=sys.stderr)
+        return 1
+
+    corrections = () if args.no_memory else tuple(CorrectionStore().load())
+    snippets = () if args.no_memory else tuple(SnippetStore().load())
+    cleaner = build_cleaner(
+        args.cleaner,
+        mode=mode,
+        gemini_model=args.gemini_model,
+        apple_binary=args.apple_bin,
+    )
+    pipeline = DictationPipeline(
+        transcriber=None,
+        cleaner=cleaner,
+        corrections=corrections,
+        snippets=snippets,
+        app_name=args.app_name,
+    )
+
+    try:
+        result = pipeline.process_text(incoming, language=args.language)
+    except CleanupFailed as exc:
+        print(str(exc), file=sys.stderr)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "raw_text": exc.raw_text,
+                        "personalized_text": exc.fallback_text,
+                        "final_text": exc.fallback_text,
+                        "language": exc.language,
+                        "cleaner": args.cleaner,
+                        "used_fallback": True,
+                        "fallback_reason": exc.reason,
+                        "rejected_text": exc.rejected_text,
+                        "timings": _timings(
+                            exc.transcribe_seconds, exc.cleanup_seconds
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            print(exc.fallback_text)
+        return 2
+    except VoiceFlowError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "raw_text": result.raw_text,
+                    "personalized_text": result.personalized_text,
+                    "final_text": result.final_text,
+                    "language": result.language,
+                    "cleaner": result.cleaner,
+                    "model": getattr(cleaner, "answered_with", None),
+                    "used_fallback": False,
+                    "timings": _timings(
+                        result.transcribe_seconds, result.cleanup_seconds
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(result.final_text)
     return 0
 
 
@@ -743,7 +933,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     handlers = {
         "doctor": _doctor,
         "provider": _provider,
+        "clean": _clean,
         "memory": _memory,
+        "vocab": _vocab,
         "correct": _correct,
         "forget": _forget,
         "export": _export,

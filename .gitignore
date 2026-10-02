@@ -35,6 +35,16 @@ practice/
 .*.lock
 .env
 .env.*
+# Recordings outside the named folders, and the files that carry the speaker's own
+# sentences: a distilled `Modelfile` holds real pairs, and an export written inside the
+# project would otherwise be one `git add -A` from the repository.
+*.wav
+*.m4a
+*.mp3
+*.aiff
+*.caf
+Modelfile*
+*.export.json
 
 # Model weights and packaged binaries. `models/` matches a directory and nothing else,
 # so the worktree that reaches the weights through a symlink named `models` was left
@@ -45,11 +55,21 @@ models/
 *.bin
 *.gguf
 *.mlmodelc/
+*.safetensors
+*.onnx
+*.mlpackage/
+*.mlmodel
 src-tauri/binaries/
 # Cargo writes the Windows build here. `binaries/` alone covered the bundled sidecars and
 # left the compiler's own output, which is where the gigabytes are, untracked but not
 # ignored — one `git add -A` from entering the repository.
 target/
+
+# Xcode's per-user state. The project file itself is tracked: it is the build that
+# carries App Intents metadata, and `scripts/generate-xcodeproj.py` regenerates it.
+xcuserdata/
+*.xcuserdatad/
+DerivedData/
 
 # Platform metadata
 .DS_Store

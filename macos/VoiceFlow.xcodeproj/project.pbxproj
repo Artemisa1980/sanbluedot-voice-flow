@@ -1,0 +1,357 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A3E199F1638783B5DD9942AB /* AcceptanceLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBF9A9EC93CAB934E7529A7B /* AcceptanceLogger.swift */; };
+		59DF459BF01FE84A58B545ED /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F3474C9DC2868C1D48A4EF /* AppDelegate.swift */; };
+		8A8531E3408EFB65877B84B9 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 914B5114423FB25593F4CA74 /* AudioRecorder.swift */; };
+		BB3DC0E47B159AC61948050D /* AutoPaste.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE3EC7FEEEA4E61B53D2559 /* AutoPaste.swift */; };
+		CD0B49DEAFBB7674B33723AB /* ControlWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E65DD701E6DFCE745EDE4E /* ControlWindowController.swift */; };
+		BD118A8640308839440F374B /* EngineRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78523040D840B338A3E7C06C /* EngineRunner.swift */; };
+		388574FA1D768EDFDBCA12C3 /* FloatingHUDController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4FC293F47237D51DB2D9F6 /* FloatingHUDController.swift */; };
+		602E99CEB27ED39F5882EF59 /* FocusHomePreviewDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20C24F69DD7FDAF0AE26498C /* FocusHomePreviewDelegate.swift */; };
+		1195B92C73A2409F524B3D6D /* FocusHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F6F1A93047B9731D92F9D9 /* FocusHomeView.swift */; };
+		3F0200600334588EA9CF10E4 /* HotkeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9121B5F3E41394ACA6B1AF09 /* HotkeyMonitor.swift */; };
+		639BB26537520BD1DEAF7EF8 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = F306BC0AF44F81EC6FDF5C16 /* Keychain.swift */; };
+		2B4C059137EB789CACD051FE /* RetroMicHUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A5E5AD3C4AAB43ED26BCB8 /* RetroMicHUDView.swift */; };
+		B2485643B32808F8F9C1B9D3 /* VoiceActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E69F559C6944989D96B49C6 /* VoiceActionExecutor.swift */; };
+		B70D633DC97BD0CAEEA3672D /* VoiceFlowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9A8710702E5C8ED5E884A2 /* VoiceFlowController.swift */; };
+		33D6226C9A735DB47DECAF27 /* VoiceFlowIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED51A4B2CDF23FAE550BE5B6 /* VoiceFlowIntents.swift */; };
+		9BC83C6639D33FEEC10A8AC3 /* VoiceStationWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23B56BA843DED53C8C75207 /* VoiceStationWindowView.swift */; };
+		999AA50F0B70F0A6387DF0C7 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC7A7020513E64C9BBFF5056 /* main.swift */; };
+		74267F366D7EC14786C7E304 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = A4C32168F05DBA01F01EC837 /* AppIcon.icns */; };
+		D51333241BE97621A889FAB5 /* voiceflow-badge-round.png in Resources */ = {isa = PBXBuildFile; fileRef = 67B89C7C2FADBEAE251CB7CA /* voiceflow-badge-round.png */; };
+		EBC3FB4A6DD38DFA98039F5A /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = C98CE8918C103CB806EA58E4 /* Fonts */; };
+		7285F9B3F6546BFE2F85A861 /* VoiceFlowMacCore in Frameworks */ = {isa = PBXBuildFile; productRef = B79677ED6D693F1929148E13 /* VoiceFlowMacCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		CBF9A9EC93CAB934E7529A7B /* AcceptanceLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AcceptanceLogger.swift"; path = "Sources/VoiceFlowMac/AcceptanceLogger.swift"; sourceTree = "<group>"; };
+		56F3474C9DC2868C1D48A4EF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AppDelegate.swift"; path = "Sources/VoiceFlowMac/AppDelegate.swift"; sourceTree = "<group>"; };
+		914B5114423FB25593F4CA74 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AudioRecorder.swift"; path = "Sources/VoiceFlowMac/AudioRecorder.swift"; sourceTree = "<group>"; };
+		8AE3EC7FEEEA4E61B53D2559 /* AutoPaste.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AutoPaste.swift"; path = "Sources/VoiceFlowMac/AutoPaste.swift"; sourceTree = "<group>"; };
+		C5E65DD701E6DFCE745EDE4E /* ControlWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ControlWindowController.swift"; path = "Sources/VoiceFlowMac/ControlWindowController.swift"; sourceTree = "<group>"; };
+		78523040D840B338A3E7C06C /* EngineRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EngineRunner.swift"; path = "Sources/VoiceFlowMac/EngineRunner.swift"; sourceTree = "<group>"; };
+		9E4FC293F47237D51DB2D9F6 /* FloatingHUDController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "FloatingHUDController.swift"; path = "Sources/VoiceFlowMac/FloatingHUDController.swift"; sourceTree = "<group>"; };
+		20C24F69DD7FDAF0AE26498C /* FocusHomePreviewDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "FocusHomePreviewDelegate.swift"; path = "Sources/VoiceFlowMac/FocusHomePreviewDelegate.swift"; sourceTree = "<group>"; };
+		93F6F1A93047B9731D92F9D9 /* FocusHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "FocusHomeView.swift"; path = "Sources/VoiceFlowMac/FocusHomeView.swift"; sourceTree = "<group>"; };
+		9121B5F3E41394ACA6B1AF09 /* HotkeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "HotkeyMonitor.swift"; path = "Sources/VoiceFlowMac/HotkeyMonitor.swift"; sourceTree = "<group>"; };
+		F306BC0AF44F81EC6FDF5C16 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Keychain.swift"; path = "Sources/VoiceFlowMac/Keychain.swift"; sourceTree = "<group>"; };
+		07A5E5AD3C4AAB43ED26BCB8 /* RetroMicHUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RetroMicHUDView.swift"; path = "Sources/VoiceFlowMac/RetroMicHUDView.swift"; sourceTree = "<group>"; };
+		4E69F559C6944989D96B49C6 /* VoiceActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VoiceActionExecutor.swift"; path = "Sources/VoiceFlowMac/VoiceActionExecutor.swift"; sourceTree = "<group>"; };
+		4D9A8710702E5C8ED5E884A2 /* VoiceFlowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VoiceFlowController.swift"; path = "Sources/VoiceFlowMac/VoiceFlowController.swift"; sourceTree = "<group>"; };
+		ED51A4B2CDF23FAE550BE5B6 /* VoiceFlowIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VoiceFlowIntents.swift"; path = "Sources/VoiceFlowMac/VoiceFlowIntents.swift"; sourceTree = "<group>"; };
+		A23B56BA843DED53C8C75207 /* VoiceStationWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VoiceStationWindowView.swift"; path = "Sources/VoiceFlowMac/VoiceStationWindowView.swift"; sourceTree = "<group>"; };
+		FC7A7020513E64C9BBFF5056 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "main.swift"; path = "Sources/VoiceFlowMac/main.swift"; sourceTree = "<group>"; };
+		A4C32168F05DBA01F01EC837 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = file; name = "AppIcon.icns"; path = "Resources/AppIcon.icns"; sourceTree = "<group>"; };
+		67B89C7C2FADBEAE251CB7CA /* voiceflow-badge-round.png */ = {isa = PBXFileReference; lastKnownFileType = file; name = "voiceflow-badge-round.png"; path = "Resources/voiceflow-badge-round.png"; sourceTree = "<group>"; };
+		C98CE8918C103CB806EA58E4 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "Fonts"; path = "Resources/Fonts"; sourceTree = "<group>"; };
+		439480DB74315DB254E98C6F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info.plist"; path = "Resources/Info.plist"; sourceTree = "<group>"; };
+		0D4EB6DD1E362FE80AD646B2 /* sanblueᵈᵒᵗ VoiceFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "sanblueᵈᵒᵗ VoiceFlow.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		16CD75A5D5435DAEF9AE8975 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7285F9B3F6546BFE2F85A861 /* VoiceFlowMacCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		84D50F0E75729D233AE5BB6B = {
+			isa = PBXGroup;
+			children = (
+				A2041BA486AC64636A88DC27 /* Sources */,
+				EB6A575A616777324E3B3FDE /* Resources */,
+				F8BC9D1957D747D778C53189 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A2041BA486AC64636A88DC27 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				CBF9A9EC93CAB934E7529A7B /* AcceptanceLogger.swift */,
+				56F3474C9DC2868C1D48A4EF /* AppDelegate.swift */,
+				914B5114423FB25593F4CA74 /* AudioRecorder.swift */,
+				8AE3EC7FEEEA4E61B53D2559 /* AutoPaste.swift */,
+				C5E65DD701E6DFCE745EDE4E /* ControlWindowController.swift */,
+				78523040D840B338A3E7C06C /* EngineRunner.swift */,
+				9E4FC293F47237D51DB2D9F6 /* FloatingHUDController.swift */,
+				20C24F69DD7FDAF0AE26498C /* FocusHomePreviewDelegate.swift */,
+				93F6F1A93047B9731D92F9D9 /* FocusHomeView.swift */,
+				9121B5F3E41394ACA6B1AF09 /* HotkeyMonitor.swift */,
+				F306BC0AF44F81EC6FDF5C16 /* Keychain.swift */,
+				07A5E5AD3C4AAB43ED26BCB8 /* RetroMicHUDView.swift */,
+				4E69F559C6944989D96B49C6 /* VoiceActionExecutor.swift */,
+				4D9A8710702E5C8ED5E884A2 /* VoiceFlowController.swift */,
+				ED51A4B2CDF23FAE550BE5B6 /* VoiceFlowIntents.swift */,
+				A23B56BA843DED53C8C75207 /* VoiceStationWindowView.swift */,
+				FC7A7020513E64C9BBFF5056 /* main.swift */,
+			);
+			name = Sources;
+			sourceTree = "<group>";
+		};
+		EB6A575A616777324E3B3FDE /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				439480DB74315DB254E98C6F /* Info.plist */,
+				A4C32168F05DBA01F01EC837 /* AppIcon.icns */,
+				67B89C7C2FADBEAE251CB7CA /* voiceflow-badge-round.png */,
+				C98CE8918C103CB806EA58E4 /* Fonts */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		F8BC9D1957D747D778C53189 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0D4EB6DD1E362FE80AD646B2 /* sanblueᵈᵒᵗ VoiceFlow.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F23CDB19685177B3520722E1 /* VoiceFlowMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD66A2EDC305ED2F838946F3 /* Build configuration list for PBXNativeTarget "VoiceFlowMac" */;
+			buildPhases = (
+				FC630463B0E4FB5EA0EBC4BF /* Sources */,
+				16CD75A5D5435DAEF9AE8975 /* Frameworks */,
+				329FD64E7EA1B02E73F825D0 /* Resources */,
+				B45FF93531BD7995108A5A6F /* Embed the engine */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VoiceFlowMac;
+			packageProductDependencies = (
+				B79677ED6D693F1929148E13 /* VoiceFlowMacCore */,
+			);
+			productName = VoiceFlowMac;
+			productReference = 0D4EB6DD1E362FE80AD646B2 /* sanblueᵈᵒᵗ VoiceFlow.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AD4EC67466C79278005E74D6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					F23CDB19685177B3520722E1 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = 4F4AB95888E717A3DDA208E6 /* Build configuration list for PBXProject "VoiceFlow" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 84D50F0E75729D233AE5BB6B;
+			packageReferences = (
+				3277A0D54C735B351810BCE1 /* XCLocalSwiftPackageReference "." */,
+			);
+			productRefGroup = F8BC9D1957D747D778C53189 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F23CDB19685177B3520722E1 /* VoiceFlowMac */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		B45FF93531BD7995108A5A6F /* Embed the engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Embed the engine";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nroot=\"$PROJECT_DIR/..\"\napp=\"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH\"\nmkdir -p \"$app/Resources/python/src\"\n/usr/bin/rsync -a --delete --exclude=__pycache__ --exclude='*.py[co]' \"$root/src/\" \"$app/Resources/python/src/\"\nswift build --package-path \"$PROJECT_DIR\" -c release --product VoiceFlowAppleCleaner >/dev/null\nbin=$(swift build --package-path \"$PROJECT_DIR\" -c release --show-bin-path)\ninstall -m 755 \"$bin/VoiceFlowAppleCleaner\" \"$app/MacOS/voiceflow-apple-cleaner\"\n# Parakeet's helper is its own package, so FluidAudio never enters the app's build.\nswift build --package-path \"$PROJECT_DIR/ParakeetHelper\" -c release --product VoiceFlowParakeet >/dev/null\nparakeet_bin=$(swift build --package-path \"$PROJECT_DIR/ParakeetHelper\" -c release --show-bin-path)\ninstall -m 755 \"$parakeet_bin/VoiceFlowParakeet\" \"$app/MacOS/voiceflow-parakeet\"\n# Xcode signs before this phase runs, so everything embedded here arrives after the\n# seal was computed and `codesign --verify` reports the files as added. Signing the\n# helpers first and the bundle last puts the seal back over what is actually there.\ncodesign --force --options runtime --timestamp=none     --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$app/MacOS/voiceflow-apple-cleaner\"\ncodesign --force --options runtime --timestamp=none     --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$app/MacOS/voiceflow-parakeet\"\ncodesign --force --options runtime --timestamp=none     --entitlements \"$PROJECT_DIR/Resources/VoiceFlowMac.entitlements\"     --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$BUILT_PRODUCTS_DIR/$WRAPPER_NAME\"\ncodesign --verify --deep --strict \"$BUILT_PRODUCTS_DIR/$WRAPPER_NAME\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		329FD64E7EA1B02E73F825D0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				74267F366D7EC14786C7E304 /* AppIcon.icns in Resources */,
+				D51333241BE97621A889FAB5 /* voiceflow-badge-round.png in Resources */,
+				EBC3FB4A6DD38DFA98039F5A /* Fonts in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		FC630463B0E4FB5EA0EBC4BF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A3E199F1638783B5DD9942AB /* AcceptanceLogger.swift in Sources */,
+				59DF459BF01FE84A58B545ED /* AppDelegate.swift in Sources */,
+				8A8531E3408EFB65877B84B9 /* AudioRecorder.swift in Sources */,
+				BB3DC0E47B159AC61948050D /* AutoPaste.swift in Sources */,
+				CD0B49DEAFBB7674B33723AB /* ControlWindowController.swift in Sources */,
+				BD118A8640308839440F374B /* EngineRunner.swift in Sources */,
+				388574FA1D768EDFDBCA12C3 /* FloatingHUDController.swift in Sources */,
+				602E99CEB27ED39F5882EF59 /* FocusHomePreviewDelegate.swift in Sources */,
+				1195B92C73A2409F524B3D6D /* FocusHomeView.swift in Sources */,
+				3F0200600334588EA9CF10E4 /* HotkeyMonitor.swift in Sources */,
+				639BB26537520BD1DEAF7EF8 /* Keychain.swift in Sources */,
+				2B4C059137EB789CACD051FE /* RetroMicHUDView.swift in Sources */,
+				B2485643B32808F8F9C1B9D3 /* VoiceActionExecutor.swift in Sources */,
+				B70D633DC97BD0CAEEA3672D /* VoiceFlowController.swift in Sources */,
+				33D6226C9A735DB47DECAF27 /* VoiceFlowIntents.swift in Sources */,
+				9BC83C6639D33FEEC10A8AC3 /* VoiceStationWindowView.swift in Sources */,
+				999AA50F0B70F0A6387DF0C7 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		EE8E0C47B8A7565C780EDD9C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		72050AB24E11BC94CA0B8A7B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		8093BB7B7FED665006DD8AB2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Resources/Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "dot.sanblue.voiceflow";
+				PRODUCT_NAME = "sanblueᵈᵒᵗ VoiceFlow";
+				// The bundle is named for the brand and the binary is not. `Info.plist`
+				// declares CFBundleExecutable = VoiceFlowMac, and codesign refuses a bundle
+				// whose declared main executable is not the file that is there.
+				EXECUTABLE_NAME = VoiceFlowMac;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		988E7EC572CBA0B39B982BB9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Resources/Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "dot.sanblue.voiceflow";
+				PRODUCT_NAME = "sanblueᵈᵒᵗ VoiceFlow";
+				// The bundle is named for the brand and the binary is not. `Info.plist`
+				// declares CFBundleExecutable = VoiceFlowMac, and codesign refuses a bundle
+				// whose declared main executable is not the file that is there.
+				EXECUTABLE_NAME = VoiceFlowMac;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4F4AB95888E717A3DDA208E6 /* Build configuration list for PBXProject "VoiceFlow" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EE8E0C47B8A7565C780EDD9C /* Debug */,
+				72050AB24E11BC94CA0B8A7B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BD66A2EDC305ED2F838946F3 /* Build configuration list for PBXNativeTarget "VoiceFlowMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8093BB7B7FED665006DD8AB2 /* Debug */,
+				988E7EC572CBA0B39B982BB9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		3277A0D54C735B351810BCE1 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B79677ED6D693F1929148E13 /* VoiceFlowMacCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VoiceFlowMacCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AD4EC67466C79278005E74D6 /* Project object */;
+}

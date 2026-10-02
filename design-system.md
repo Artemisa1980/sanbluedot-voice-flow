@@ -114,7 +114,7 @@ and the typeface map.
 
 The window is usable from its floor to full screen, and the chrome is fixed at both ends.
 
-- Floor: `760 × 700` of **content**. It is declared once and written to both
+- Floor: `884 × 700` of **content**. It is declared once and written to both
   `contentMinSize` and `minSize`, the second converted with
   `frameRect(forContentRect:)`. Each alone fails in its own direction: `minSize` measures
   the window frame including the title bar, so a floor stated only there leaves the
@@ -122,6 +122,9 @@ The window is usable from its floor to full screen, and the chrome is fixed at b
   and bottom — the header rides up, the footer is clipped. `contentMinSize` alone is not
   enforced once the root view stops declaring a minimum height, and the window can be
   dragged down to a band too short to show a card at all.
+- `884pt` is the sidebar `184`, the workspace padding `44`, the `16` between the cards
+  and two `320` floors — the control card's and the console's. At the earlier `760` the
+  control card received `196` and spilled over the sidebar.
 - `700pt` is measured, not chosen: at 560 the mode switch and the hold hint fall out of
   the control card, and 687 is the smallest size at which every row is present. Raise it
   again if a row is added to that card.
@@ -137,7 +140,7 @@ The Focus Home shell replaces the station window's always-visible two-card layou
 Its implementation is `macos/Sources/VoiceFlowMac/FocusHomeView.swift`, composed with the
 existing capture, engine, console and snippet controls. The floating HUD is unchanged.
 
-Default content size `1100 × 800`; the `760 × 700` floor and the fixed header and footer
+Default content size `1100 × 800`; the `884 × 700` floor and the fixed header and footer
 are unchanged, and a reachable saved frame is still respected.
 
 ### Sidebar
@@ -146,7 +149,7 @@ are unchanged, and a reachable saved frame is still respected.
 are `43pt` high with `9pt` gaps, gold with navy ink when selected. A `2pt` navy edge
 divides it from the canvas.
 
-Destinations, in this order: **Station · Settings · History · Snippets · Modes ·
+Destinations, in this order: **Station · Settings · History · Snippets · Words ·
 Diagnostics**. Declaration order in `Page` is the displayed order. Counts come from the
 live stores. Each row that shows a count also names what it counts to VoiceOver —
 "History, 3 dictations" — because the badge is read on its own, where a bare digit
@@ -185,7 +188,7 @@ named once. The shell has no page headings.
 `ConsolePalette` carries the six values a console surface is drawn with, so one view
 serves both grounds without a second copy of it.
 
-- **Paper** — Settings, History, Snippets and Modes. Ground `panelBg`, sunken blocks
+- **Paper** — Settings, History, Snippets and Words. Ground `panelBg`, sunken blocks
   `inputCream`, ink navy, secondary `textMuted`, rules and field outlines the terminal's
   own olive at 45% and 60%. A field on paper is cream on cream, so the outline is what
   draws the box; on the dark ground the fill already did, and the outline is transparent.
@@ -249,6 +252,33 @@ to a successful cleanup: same mode badge, same engine name, and no sign the engi
 never arrived. The two call for opposite responses, so the record stores the reason
 rather than one bit.
 
+**The row, approved 2026-09-26** from `docs/history-redesign-01.html`. Three lines, and
+the dictated text is the largest thing in them:
+
+- **Rail** — on the left edge: `ok` delivered, `rec` fallback.
+- **Head** — time in brackets, mono bold; mode pill with the HUD's badge name and a
+  `FALLBACK` pill, both filled (`dotBlue`, `rec`) with navy ink and a navy hairline;
+  engine and delivery in the secondary ink; `TOTAL` as a tracked label beside the
+  seconds in Press Start 2P.
+- **Reason** — on a fallback only, secondary ink, under the head.
+- **Text** — the largest type in the row.
+- **Foot** — `▸ ORIGINAL` toggle in the secondary ink; `COPY` gold, `RAW`, `FIX` and
+  `RE-PASTE` cream, all with a navy outline. `FIX` appears on every dictation with a raw
+  transcript and opens Words with that dictation, to teach a correction. A row fixed by
+  the earlier in-row rewrite keeps its gold `FIXED` pill, its fixed text, and BEFORE FIX
+  under ORIGINAL. The original opens under the foot as HEARD and
+  CORRECTED, and CORRECTED reads "no corrections applied" when the two are the same text.
+- **Frame** — the row on `sunkenRow` with a `1pt` rule.
+
+**Two scales, one row.** The History section is where a delivery is read; the station's
+console tab sits beside the log at the log's size. `HistoryTypeScale` carries both, so
+resizing one never resizes the other. Values in `pt`:
+
+| | Time | Pills | Engine | TOTAL label · figure | Reason | Text · spacing | Controls | Rail | Radius |
+|---|---|---|---|---|---|---|---|---|---|
+| History section | 10 | 8.5 | 9 | 7.5 · 10 | 9 | 12 · 3.5 | 8.5 | 5 | 9 |
+| Station console | 8.5 | 7.5 | 7.5 | 6.5 · 8 | 8 | 9 · 2 | 7.5 | 3 | 6 |
+
 ### What each section holds
 
 - **Settings** — `SETTINGS.SYS`. Engine; cloud model and API key when a cloud engine is
@@ -261,17 +291,31 @@ rather than one bit.
 - **History** — `HISTORY.SYS`. The tray, with CLEAR on the title strip when there is
   something to clear.
 - **Snippets** — `SNIPPETS.SYS`. The store editor.
-- **Modes** — `MODES.SYS`. The five modes with their descriptions, and personal memory.
-  Personalize was a destination that explained its own editor did not exist; modes and
-  memory answer one question, which is what happens to what was just said. Engine
-  selection is not repeated here.
+- **Words** — `WORDS.SYS · WHAT IT HEARS, WHAT IT WRITES`, approved 2026-09-27 from
+  `docs/words-section-01.html`. It replaced Modes: corrections, vocabulary and modes
+  answer one question, which is what happens to what was said. The sidebar count is the
+  number of corrections. Three tabs — CORRECTIONS with its count, VOCABULARY with "what
+  Whisper listens for", MODES — navy when selected, cream when not. Beside them at
+  `820pt` or wider, a `280pt` column: HOW IT WORKS on cream with a `2pt` navy frame, and
+  TAKE IT BACK OUT LOUD on navy with the spoken cues as outlined capsules and one worked
+  example, the withdrawn words struck through in `rec`.
+  - CORRECTIONS: the teach card — IT HEARD → IT SHOULD WRITE, LEARN in gold, the
+    one-word checkbox LEARN waits for, and, when FIX opened it, a gold FROM HISTORY tag
+    with the dictation's raw text above the fields. Then search, the All / Learned from
+    a fix / Added here capsules, and the list: heard struck through in `rec`, written in
+    bold, FIX and EVERYWHERE tags, the day, EDIT and DELETE. Newest first.
+  - VOCABULARY: add a word; a budget bar in `ok` over `panelBg` saying how many terms fit
+    what Whisper reads; each term tagged READ in `dotBlue` or UNREAD in `panelBg`, with
+    DELETE and TO CORRECTION.
+  - MODES: the mode bank and the four descriptions. Engine selection is not repeated.
+  Labels are mono `9pt` tracked in the secondary ink; body mono `11–12pt`.
 - **Diagnostics** — `DIAGNOSTICS.SYS`. Telemetry gauges, category filters, the log.
 
 **The five chassis sections do not repeat one another.** Engine selection and permissions
 are in Settings, the gauges in Diagnostics, the API key in Settings, the console's tabs
 only on Station. Station is the exception by design: it is the station itself, so it
 carries the engine row, the mode switch and — when the selected engine is Gemini — the
-console's MODEL row, which are also in Settings, in Modes and in Settings respectively.
+console's MODEL row, which are also in Settings, in Words and in Settings respectively.
 
 The MODEL row is on the dark console rather than the mint canvas because it explains the
 readings directly above it: which model answers, what each one measured, the order the
@@ -329,8 +373,8 @@ the one surface that does not use the sage canvas.
   wordmark could only ever take turns.
 - State badges: `ON AIR` red, processing dot blue, completed green, error red. The
   recording badge names the mode — `ON AIR`, `ON AIR • ES➔EN`, `ON AIR • MEETING`,
-  `ON AIR • TRANSFORM` — and, when the frontmost application is a recognized one, the
-  target instead of the prefix: `ON AIR • VSCODE`, `TRANSFORM • TERMINAL`.
+  `ON AIR • NOTES` — and, when the frontmost application is a recognized one, the
+  target instead of the prefix: `ON AIR • VSCODE`, `NOTES • TERMINAL`.
 - **The badge is drawn at fixed size, so a name it cannot fit is not truncated — it
   pushes the wordmark out of the row.** An application short name is therefore capped at
   12 characters. The budget that cap comes from is not quoted here: `VoiceFlowMacCoreChecks`
@@ -341,10 +385,6 @@ the one surface that does not use the sage canvas.
   strip. It states the stage while work is running and the run's own measurements when
   it ends — speaking rate, latency, the model that answered. It never carries a constant
   dressed as a reading; a sample rate nothing measures per run is not shown at all.
-- While a transform recording holds a captured selection, that row also carries its size
-  at `8px` heavy monospaced: dot blue up to `2000` characters, the on-air red past it.
-  The red is a warning, not a refusal — the row states a fact about the run and the
-  speaker decides. No new colour enters the palette for it.
 - Mode confirmation replaces the twelve bars with one segment per mode, at `14px` high
   with `3px` gaps and radius `2px`. The selected segment is filled and the rest sit at
   white 10%, so the confirmation also says what the other modes are. The strip is built
@@ -354,7 +394,7 @@ the one surface that does not use the sage canvas.
   disc carries the mode's glyph while it is shown, and the capsule springs between states
   rather than cutting.
 - One accent rule for that strip: every mode lights brand gold `#EFC15E`, except
-  `ACTION`, which lights the approved coral `#FF7B6B`, and `TRANSFORM`, which lights dot
+  and `ACTION`, which lights the approved coral `#FF7B6B`. `TRANSFORM` lit dot
   blue. The two modes that reach outside the dictation — one acts on the machine, one
   rewrites text the speaker did not dictate — are the two that read differently, and no
   new colour enters the palette.
@@ -385,7 +425,7 @@ whether or not the HUD or the station window is open.
 
 ## Console badge palette
 
-Eight log categories must be told apart at `7px` on the dark olive console ground, where
+Nine log categories must be told apart at `7px` on the dark olive console ground, where
 the brand family collapses into two readable hues. These four are therefore **not brand
 colours**, are never used on the mint canvas, and exist only inside the console and the
 meter. Approved 2026-09-02, after they had already shipped as literals.
@@ -397,6 +437,10 @@ meter. Approved 2026-09-02, after they had already shipped as literals.
 | `logPaste` | `#2ECC71` | PASTE badge |
 | `micHighlight` | `#2C3A63` | the lit half of the microphone's radial gradient |
 | `onAir` | `#FF453B` | the meter's last bars and the capsule's ON AIR badge |
+
+The APPLE badge takes `inputCream`, a brand token already readable on the olive ground,
+so the third engine needs no new colour. GEMINI is `gold`, OLLAMA `appBg`, and all three
+count under the AI CLEAN filter.
 
 **Every colour is declared in `VoiceStationTokens` and referenced by name.** A literal
 written beside the view that uses it is a copy that stops moving with the token. Four had
@@ -450,12 +494,15 @@ makes the decision for them.
 
 The right card in `VoiceStationWindowView` contains a 3-tab switchable console:
 
-- **Tabs:** `ACTIVITY LOG`, `HISTORY TRAY (X)`, and `SNIPPETS (X)`.
+- **Tabs:** `TELEMETRY LOG`, `HISTORY TRAY`, and `SNIPPETS`. The owner chose
+  `TELEMETRY LOG` over `ACTIVITY LOG` on 2026-09-18. The tabs carry no counts: the
+  sidebar rows already do, and a number in both places is the same fact named twice.
 - **Active Tab Pill:** Gold background `#EFC15E` with Navy text `#16213E`, radius `4px`, monospace bold `9px`.
 - **Inactive Tab Pill:** Clear background, Gold copy at 70% opacity.
 - **Console Screen:** Dark olive ground `consoleBg` `#262319`, gold hairline border at 40% opacity, radius `6px`.
-- **Snippet & History Items:** Inset cards with dark overlay at 25% opacity, gold hairline border, monospace `9px`/`10px` typography in `inputCream` `#FFF9E9`.
-- **Actions:** Quick buttons styled in semantic tokens (`COPY` in Gold, `RAW` in Dusty Blue, `RE-PASTE` in Dot Blue, `DELETE` in Danger Clay).
+- **Snippet Items:** Inset cards with dark overlay at 25% opacity, gold hairline border, monospace `9px`/`10px` typography in `inputCream` `#FFF9E9`.
+- **History Items:** the History row above, drawn on this ground's own tokens.
+- **Actions:** Quick buttons styled in semantic tokens (`DELETE` in Danger Clay on snippets); History's buttons follow the History row.
 
 ## Typography
 

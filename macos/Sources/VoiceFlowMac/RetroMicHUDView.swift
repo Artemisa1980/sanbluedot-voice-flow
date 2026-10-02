@@ -52,8 +52,6 @@ final class HUDViewModel: ObservableObject {
     @Published var measuredWPM: Int? = nil
     /// Total turnaround latency in seconds.
     @Published var latencySeconds: Double? = nil
-    /// Characters captured from the screen for a transform run, `nil` when none.
-    @Published var selectionCharacters: Int? = nil
 }
 
 struct RetroMicHUDView: View {
@@ -183,8 +181,6 @@ struct RetroMicHUDView: View {
             return VoiceStationTokens.gold
         case .actions:
             return VoiceStationTokens.rec
-        case .transform:
-            return VoiceStationTokens.dotBlue
         }
     }
 
@@ -195,7 +191,6 @@ struct RetroMicHUDView: View {
         case .translate: return "character.bubble.fill"
         case .meeting: return "list.bullet.rectangle.fill"
         case .actions: return "bolt.fill"
-        case .transform: return "wand.and.stars"
         }
     }
 
@@ -385,19 +380,6 @@ struct RetroMicHUDView: View {
                         .font(.system(size: 8, weight: .heavy, design: .monospaced))
                         .foregroundColor(vintageGold)
                 }
-                // How much of the screen this run is about to send. Transform is the one
-                // mode whose payload the speaker did not dictate, so the size is the only
-                // thing on the capsule that can tell her the selection is the sentence
-                // she highlighted and not the whole file — while Escape still works.
-                if let characters = viewModel.selectionCharacters {
-                    Text("·")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.3))
-                    Text("\(characters) CHARS")
-                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
-                        .foregroundColor(HUDBadge.selectionIsLarge(characters) ? onAirRed : skyBlue)
-                }
-
                 // R9: the capsule showed "44.1 kHz" while `AudioRecorder` opens the
                 // microphone at 16 kHz mono. It was a decoration in the shape of a
                 // reading, and a wrong one. Nothing measures a sample rate per run, so

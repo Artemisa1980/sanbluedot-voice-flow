@@ -26,7 +26,6 @@ reference mockup is kept at `assets/retro-mic-ui-mockup.jpg`.
 | 9 | Morphing HUD and in-flight mode toggle | R3c · `RetroMicHUDView.swift`, `HotkeyMonitor.swift` · README |
 | 6 | Application-context awareness, detection only | `AppContext.swift` · `HUDBadge` · `design-system.md` |
 | 10 | Latency and speed badge in the floating HUD | R9 · `RetroMicHUDView.swift` telemetry strip |
-| 11 | Transform selection | R3b · `SelectionReader.swift`, `cleaners/prompt.py` |
 
 ## Ahead
 
@@ -37,13 +36,32 @@ on the capsule, and nothing about it changes the words. That is the finished sta
 
 The open question this entry carried was already answered by R3b: a tone profile rewrites
 the document, so it belongs to an explicitly selected, visible mode rather than to a
-silent switch keyed off whichever window happened to be in front. `transform` is that
-mode, it arrived in the same branch, and it takes the instruction out loud — "hazlo más
-formal" produces the same result at the moment the speaker wants it, instead of guessing
-from a window. Building tone profiles as well would add five silent behaviors to reach
-what one spoken sentence already reaches.
+silent switch keyed off whichever window happened to be in front. `transform` was that mode; it was removed on 2026-09-18 because macOS 27's Writing Tools
+does the same job wherever the speaker types. Tone profiles keyed off the frontmost
+window remain the wrong shape either way: five silent behaviours in place of one
+deliberate choice.
 
 Reopen this only if speaking the instruction proves to be the friction in daily use.
+
+### 11b — Transform selection, removed and reversible
+
+Removed on 2026-09-18, by the owner's decision, after macOS 27 shipped Writing Tools.
+The whole surface went: the screen-selection reader, the capsule's captured-character
+count, the pasteboard restore, the transform prompt, the App Intent and six tests. The
+application no longer reads the screen at all.
+
+**The condition to bring it back is one measurement the owner is running herself:** use
+Apple's Writing Tools for the work transform used to do, on real text, in Spanish and in
+mixed speech. If it does the job, this entry closes for good. If it does not — if it
+misses the mixed-language case, or rewrites more than was asked and gives no way to
+refuse the result — transform returns.
+
+What returning costs: the mode, its prompt, the selection reader and the pasteboard
+restore come back from the 2026-09-18 state, and R3b in `framework.md` is rewritten
+rather than reverted, because the reason for having it would then be a measured gap in
+Writing Tools rather than the absence of an alternative. The captured-size warning is
+not optional in that case: a payload the speaker did not dictate is the one she cannot
+check by remembering it.
 
 ### 8 — Phonetic dictionary and cleaner prompt biasing
 

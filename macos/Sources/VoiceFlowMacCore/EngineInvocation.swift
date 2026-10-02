@@ -8,13 +8,9 @@ public struct EngineInvocation: Equatable, Sendable {
 
     /// Text written to the child's standard input, or `nil` when the run sends none.
     ///
-    /// The selection to transform travels here rather than in `arguments`. A process
-    /// argument is not private: `ps -ww -ax` prints the full command line of every
-    /// process the same user runs, so passing the speaker's highlighted document text
-    /// as an argument published it to anything else running on the machine. It also
-    /// removed a crash — a selection that was itself a flag, `--verbose` or `-x`,
-    /// which is ordinary in the editor and terminal this mode targets, was parsed as an
-    /// option by the engine and the run failed before transcription.
+    /// A dictation sends none. An App Intent's text travels here rather than in
+    /// `arguments`, because a process argument is not private: `ps -ww -ax` prints the
+    /// full command line of every process the same user runs.
     public let standardInput: String?
 
     /// Build one engine run.
@@ -40,9 +36,11 @@ public struct EngineInvocation: Equatable, Sendable {
         geminiModel: GeminiModel? = nil,
         providerAPIKey: String? = nil,
         engineSourceRoot: URL? = nil,
-        contextText: String? = nil,
         appName: String? = nil,
-        recordDistillationPair: Bool = false
+        recordDistillationPair: Bool = false,
+        appleCleanerURL: URL? = nil,
+        speechEngine: SpeechEngine = .whisper,
+        parakeetHelperURL: URL? = nil
     ) -> EngineInvocation {
         let selectedCleaner = cleaner ?? configuration.cleaner
         let selectedMode = mode ?? configuration.mode
@@ -87,15 +85,19 @@ public struct EngineInvocation: Equatable, Sendable {
             "--language", configuration.language.rawValue,
             "--cleaner", selectedCleaner.rawValue,
             "--mode", selectedMode.engineMode,
-            "--ollama-url", configuration.ollamaURL,
-            "--ollama-model", configuration.ollamaModel,
             "--gemini-model", selectedGeminiModel,
             "--copy",
             "--json",
         ]
-        let selection = (contextText?.isEmpty == false) ? contextText : nil
-        if selection != nil {
-            arguments.append("--context-text-stdin")
+        // Named on every run, so the engine never falls back to a default the window
+        // does not show.
+        arguments.append(contentsOf: ["--transcriber", speechEngine.rawValue])
+        if speechEngine == .parakeet {
+            arguments.append(contentsOf: ["--parakeet-models", configuration.parakeetModels.path])
+            // The helper sits beside the app's own executable, on no PATH the child searches.
+            if let parakeetHelperURL {
+                arguments.append(contentsOf: ["--parakeet-bin", parakeetHelperURL.path])
+            }
         }
         if let appName, !appName.isEmpty {
             arguments.append(contentsOf: ["--app-name", appName])
@@ -103,13 +105,130 @@ public struct EngineInvocation: Equatable, Sendable {
         if recordDistillationPair {
             arguments.append("--distill")
         }
+        // Apple's model is reached through a helper the engine runs, so the engine has to
+        // be told where it is. A packaged app carries it beside its own executable, and
+        // that path is not on any PATH the child would search.
+        if let appleCleanerURL {
+            arguments.append(contentsOf: ["--apple-bin", appleCleanerURL.path])
+        }
 
         return EngineInvocation(
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: arguments,
             currentDirectoryURL: configuration.projectRoot,
             environment: environment,
-            standardInput: selection
+            standardInput: nil
         )
+    }
+
+    /// One run over text that was never spoken to this machine.
+    ///
+    /// A shortcut hands over text that was written rather than dictated, so there is no
+    /// recording: the engine's `clean` subcommand enters the pipeline after
+    /// transcription and the text travels on standard input, because `ps -ww -ax`
+    /// publishes arguments to every process the user runs and this is her document.
+    ///
+    /// framework.md R3d draws the rest. `--no-memory` keeps confirmed corrections and
+    /// snippets off the text, because they repair and expand speech. A cloud engine is
+    /// refused rather than run, because a shortcut shows nothing on screen that would say
+    /// the text is leaving this Mac; no key is ever placed in this environment.
+    public static func makeTextRun(
+        configuration: VoiceFlowConfiguration,
+        text: String,
+        mode: ProcessingMode,
+        cleaner: CleanerMode? = nil,
+        engineSourceRoot: URL? = nil,
+        appleCleanerURL: URL? = nil
+    ) throws -> EngineInvocation {
+        let selectedCleaner = cleaner ?? configuration.cleaner
+        guard !selectedCleaner.isCloud else {
+            throw TextRunRefusal.cloudEngine(selectedCleaner)
+        }
+        let environment = textRunEnvironment(
+            configuration: configuration,
+            engineSourceRoot: engineSourceRoot
+        )
+
+        var arguments = [
+            "python3",
+            "-m", "sanbluedot_voiceflow",
+            "clean",
+            "--mode", mode.engineMode,
+            "--cleaner", selectedCleaner.rawValue,
+            "--no-memory",
+            "--json",
+        ]
+        if let appleCleanerURL {
+            arguments.append(contentsOf: ["--apple-bin", appleCleanerURL.path])
+        }
+
+        return EngineInvocation(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: arguments,
+            currentDirectoryURL: configuration.projectRoot,
+            environment: environment,
+            standardInput: text
+        )
+    }
+
+    /// One Words command: read the vocabulary and corrections, or change one of them.
+    ///
+    /// The engine owns both stores — their locks, their atomic writes and the single-word
+    /// confirmation — so the window asks it rather than writing the files itself, and a
+    /// pair confirmed here is the same pair `vf correct` would have stored.
+    public static func makeWordsRun(
+        configuration: VoiceFlowConfiguration,
+        command: WordsCommand,
+        engineSourceRoot: URL? = nil
+    ) -> EngineInvocation {
+        EngineInvocation(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["python3", "-m", "sanbluedot_voiceflow"] + command.arguments,
+            currentDirectoryURL: configuration.projectRoot,
+            environment: textRunEnvironment(
+                configuration: configuration,
+                engineSourceRoot: engineSourceRoot
+            ),
+            standardInput: nil
+        )
+    }
+
+    /// The child environment every text run shares: the engine source on the path, no
+    /// bytecode written into a signed bundle, no keychain fallback, and no provider key
+    /// inherited from the parent.
+    private static func textRunEnvironment(
+        configuration: VoiceFlowConfiguration,
+        engineSourceRoot: URL?
+    ) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONPATH"] = (
+            engineSourceRoot
+                ?? configuration.projectRoot.appendingPathComponent("src", isDirectory: true)
+        ).path
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["VOICEFLOW_DISABLE_KEYCHAIN_FALLBACK"] = "1"
+        let inheritedPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(inheritedPath)"
+        for name in Array(environment.keys)
+        where name.hasPrefix("VOICEFLOW_") && name.hasSuffix("_API_KEY") {
+            environment.removeValue(forKey: name)
+        }
+        return environment
+    }
+}
+
+/// Why a text run was not built.
+public enum TextRunRefusal: Error, Equatable {
+    /// The engine chosen in the window sends text off this Mac; a shortcut refuses it.
+    case cloudEngine(CleanerMode)
+
+    /// What the shortcut tells the speaker, in the words that change what she does next.
+    public var message: String {
+        switch self {
+        case .cloudEngine(let cleaner):
+            return "VoiceFlow's shortcuts run only on this Mac, and the engine chosen in "
+                + "VoiceFlow is \(cleaner.shortName), which sends text to the cloud. "
+                + "Choose Apple in VoiceFlow, then run the shortcut again."
+        }
     }
 }

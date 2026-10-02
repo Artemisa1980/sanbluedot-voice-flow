@@ -151,6 +151,32 @@ public final class VoiceSnippetStore: @unchecked Sendable {
         return body()
     }
 
+    /// Apply one edit to the file as it is now, under the lock the engine also takes.
+    ///
+    /// The window used to write the list it loaded at launch, so a `vf snippet add` made
+    /// while it ran was erased by the next edit here (D-40). The file is re-read inside
+    /// the lock, changed and written back. Returns the store as written, or nil when the
+    /// file could not be read or written; nothing is written over a file this cannot read.
+    public static func edit(
+        at fileURL: URL = defaultStoreURL,
+        _ change: (VoiceSnippetStore) -> Void
+    ) -> VoiceSnippetStore? {
+        withFileLock(fileURL) {
+            let current: VoiceSnippetStore
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                guard let data = try? Data(contentsOf: fileURL),
+                      let decoded = decode(from: data) else { return nil }
+                current = decoded
+            } else {
+                current = VoiceSnippetStore()
+            }
+            change(current)
+            guard let data = current.encode(),
+                  (try? data.write(to: fileURL, options: .atomic)) != nil else { return nil }
+            return current
+        }
+    }
+
     public func save(to fileURL: URL = defaultStoreURL) {
         guard let data = encode() else { return }
         Self.withFileLock(fileURL) {

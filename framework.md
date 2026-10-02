@@ -6,7 +6,7 @@ This file is the normative product and acceptance specification. `proposal.md` o
 
 ## Objective
 
-Provide personal, low-friction dictation on macOS and Windows. A configurable push-to-talk shortcut captures speech, understands Spanish, English, and ordinary switching between them, applies the selected cleanup mode, and returns text safely to the user's current workflow.
+Provide personal, low-friction dictation on macOS. A configurable push-to-talk shortcut captures speech, understands Spanish, English, and ordinary switching between them, applies the selected cleanup mode, and returns text safely to the user's current workflow.
 
 ## Required behavior
 
@@ -23,7 +23,7 @@ Provide personal, low-friction dictation on macOS and Windows. A configurable pu
 - The trigger remains configurable. Other modifier keys alone are rejected to avoid
   collisions with ordinary keyboard use.
 - The application exposes recording, processing, success, and failure states.
-- The first implementation target is macOS; Windows uses a platform adapter after the Mac gate.
+- This specification governs the macOS implementation. A second platform is adapted, gated and measured on the machine it targets, and is not specified, audited or planned from here.
 
 ### R2 — Speech recognition
 
@@ -31,7 +31,9 @@ Provide personal, low-friction dictation on macOS and Windows. A configurable pu
 - Automatic detection covers Spanish, English, and mixed-language utterances in the acceptance corpus.
 - The language the engine selected is reported alongside the transcript. When the
   engine reports none, the label stays unknown and is never inferred from the text.
-- The raw transcript preserves the speech engine's text exactly.
+- The raw transcript preserves the speech engine's text exactly. The line breaks
+  whisper.cpp writes between segments are where it paused, not text the speaker
+  dictated, so segments are joined with one space.
 - Literal output may apply explicitly confirmed deterministic corrections, but no
   cleanup model changes it; the raw transcript remains separately available.
 - The speech backend is replaceable and cannot write directly to the active application.
@@ -42,8 +44,38 @@ Provide personal, low-friction dictation on macOS and Windows. A configurable pu
    deterministic corrections may be applied as a separate personalization layer.
 2. **Conservative:** remove unambiguous fillers, resolve explicit self-corrections only
    when that transformation can be verified safely, add punctuation, and format
-   paragraphs without translation or invented content.
+   paragraphs without translation or invented content. When the speech engine writes its own
+   punctuation (Parakeet), `clean` asks no model: the output guard's fillers are deleted
+   by rule and the result faces the same guard. A spoken take-back still goes to the
+   selected engine, and ES➔EN and NOTES are unchanged.
 3. **Rewrite:** improve tone or structure only after an explicit user action.
+
+**A spoken take-back is resolved as it is dictated.** When a `clean` dictation carries
+a take-back cue from `take_back.py` — "borra eso", "me equivoqué", "no, mejor", "perdón",
+"scratch that", "sorry" — it runs as a fix first, on every engine with a model. The
+model decides what was withdrawn; the fix guard lets it delete and refuses every word
+the speaker did not say, and web addresses, file paths, code and numbers stay as
+written. When the fix guard refuses, the dictation gets the ordinary cleanup instead of
+the bare transcript. A cue only decides that the model is asked, so the list leans
+wide; a bare "no" or "digo" stays out because nearly every sentence would then pay for a
+second call. A take-back withdraws the words just before it, never the dictation: the fix
+guard lets a deletion stand only within ten words before a cue or three after it, as one
+unbroken run up to the cue, and it
+matches from the end, because the corrected version is the one said last. On long
+dictations Apple and Ollama erased most of the text in fix mode, and this is what
+refuses it. `literal` has no model and never resolves a take-back. The raw
+transcript stays in History.
+
+**FIX teaches and fixes; no model rewrites.** FIX on a History row opens the Words
+section with what the engine heard in that dictation, editable. The speaker corrects the
+words in place; each run of changed words becomes a pair, shown before LEARN confirms
+it: a correction applied before any model sees the text, so it guides every engine from
+then on. A one-word change is learned with the words around it unless the speaker ticks
+that it applies everywhere. The same pairs are applied to that dictation's delivered
+text, whole words only, so the row shows the fix and COPY and RE-PASTE hand it over; a
+pair whose heard words are not in that text leaves the row as it was, and the speaker is
+told. A pair typed in the Words section still needs the second consent for one word, and
+LEARN pressed without it says so rather than staying greyed out.
 
 The raw transcript remains available for every mode. Cleanup failure must not erase it.
 
@@ -59,31 +91,21 @@ modes, and the distinction is normative rather than cosmetic.
    preserved.
 2. **Meeting notes:** structures spoken dictation into Markdown summary bullets and a
    `- [ ]` action-item checklist, keeping the speaker's language.
-3. **Transform selection:** applies a spoken instruction to text the speaker highlighted
-   in another application — summarize, restructure, change register, fix grammar. The
-   speech is the instruction; the selection is the material. The language of the
-   selection is kept unless the instruction asks for a translation.
+**Transform selection was removed on 2026-09-18.** It applied a spoken instruction to
+text highlighted in another application, and it was the one mode whose payload the
+speaker had not dictated — which is why it carried a captured-size warning, a pasteboard
+restore and a refusal when paired with the literal cleaner. macOS 27 ships Writing Tools,
+which does that job wherever the speaker types, and a second, worse copy of it is not a
+feature. The engine, the selection reader and the capsule's character count went with it.
 
-- Transform is the one mode whose payload is not the speaker's own dictation. What is
-  sent is whatever was on screen and highlighted, so the mode is selected deliberately,
-  never entered by inference, and the capsule names it before the microphone opens.
-- The selection is captured at the press, while the target window still holds focus, and
-  reaches the engine on standard input. A process argument is world-readable to the
-  user's own processes through `ps`; screen content the speaker did not dictate does not
-  travel that way.
-- **How much was captured is shown while the recording is still cancellable.** Every
-  other mode sends what the speaker just said, and she can check that payload by
-  remembering it. This one sends what was on screen, so the size is the only thing that
-  distinguishes the sentence she highlighted from the file behind it. It is a count of
-  the captured text, not an estimate, and it is on the capsule before transmission — a
-  selection past a long paragraph is coloured as a warning and still sent if she lets it
-  go, because rewriting a long document is legitimate and Escape is already the way out.
-- Reading the selection must leave the pasteboard as it was found. The capture is a
-  synthetic copy, and a recording the speaker cancels returns no result to replace what
-  the copy overwrote.
-- Transform requires a cleaner that can rewrite text. Paired with the literal cleaner it
-  is refused, because the alternative is a run that reads the selection, discards it and
-  returns an ordinary dictation under a badge that says otherwise.
+The product no longer reads the screen. Nothing in it captures text the speaker did not
+say. The removal is reversible and the condition is recorded in `phase-5-proposal.md`
+§11b: the owner is measuring Writing Tools against the work transform used to do, and
+transform returns only if that measurement finds a gap.
+
+- A mode that rewrites requires a cleaner that can rewrite. Paired with the literal
+  cleaner it is refused, because the alternative is a run that returns an ordinary
+  dictation under a badge that says otherwise.
 - Only `clean` passes through the conservative output guard. Every other mode is
   delivered as the provider returned it, and the guard must never be relaxed to
   accommodate one of them.
@@ -120,6 +142,20 @@ modes, and the distinction is normative rather than cosmetic.
   in place of an application is never reported as a launch.
 - Conversational phrases with non-app keywords are rejected to prevent accidental app launches.
 
+### R3d — Shortcuts
+
+Siri, Spotlight and Shortcuts can hand the engine text to clean, translate or turn into
+meeting notes. That text was written, not dictated.
+
+- A shortcut runs only on this Mac. With a cloud engine selected it is refused and says
+  why: a shortcut shows nothing on screen, so nothing would say the text is leaving, and
+  swapping in a local engine would run one the speaker did not pick.
+- Confirmed corrections and snippets do not apply. They repair and expand speech; applied
+  to written text they would change words nobody misheard.
+- The conservative output guard applies to `clean` exactly as it does to a dictation.
+- The product still reads nothing from the screen. A shortcut works on the text it is
+  handed, and choosing that text is the speaker's own action.
+
 ### R4 — Output
 
 - Clipboard delivery is the safe baseline on both platforms.
@@ -135,7 +171,10 @@ modes, and the distinction is normative rather than cosmetic.
 
 - Personalization uses a local vocabulary and explicitly confirmed correction pairs.
 - Unconfirmed edits, surrounding screen content, and arbitrary keystrokes are not learning signals.
-- A correction can be viewed, changed, or deleted.
+- A correction can be viewed, changed, or deleted. The Words section does all three,
+  and adds or removes vocabulary, by asking the engine, which owns both stores. It shows
+  which vocabulary terms fit what Whisper reads before it listens and which are stored
+  and unread, and whether a pair was learned from a FIX or typed there.
 - Personal data has a versioned local schema and is excluded from version control.
 - The single portable export carries every local store, and names what it carried. A
   file that promises "every piece" and omits one loses it silently on the machine the
@@ -183,7 +222,21 @@ explicitly and never inferred from the choice of provider.
 ### R6 — Model providers
 
 - `whisper.cpp` is the first local speech backend.
-- Ollama is the first local cleanup runtime; `qwen3:4b` is the initial candidate.
+- Parakeet Ultra is a second local speech backend, chosen in Settings and remembered
+  across launches. It runs on the Neural Engine through FluidAudio, reached through a
+  helper binary the engine runs, as Apple's cleanup model is; FluidAudio is linked by that
+  helper alone. Its tokens are held to the Latin script, which keeps mixed Spanish and
+  English mixed and refuses the Cyrillic the unfiltered model wrote on the owner's
+  corpus. It reads no vocabulary prompt; confirmed corrections apply after it as they do
+  after Whisper. It reports no language, so the label stays unknown. A dictation never
+  downloads it: a missing model is reported, and fetching it is a separate run.
+- Ollama was the first local cleanup runtime and was removed on 2026-10-01 by the owner's
+  decision. Apple's on-device model is the local cleanup engine.
+- Apple's on-device model is a second local cleanup runtime, reached through a helper
+  binary the engine runs rather than by moving cleanup into the application: the pipeline,
+  the personalization and the output guard stay where this document draws them. It needs
+  no credential and no network, so it is not a cloud provider. Like every other cleaner it
+  is measured on the fixed corpus through the same guard before it may become a default.
 - Cloud cleanup is optional, text-only, and disabled by default.
 - Gemini is the first cloud cleanup provider. Gate 4 closed on 2026-08-31; see
   `acceptance/phase-4-acceptance.md`.
@@ -295,11 +348,11 @@ personalized transcript -----------^ (fallback) ---> snippet expander -> clipboa
 ### Gate 1 — File-to-text engine
 
 - Unit tests and compilation checks pass.
-- The diagnostic command identifies missing binaries, models, and Ollama without crashing.
+- The diagnostic command identifies missing binaries and models without crashing.
 - A configured Whisper model is rejected unless it is a readable ggml model file
   whose size can hold the weights its own header describes.
 - A real WAV file can travel through literal mode to stdout and clipboard.
-- Ollama cleanup is opt-in and its failure preserves the raw transcript.
+- Model cleanup is opt-in and its failure preserves the raw transcript.
 
 ### Gate 2 — macOS push-to-talk
 
@@ -324,16 +377,15 @@ personalized transcript -----------^ (fallback) ---> snippet expander -> clipboa
   local cleaner, and its delivered text is no further from the reference than the
   engine transcript it replaced.
 
-### Gate 5 — Windows
+### Gate 5 — Second platform
 
-- The Windows machine and target applications are named before implementation.
-- The same engine tests pass on Windows.
-- Shortcut, capture, clipboard, insertion limits, packaging, and permissions are verified on that machine.
+Not this specification's gate. It is defined, measured and reported on the machine it
+targets, and `acceptance/phase-5-acceptance.md` is its only record here.
 
 ### Gate 6 — Pronunciation practice
 
-This gate is independent of Gates 4 and 5 and may be closed before either. It depends
-only on the local engine and on retained practice audio.
+This gate is independent of Gate 4 and may be closed before it. It depends only on the
+local engine and on retained practice audio.
 
 - A practice session records, keeps its audio, and pairs it with the reference text.
 - The word-level report names every reference word the engine did not recover.
@@ -343,7 +395,7 @@ only on the local engine and on retained practice audio.
   spoken number, from words the engine genuinely failed to recover. Formatting
   differences are excluded from the pronunciation signal.
 
-## Non-goals before Gate 5
+## Non-goals
 
 - Mobile applications, team accounts, analytics, subscription billing, and enterprise controls.
 - Continuous acoustic-model training or claims that the speech model retrains itself.

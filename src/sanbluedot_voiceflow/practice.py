@@ -444,8 +444,28 @@ class PracticeStore:
         was already wrong.
         """
         with exclusive_file_lock(self.index):
+            existed = self.index.exists()
             indexed = {int(item["id"]) for item in self.load()}
+            if existed and not self.index.exists():
+                # The index was unreadable and is now quarantined. It may still claim
+                # every kept take, and an empty view of it deleted them all (D-54).
+                return []
+            indexed |= self._claimed_ids()
             return sweep_orphan_takes(self.directory, indexed)
+
+    def _claimed_ids(self) -> set[int]:
+        """Every id the index names, including entries `load` skips as incomplete."""
+        try:
+            payload = json.loads(self.index.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        entries = payload.get("sessions", []) if isinstance(payload, dict) else []
+        if not isinstance(entries, list):
+            return set()
+        return {
+            item["id"] for item in entries
+            if isinstance(item, dict) and type(item.get("id")) is int
+        }
 
     def next_audio_path(self) -> Path:
         self.directory.mkdir(parents=True, exist_ok=True)

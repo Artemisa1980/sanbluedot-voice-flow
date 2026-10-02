@@ -22,8 +22,6 @@ class CliTests(unittest.TestCase):
             "language": "auto",
             "cleaner": "literal",
             "mode": "clean",
-            "ollama_url": "http://127.0.0.1:11434",
-            "ollama_model": "qwen3:4b",
             "gemini_model": "gemini-3.7-flash",
             "copy": False,
             "json": False,
@@ -37,77 +35,53 @@ class CliTests(unittest.TestCase):
         defaults.update(overrides)
         return Namespace(**defaults)
 
-    def test_transform_without_a_rewriting_cleaner_is_refused(self) -> None:
-        """The pair produced a plain dictation while the HUD said TRANSFORM.
+    def test_translate_without_a_rewriting_cleaner_is_refused(self) -> None:
+        """`literal` returns the sentence it was given.
 
-        The literal cleaner carries no mode, so the pipeline read `clean`, dropped the
-        captured selection and ran the conservative guard. Nothing failed and nothing
-        transformed, which is the one outcome the speaker cannot see.
+        The run delivered untranslated Spanish while the capsule said ES➔EN, because the
+        refusal covered one mode and not the others.
         """
-        args = self._process_args(mode="transform", cleaner="literal")
+        args = self._process_args(mode="translate", cleaner="literal")
 
         stderr = StringIO()
         with redirect_stderr(stderr):
             status = cli._process(args)
 
         self.assertEqual(status, 1)
-        self.assertIn("Transform needs a cleaner that can rewrite text", stderr.getvalue())
+        self.assertIn("translate", stderr.getvalue())
 
-    def test_transform_selection_is_read_from_standard_input(self) -> None:
-        """An argument is readable by every process the speaker runs; stdin is not."""
-        args = self._process_args(
-            mode="transform", cleaner="ollama", context_text_stdin=True
-        )
-        captured: dict[str, object] = {}
-
-        class RecordingPipeline:
-            def __init__(self, **kwargs: object) -> None:
-                captured.update(kwargs)
-
-            def process(self, audio: Path) -> PipelineResult:
-                del audio
-                return PipelineResult(
-                    raw_text="hazlo formal",
-                    personalized_text="hazlo formal",
-                    final_text="Estimado equipo",
-                    language="es",
-                    cleaner="ollama",
-                    transcribe_seconds=0.1,
-                    cleanup_seconds=0.2,
-                )
-
-        with (
-            patch.object(cli, "DictationPipeline", RecordingPipeline),
-            patch.object(cli, "WhisperCppTranscriber", lambda **_: object()),
-            patch.object(cli, "build_cleaner", lambda *_, **__: object()),
-            patch("sys.stdin", StringIO("  --verbose flag from the editor  ")),
-            redirect_stdout(StringIO()),
-        ):
-            status = cli._process(args)
-
-        self.assertEqual(status, 0)
-        self.assertEqual(captured["context_text"], "--verbose flag from the editor")
-
-    def test_an_unreadable_selection_is_refused_without_a_traceback(self) -> None:
-        """The selection comes from another application, so it can be undecodable.
-
-        A traceback would end the run by crashing, after the speaker already recorded.
-        """
-        args = self._process_args(
-            mode="transform", cleaner="ollama", context_text_stdin=True
-        )
-
-        class FailingStdin:
-            def read(self) -> str:
-                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    def test_meeting_without_a_rewriting_cleaner_is_refused(self) -> None:
+        args = self._process_args(mode="meeting", cleaner="literal")
 
         stderr = StringIO()
-        with patch("sys.stdin", FailingStdin()), redirect_stderr(stderr):
+        with redirect_stderr(stderr):
             status = cli._process(args)
 
         self.assertEqual(status, 1)
-        self.assertIn("The highlighted selection could not be read", stderr.getvalue())
-        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertIn("meeting", stderr.getvalue())
+
+    def test_clean_stays_legal_with_the_literal_cleaner(self) -> None:
+        """The refusal must not reach the default pairing.
+
+        `clean` with `literal` is what the application starts in, and `actions` reaches
+        the engine as `clean`. A refusal that widened to every mode would stop ordinary
+        dictation.
+        """
+        args = self._process_args(mode="clean", cleaner="literal")
+        result = PipelineResult(
+            raw_text="hola",
+            personalized_text="hola",
+            final_text="hola",
+            language="es",
+            cleaner="literal",
+        )
+
+        with (
+            patch.object(cli.DictationPipeline, "process", return_value=result),
+            redirect_stdout(StringIO()),
+            redirect_stderr(StringIO()),
+        ):
+            self.assertEqual(cli._process(args), 0)
 
     def test_cleanup_failure_copies_safe_fallback_when_requested(self) -> None:
         args = Namespace(
@@ -116,8 +90,6 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="literal",
-            ollama_url="http://127.0.0.1:11434",
-            ollama_model="qwen3:4b",
             gemini_model="gemini-3.7-flash",
             copy=True,
             json=False,
@@ -146,9 +118,7 @@ class CliTests(unittest.TestCase):
             whisper_bin="whisper-cli",
             whisper_model=Path("model.bin"),
             language="auto",
-            cleaner="ollama",
-            ollama_url="http://127.0.0.1:11434",
-            ollama_model="qwen3:4b",
+            cleaner="apple",
             gemini_model="gemini-3.7-flash",
             copy=True,
             json=False,
@@ -179,8 +149,6 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="literal",
-            ollama_url="http://127.0.0.1:11434",
-            ollama_model="qwen3:4b",
             gemini_model="gemini-3.7-flash",
             copy=True,
             json=False,
@@ -214,8 +182,6 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="literal",
-            ollama_url="http://127.0.0.1:11434",
-            ollama_model="qwen3:4b",
             gemini_model="gemini-3.7-flash",
             copy=False,
             json=True,
@@ -405,6 +371,34 @@ class DistillationConsentTests(unittest.TestCase):
         record.assert_called_once()
         self.assertEqual(record.call_args.kwargs["raw_text"], "hola que tal")
 
+    def test_a_local_cleaner_cannot_record_a_pair_and_says_so(self) -> None:
+        """A pair is the cloud rewrite beside the engine transcript.
+
+        A local cleaner has no cloud side to store, so the flag records nothing. Saying
+        nothing left the speaker believing a store was filling that was not, which is
+        what R5c forbids.
+        """
+        args = CliTests._process_args(cleaner="apple", distill=True)
+        result = PipelineResult(
+            raw_text="hola que tal",
+            personalized_text="hola que tal",
+            final_text="Hola, ¿qué tal?",
+            language="es",
+            cleaner="apple",
+        )
+        errors = StringIO()
+
+        with (
+            patch.object(cli.DictationPipeline, "process", return_value=result),
+            patch.object(cli.DistillationStore, "record") as record,
+            redirect_stdout(StringIO()),
+            redirect_stderr(errors),
+        ):
+            self.assertEqual(cli._process(args), 0)
+
+        record.assert_not_called()
+        self.assertIn("No distillation pair was recorded", errors.getvalue())
+
     def test_a_failed_recording_is_reported_not_swallowed(self) -> None:
         args = CliTests._process_args(cleaner="gemini", distill=True)
         errors = StringIO()
@@ -497,6 +491,57 @@ class DistillCommandTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("Read-only file system", errors.getvalue())
 
+    def test_fix_without_a_rewriting_cleaner_is_refused(self) -> None:
+        """`literal` cannot resolve a self-correction; a fix it ran would change nothing."""
+        errors = StringIO()
+        with (
+            patch.object(cli.sys, "stdin", StringIO("el lunes no perdon el martes")),
+            redirect_stdout(StringIO()),
+            redirect_stderr(errors),
+        ):
+            status = cli.main(["clean", "--mode", "fix", "--cleaner", "literal", "--no-memory"])
+
+        self.assertEqual(status, 1)
+        self.assertIn("fix", errors.getvalue())
+
+    def test_clean_json_carries_every_field_the_app_decodes(self) -> None:
+        """The app decodes `personalized_text` as required; a reply without it failed."""
+        output = StringIO()
+        with (
+            patch.object(cli.sys, "stdin", StringIO("hola mundo")),
+            redirect_stdout(output),
+            redirect_stderr(StringIO()),
+        ):
+            status = cli.main(["clean", "--cleaner", "literal", "--no-memory", "--json"])
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(payload["personalized_text"], "hola mundo")
+        self.assertIn("timings", payload)
+
+    def test_clean_json_fallback_carries_the_same_fields(self) -> None:
+        failure = CleanupFailed(
+            "refused",
+            raw_text="hola mundo",
+            fallback_text="hola mundo",
+            cleanup_seconds=0.5,
+            reason="guard",
+            rejected_text="Hola, mundo nuevo.",
+        )
+        output = StringIO()
+        with (
+            patch.object(cli.sys, "stdin", StringIO("hola mundo")),
+            patch.object(cli.DictationPipeline, "process_text", side_effect=failure),
+            redirect_stdout(output),
+            redirect_stderr(StringIO()),
+        ):
+            status = cli.main(["clean", "--cleaner", "apple", "--no-memory", "--json"])
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(status, 2)
+        self.assertEqual(payload["personalized_text"], "hola mundo")
+        self.assertEqual(payload["timings"]["cleanup_seconds"], 0.5)
+        self.assertEqual(payload["fallback_reason"], "guard")
 
 
 if __name__ == "__main__":

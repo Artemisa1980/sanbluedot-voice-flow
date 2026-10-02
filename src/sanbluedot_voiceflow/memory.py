@@ -145,6 +145,48 @@ def load_vocabulary(path: Path = DEFAULT_VOCABULARY) -> list[str]:
     return terms
 
 
+def add_vocabulary_term(term: str, path: Path = DEFAULT_VOCABULARY) -> bool:
+    """Append one term. False when it is already there, in any case.
+
+    File order is priority order and the prompt fills from the top, so a new term lands
+    last: past the budget it is stored and unread, which the Words section says.
+    """
+    term = term.strip()
+    if not term or "\n" in term:
+        raise ValueError("A vocabulary term is one line of text.")
+    with exclusive_file_lock(path):
+        existing = load_vocabulary(path)
+        if term.casefold() in {item.casefold() for item in existing}:
+            return False
+        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        _write_lines_atomically(path, lines + [term])
+    return True
+
+
+def remove_vocabulary_term(term: str, path: Path = DEFAULT_VOCABULARY) -> bool:
+    """Remove one term, keeping every other line and comment in its place."""
+    wanted = term.strip().casefold()
+    if not wanted or not path.is_file():
+        return False
+    with exclusive_file_lock(path):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        kept = [line for line in lines if line.strip().casefold() != wanted]
+        if len(kept) == len(lines):
+            return False
+        _write_lines_atomically(path, kept)
+    return True
+
+
+def _write_lines_atomically(path: Path, lines: Sequence[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def build_initial_prompt(
     terms: Sequence[str],
     char_budget: int = PROMPT_CHAR_BUDGET,
@@ -206,6 +248,7 @@ def export_memory(
             "heard": item.heard,
             "intended": item.intended,
             "confirmed_at": item.confirmed_at,
+            **({"source": item.source} if item.source else {}),
         }
         for item in CorrectionStore(directory / "corrections.local.json").load()
     ]
@@ -241,11 +284,18 @@ def export_memory(
     return destination, counts
 
 
+# Where a correction was confirmed. "fix" is a History row's FIX, "window" the Words
+# section, and the empty string a terminal `vf correct` or a pair stored before sources
+# were kept. It is what the Words section filters on; it changes nothing the pair does.
+CORRECTION_SOURCES = ("fix", "window")
+
+
 @dataclass(frozen=True, slots=True)
 class Correction:
     heard: str
     intended: str
     confirmed_at: str
+    source: str = ""
 
 
 def _bounded_pattern(heard: str) -> re.Pattern[str]:
@@ -339,26 +389,31 @@ class CorrectionStore:
                 continue
             if not heard.strip() or not intended.strip():
                 continue
+            source = entry.get("source", "")
             corrections.append(
                 Correction(
                     heard=heard,
                     intended=intended,
                     confirmed_at=str(entry.get("confirmed_at", "")),
+                    source=source if source in CORRECTION_SOURCES else "",
                 )
             )
         return corrections
 
-    def add(self, heard: str, intended: str) -> Correction:
+    def add(self, heard: str, intended: str, source: str = "") -> Correction:
         """Store one pair the user confirmed. Re-adding a pair replaces it."""
         heard = heard.strip()
         intended = intended.strip()
         if not heard or not intended:
             raise ValueError("A correction needs both the heard and the intended text.")
+        if source and source not in CORRECTION_SOURCES:
+            raise ValueError(f"Unknown correction source: {source!r}.")
 
         confirmed = Correction(
             heard=heard,
             intended=intended,
             confirmed_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            source=source,
         )
         with exclusive_file_lock(self.path):
             kept = [
@@ -390,6 +445,7 @@ class CorrectionStore:
                         "heard": item.heard,
                         "intended": item.intended,
                         "confirmed_at": item.confirmed_at,
+                        **({"source": item.source} if item.source else {}),
                     }
                     for item in corrections
                 ],

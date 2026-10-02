@@ -1,10 +1,7 @@
-import json
 import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 
 from .transcribers import resolve_binary
 
@@ -90,8 +87,6 @@ def run_checks(
     *,
     whisper_binary: str,
     whisper_model: Path | None,
-    ollama_url: str,
-    ollama_model: str,
 ) -> list[Check]:
     checks = [
         Check(
@@ -111,37 +106,4 @@ def run_checks(
     )
 
     checks.append(inspect_whisper_model(whisper_model))
-
-    try:
-        with urlopen(f"{ollama_url.rstrip('/')}/api/tags", timeout=1.5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("Ollama returned a non-object response.")
-        models = payload.get("models", [])
-        if not isinstance(models, list):
-            raise ValueError("Ollama returned a non-list models field.")
-        names = {
-            model.get("name")
-            for model in models
-            if isinstance(model, dict)
-        }
-        model_present = ollama_model in names
-        detail = (
-            f"available with {ollama_model}"
-            if model_present
-            else f"service available; model missing: {ollama_model}"
-        )
-        checks.append(Check("Ollama", model_present, detail))
-    except (
-        HTTPError,
-        URLError,
-        TimeoutError,
-        OSError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        TypeError,
-        ValueError,
-    ):
-        checks.append(Check("Ollama", False, "service not reachable"))
-
     return checks

@@ -20,6 +20,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selectedCleaner = CleanerMode.literal
     private var selectedMode = ProcessingMode.clean
 
+    /// The engine the speaker picked, remembered across launches.
+    ///
+    /// R6 makes this the rule for the cloud model, and the reason is the same one: the
+    /// app is opened from the Finder with no arguments, so a choice that lives only in
+    /// launch configuration is no choice at all. An explicit `--cleaner` still wins,
+    /// because a speaker who names an engine on the command line means that run.
+    private static let cleanerDefaultsKey = "dot.sanblue.voiceflow.cleaner"
+
+    /// The speech engine the speaker picked, remembered across launches for the same
+    /// reason as the cleaner: the app is opened from the Finder with no arguments.
+    private static let speechEngineDefaultsKey = "dot.sanblue.voiceflow.speechEngine"
+    private var selectedSpeechEngine: SpeechEngine = {
+        UserDefaults.standard.string(forKey: AppDelegate.speechEngineDefaultsKey)
+            .flatMap(SpeechEngine.init(rawValue:)) ?? .whisper
+    }()
+
     /// The cloud model the speaker picked, remembered across launches. The app is
     /// launched from Finder with no arguments, so without this the choice would reset
     /// to the compiled default every time.
@@ -69,7 +85,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             try validate(configuration)
             self.configuration = configuration
-            selectedCleaner = configuration.cleaner
+            // An App Intent can run with no window open, so it cannot ask the delegate
+            // where the engine is. Handed over here, once, from the same parse.
+            AppIntentsContext.configuration = configuration
+            AppIntentsContext.engineSourceRoot = engineSourceRoot(for: configuration)
+
+            let cleanerWasGiven = CommandLine.arguments.contains("--cleaner")
+            selectedCleaner = cleanerWasGiven
+                ? configuration.cleaner
+                : UserDefaults.standard
+                    .string(forKey: AppDelegate.cleanerDefaultsKey)
+                    .flatMap(CleanerMode.init(rawValue:))
+                    ?? configuration.cleaner
             selectedMode = configuration.mode
         } catch {
             launchError = error
@@ -87,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controlWindow.configureShortcut(name: configuration.shortcut.displayName)
             updateModeMenuItem()
             authorizeAndStart()
+            refreshWords()
         }
     }
 
@@ -120,10 +148,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         controlWindow.configureMode(selected: selectedMode)
         controlWindow.configureGeminiModel(selected: selectedGeminiModel)
+        controlWindow.configureSpeechEngine(selected: selectedSpeechEngine)
+        controlWindow.onSpeechEngineChange = { [weak self] engine in
+            guard let self else { return }
+            self.selectedSpeechEngine = engine
+            self.controller?.selectSpeechEngine(engine)
+            UserDefaults.standard.set(engine.rawValue, forKey: AppDelegate.speechEngineDefaultsKey)
+            self.controlWindow.addLog("speech: \(engine.shortName)", isHighlight: true)
+        }
         controlWindow.onCleanerChange = { [weak self] cleaner in
             self?.selectedCleaner = cleaner
             self?.controller?.selectCleaner(cleaner)
             self?.refreshProvider(cleaner)
+            UserDefaults.standard.set(
+                cleaner.rawValue, forKey: AppDelegate.cleanerDefaultsKey
+            )
         }
         controlWindow.onModeChange = { [weak self] mode in
             // The window already shows the new mode and wrote its own log line, so this
@@ -148,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlWindow.onCopyHistoryRecord = { [weak self] record in
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
-            pasteboard.setString(record.finalText, forType: .string)
+            pasteboard.setString(record.currentText, forType: .string)
             self?.playCompletionSound()
         }
         controlWindow.onCopyRawRecord = { [weak self] record in
@@ -160,13 +199,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlWindow.onRepasteHistoryRecord = { [weak self] record in
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
-            pasteboard.setString(record.finalText, forType: .string)
+            pasteboard.setString(record.currentText, forType: .string)
             self?.playCompletionSound()
             NSApplication.shared.hide(nil)
             AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste in
                 let action = didAutoPaste ? "re-pasted" : "copied"
                 self?.controlWindow?.addLog("\(action) from history: \"\(record.menuPreview())\"", isHighlight: true)
             }
+        }
+        controlWindow.onRefreshWords = { [weak self] in
+            self?.refreshWords()
+        }
+        controlWindow.onLearnCorrection = { [weak self] request in
+            guard let self else { return }
+            // An edit that changed the heard side is a new key: the old pair goes, so
+            // the list never holds both the misspelling and its replacement.
+            var commands: [WordsCommand] = []
+            if let old = request.replacing, let first = request.pairs.first,
+               old.lowercased() != first.heard.lowercased() {
+                commands.append(.forget(heard: old))
+            }
+            for pair in request.pairs {
+                commands.append(.learn(
+                    heard: pair.heard,
+                    intended: pair.intended,
+                    everywhere: request.everywhere && pair.isOneWord,
+                    source: request.source
+                ))
+            }
+            let learned = request.pairs
+                .map { "\"\($0.heard)\" → \"\($0.intended)\"" }
+                .joined(separator: ", ")
+            self.runWords(commands, success: "learned: \(learned)") { [weak self] in
+                self?.applyLearnedFix(request)
+                self?.controlWindow.clearTeachForm()
+            }
+        }
+        controlWindow.onForgetCorrection = { [weak self] heard in
+            self?.runWords([.forget(heard: heard)], success: "deleted: \"\(heard)\"")
+        }
+        controlWindow.onAddWord = { [weak self] term in
+            self?.runWords([.addWord(term)], success: "added to vocabulary: \"\(term)\"") { [weak self] in
+                self?.controlWindow.clearNewWord()
+            }
+        }
+        controlWindow.onRemoveWord = { [weak self] term in
+            self?.runWords([.removeWord(term)], success: "removed from vocabulary: \"\(term)\"")
         }
         controlWindow.onClearHistory = { [weak self] in
             self?.clearDictationHistory()
@@ -193,19 +271,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let failure = AppDelegate.snippetLoad.failure {
             controlWindow.addLog(failure, isHighlight: true)
         }
+        // Every edit re-reads the file under the engine's lock, so a `vf snippet add` made
+        // while the app runs survives the next edit here (D-40).
         controlWindow.onAddSnippet = { [weak self] trigger, expansion, description in
             guard let self else { return }
-            if let snip = self.snippetStore.add(trigger: trigger, expansion: expansion, description: description) {
-                self.snippetStore.save()
-                self.controlWindow.updateSnippets(self.snippetStore.snippets)
+            var added: VoiceSnippet?
+            guard let written = VoiceSnippetStore.edit({
+                added = $0.add(trigger: trigger, expansion: expansion, description: description)
+            }) else {
+                self.controlWindow.addLog("the snippet was not saved · the store could not be read or written", isHighlight: true)
+                return
+            }
+            self.snippetStore = written
+            self.controlWindow.updateSnippets(written.snippets)
+            if let snip = added {
                 self.controlWindow.addLog("added voice snippet [\(snip.trigger)]", isHighlight: true)
             }
         }
         controlWindow.onDeleteSnippet = { [weak self] id in
-            guard let self else { return }
-            if self.snippetStore.delete(id: id) {
-                self.snippetStore.save()
-                self.controlWindow.updateSnippets(self.snippetStore.snippets)
+            guard let self,
+                  let trigger = self.snippetStore.snippets.first(where: { $0.id == id })?.trigger
+            else { return }
+            var deleted = false
+            guard let written = VoiceSnippetStore.edit({ deleted = $0.delete(trigger: trigger) }) else {
+                self.controlWindow.addLog("the snippet was not deleted · the store could not be read or written", isHighlight: true)
+                return
+            }
+            self.snippetStore = written
+            self.controlWindow.updateSnippets(written.snippets)
+            if deleted {
                 self.controlWindow.addLog("deleted voice snippet", isHighlight: true)
             }
         }
@@ -475,7 +569,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(record.finalText, forType: .string)
+        pasteboard.setString(record.currentText, forType: .string)
         playCompletionSound()
         controlWindow?.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
     }
@@ -501,7 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(record.finalText, forType: .string)
+        pasteboard.setString(record.currentText, forType: .string)
         playCompletionSound()
         AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste in
             let action = didAutoPaste ? "re-pasted" : "copied"
@@ -515,6 +609,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildHistoryMenu()
         controlWindow?.updateRecentDictations([])
         controlWindow?.addLog("history cleared")
+    }
+
+    /// Read the vocabulary and corrections into the Words section.
+    private func refreshWords() {
+        runWords([], success: nil)
+    }
+
+    /// Run Words commands in order, then read the stores again, off the main thread.
+    ///
+    /// The engine owns both stores, so every change goes through it and the section is
+    /// redrawn from what it reports afterwards, never from what the window assumed. A
+    /// refusal is shown in the engine's own words: the single-word confirmation, a pair
+    /// with a side missing.
+    private func runWords(
+        _ commands: [WordsCommand],
+        success: String?,
+        onSuccess: (@MainActor () -> Void)? = nil
+    ) {
+        guard let configuration else { return }
+        let runner = EngineRunner(
+            configuration: configuration,
+            engineSourceRoot: engineSourceRoot(for: configuration)
+        )
+        DispatchQueue.global(qos: .userInitiated).async {
+            var failure: String?
+            for command in commands {
+                do {
+                    _ = try runner.words(command)
+                } catch EngineRunnerError.engineFailed(_, let detail) where !detail.isEmpty {
+                    failure = detail
+                    break
+                } catch {
+                    failure = error.localizedDescription
+                    break
+                }
+            }
+            let snapshot = try? runner.words(.read)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let snapshot { self.controlWindow.updateWords(snapshot) }
+                if let failure {
+                    NSSound.beep()
+                    self.controlWindow.setWordsNotice(failure)
+                    self.controlWindow.addLog("words · \(failure)", isHighlight: true)
+                } else if let success {
+                    self.controlWindow.setWordsNotice(success)
+                    self.controlWindow.addLog("words · \(success)", isHighlight: true)
+                    onSuccess?()
+                }
+            }
+        }
+    }
+
+    /// FIX fixes the dictation it was opened from, not only the next ones.
+    ///
+    /// Runs only after the engine stored the pair, so a refused pair never changes a row.
+    /// The row keeps what was delivered and shows the fix beside it; COPY and RE-PASTE
+    /// then hand over the fixed text.
+    private func applyLearnedFix(_ request: WordsLearnRequest) {
+        guard let id = request.dictation,
+              let record = historyStore.records.first(where: { $0.id == id }) else { return }
+        var fixed = record.currentText
+        var missing: [String] = []
+        for pair in request.pairs {
+            if let applied = CorrectionApplication.apply(
+                heard: pair.heard, intended: pair.intended, to: fixed
+            ) {
+                fixed = applied
+            } else {
+                missing.append("\"\(pair.heard)\"")
+            }
+        }
+        guard fixed != record.currentText else {
+            controlWindow.setWordsNotice(
+                "learned for the next dictations · \(missing.joined(separator: ", ")) is not "
+                    + "in what that dictation delivered, so that row is unchanged"
+            )
+            return
+        }
+        guard historyStore.attachFix(fixed, to: id) else { return }
+        saveHistory()
+        rebuildHistoryMenu()
+        controlWindow.updateRecentDictations(historyStore.records)
+        let partial = missing.isEmpty
+            ? ""
+            : " · not in that dictation's text, learned only: \(missing.joined(separator: ", "))"
+        controlWindow.setWordsNotice(
+            "fixed in that dictation and learned for the next ones · COPY or RE-PASTE it from History"
+                + partial
+        )
+        controlWindow.addLog("words · fixed the \(record.timeString) dictation", isHighlight: true)
     }
 
     private func saveHistory() {
@@ -791,6 +976,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.selectCleaner(selectedCleaner)
         controller.selectMode(selectedMode)
         controller.selectGeminiModel(selectedGeminiModel)
+        controller.selectSpeechEngine(selectedSpeechEngine)
         controller.recordDistillationPairs = recordDistillationPairs
         controller.onStatusChange = { [weak self] status in
             self?.updateStatus(status)
@@ -862,6 +1048,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .escaped:
                 controlWindow.addLog("recording cancelled · the audio was discarded", isHighlight: true)
                 floatingHUD.showCancelled()
+            case .refused(let refusal):
+                controlWindow.addLog(refusal, isHighlight: true)
+                floatingHUD.showFailed(message: refusal)
             }
             updateStatus(.idle)
 
@@ -882,8 +1071,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             floatingHUD.showRecording(
                 cleanerName: selectedCleaner.rawValue,
                 mode: selectedMode,
-                context: targetContext,
-                selectionCharacters: controller?.capturedSelectionCharacters
+                context: targetContext
             ) { [weak self] in
                 let level = self?.controller?.currentAudioLevel ?? 0.0
                 self?.controlWindow.updateAudioLevel(Double(level))

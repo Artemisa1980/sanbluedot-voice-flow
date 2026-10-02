@@ -13,7 +13,9 @@ to the deterministic personalized transcript, so a provider outage costs the spe
 nothing but the cleanup.
 """
 
+import errno
 import json
+import socket
 import sys
 import time
 from collections.abc import Callable
@@ -26,8 +28,8 @@ from ..errors import CleanupError
 from .prompt import (
     CLEANED_TEXT_SCHEMA,
     CONSERVATIVE_SYSTEM_PROMPT,
+    FIX_SYSTEM_PROMPT,
     MEETING_NOTES_SYSTEM_PROMPT,
-    TRANSFORM_SYSTEM_PROMPT,
     TRANSLATE_EN_SYSTEM_PROMPT,
     output_token_budget,
 )
@@ -98,6 +100,28 @@ def per_model_slice(total_seconds: float, chain_length: int) -> float:
 
 CONTACT_AT_CAPACITY = "capacity"
 CONTACT_TIMED_OUT = "timed out"
+# One attempt died on a connection that is still there. Reported apart from a timeout
+# because the clock is not what ran out, and apart from an unreachable host because the
+# next model is still worth trying.
+CONTACT_DROPPED = "dropped"
+
+_ONE_MODEL = {
+    CONTACT_AT_CAPACITY: "Gemini is at capacity ({names}).",
+    CONTACT_TIMED_OUT: "Gemini ran out of the time budget ({names}).",
+    CONTACT_DROPPED: "Gemini dropped the connection ({names}).",
+}
+_EVERY_MODEL = {
+    CONTACT_AT_CAPACITY: "Every Gemini model contacted is at capacity: {names}.",
+    CONTACT_TIMED_OUT: (
+        "Every Gemini model contacted ran out of the time budget: {names}."
+    ),
+    CONTACT_DROPPED: "Every Gemini model contacted dropped the connection: {names}.",
+}
+_PER_MODEL = {
+    CONTACT_AT_CAPACITY: "{model} was at capacity",
+    CONTACT_TIMED_OUT: "{model} ran out of the time budget",
+    CONTACT_DROPPED: "{model} dropped the connection",
+}
 
 
 def describe_chain_failure(
@@ -122,21 +146,13 @@ def describe_chain_failure(
 
     reasons = {reason for _, reason in contacted}
     names = ", ".join(model for model, _ in contacted)
-    if reasons == {CONTACT_AT_CAPACITY}:
-        detail = (
-            f"Gemini is at capacity ({names})." if len(contacted) == 1
-            else f"Every Gemini model contacted is at capacity: {names}."
-        )
-    elif reasons == {CONTACT_TIMED_OUT}:
-        detail = (
-            f"Gemini ran out of the time budget ({names})." if len(contacted) == 1
-            else f"Every Gemini model contacted ran out of the time budget: {names}."
-        )
+    if len(reasons) == 1:
+        reason = next(iter(reasons))
+        template = _ONE_MODEL[reason] if len(contacted) == 1 else _EVERY_MODEL[reason]
+        detail = template.format(names=names)
     else:
         parts = "; ".join(
-            f"{model} was at capacity" if reason == CONTACT_AT_CAPACITY
-            else f"{model} ran out of the time budget"
-            for model, reason in contacted
+            _PER_MODEL[reason].format(model=model) for model, reason in contacted
         )
         detail = f"Gemini did not answer: {parts}."
     if skipped:
@@ -148,12 +164,53 @@ def _announce_to_stderr(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-class _ModelTimedOut(Exception):
-    """One model used up its slice of the budget. Internal: it never leaves this module."""
+# This machine has no route to the provider: the name does not resolve, the connection is
+# refused, or the network is down. Nothing was sent, so nothing can be said about any
+# model's availability and the chain has nothing better to reach.
+_UNREACHABLE_TYPES = (socket.gaierror, ConnectionRefusedError)
+_UNREACHABLE_ERRNOS = frozenset({
+    errno.ENETUNREACH,
+    errno.EHOSTUNREACH,
+    errno.ENETDOWN,
+    errno.ECONNREFUSED,
+})
 
-    def __init__(self, cause: Exception) -> None:
-        super().__init__("model timed out")
+
+def _is_unreachable(error: BaseException) -> bool:
+    """Whether the provider could not be reached at all from this machine.
+
+    `urlopen` reports a slow reply, a dropped connection and an unresolvable name through
+    the same exception family, and they are not the same fact: the first two are about
+    one attempt, the third is about the network here. Only the third makes the rest of
+    the chain pointless, because every model behind it is just as unreachable.
+    """
+    for candidate in (error, getattr(error, "reason", None)):
+        if isinstance(candidate, _UNREACHABLE_TYPES):
+            return True
+        if getattr(candidate, "errno", None) in _UNREACHABLE_ERRNOS:
+            return True
+    return False
+
+
+def _contact_reason(error: BaseException) -> str:
+    """Whether this attempt ran out of time or lost the connection it had."""
+    for candidate in (error, getattr(error, "reason", None)):
+        if isinstance(candidate, TimeoutError):
+            return CONTACT_TIMED_OUT
+    return CONTACT_DROPPED
+
+
+class _ModelUnfinished(Exception):
+    """One attempt did not deliver. Internal: it never leaves this module.
+
+    `reason` separates the clock running out from the connection being lost, because the
+    failure message names what happened to each model and the two are different facts.
+    """
+
+    def __init__(self, cause: Exception, reason: str = CONTACT_TIMED_OUT) -> None:
+        super().__init__("model did not finish")
         self.cause = cause
+        self.reason = reason
 
 
 class _TransientProvider(Exception):
@@ -209,7 +266,15 @@ class GeminiCleaner:
             return self.endpoint
         return f"{self.endpoint.rstrip('/')}/models/{model}:generateContent"
 
-    def clean(self, text: str, language_hint: str | None = None) -> str:
+    def clean(
+        self,
+        text: str,
+        language_hint: str | None = None,
+        mode: str | None = None,
+    ) -> str:
+        # `mode` overrides the constructed mode for this call only. The pipeline uses it
+        # to run a `clean` dictation that carries a spoken take-back as a fix.
+        active_mode = mode or self.mode
         if not text:
             return text
 
@@ -220,15 +285,15 @@ class GeminiCleaner:
                 "`vf provider set-key gemini`, or keep using local cleanup."
             )
 
-        if self.mode == "translate":
+        if active_mode == "translate":
             mode_label = " [mode: translate (ES -> EN)]"
             system_instruction = TRANSLATE_EN_SYSTEM_PROMPT
-        elif self.mode == "meeting":
+        elif active_mode == "meeting":
             mode_label = " [mode: meeting notes & action items]"
             system_instruction = MEETING_NOTES_SYSTEM_PROMPT
-        elif self.mode == "transform":
-            mode_label = " [mode: transform selection]"
-            system_instruction = TRANSFORM_SYSTEM_PROMPT
+        elif active_mode == "fix":
+            mode_label = " [mode: fix self-corrections]"
+            system_instruction = FIX_SYSTEM_PROMPT
         else:
             mode_label = ""
             system_instruction = CONSERVATIVE_SYSTEM_PROMPT
@@ -302,11 +367,11 @@ class GeminiCleaner:
             )
             try:
                 raw = self._send(request, attempt_deadline, hard_deadline=deadline)
-            except _ModelTimedOut as exc:
+            except _ModelUnfinished as exc:
                 # A model that ran out of its slice is busy, not broken. The next one
                 # gets the remaining budget rather than the speaker getting nothing.
                 last_error = exc.cause
-                contacted.append((model, CONTACT_TIMED_OUT))
+                contacted.append((model, exc.reason))
                 if is_last:
                     # The last model's timeout used to raise straight past the record of
                     # what this run contacted, so the speaker was told "Gemini request
@@ -315,7 +380,11 @@ class GeminiCleaner:
                     raise CleanupError(
                         describe_chain_failure(contacted, skipped)
                     ) from exc.cause
-                self._announce(f"{model} ran out of its share of the time budget.")
+                self._announce(
+                    f"{model} ran out of its share of the time budget."
+                    if exc.reason == CONTACT_TIMED_OUT
+                    else f"{model} dropped the connection."
+                )
                 continue
             except _TransientProvider as exc:
                 # Report only what happened. Naming the next model here would promise a
@@ -371,8 +440,17 @@ class GeminiCleaner:
                     continue
                 raise _TransientProvider(exc.code, exc) from exc
             except (URLError, TimeoutError, OSError) as exc:
+                if _is_unreachable(exc):
+                    # No route to the provider. The chain exists to survive one busy
+                    # model, and every model behind this one is just as unreachable, so
+                    # walking it would spend the speaker's time to learn nothing.
+                    raise CleanupError(
+                        f"Gemini could not be reached from this machine: {exc}. "
+                        "Nothing was sent, so this is the connection here rather than "
+                        "the provider."
+                    ) from exc
                 if self._monotonic() < hard_deadline:
-                    raise _ModelTimedOut(exc) from exc
+                    raise _ModelUnfinished(exc, _contact_reason(exc)) from exc
                 raise CleanupError(f"Gemini request failed: {exc}") from exc
 
 

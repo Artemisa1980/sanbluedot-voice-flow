@@ -59,6 +59,34 @@ func interfaceSourcesWithoutTokenDeclarations() throws -> [(String, String)] {
     }
 }
 
+/// The modes the engine refuses with the literal cleaner, read out of `cli.py`.
+///
+/// Same reason as the mode-choices reader below: a list copied into Swift is what this
+/// check exists to catch, so the copy cannot be what it compares against.
+func enginesRewritingModes() throws -> Set<String> {
+    let projectRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let cli = projectRoot.appendingPathComponent("src/sanbluedot_voiceflow/cli.py")
+    guard let source = try? String(contentsOf: cli, encoding: .utf8) else {
+        throw CheckFailure.failed("Could not read the engine CLI at \(cli.path).")
+    }
+    guard let declaration = source.range(of: "REWRITING_MODES = ("),
+          let close = source[declaration.upperBound...].range(of: ")") else {
+        throw CheckFailure.failed("The engine CLI no longer declares REWRITING_MODES.")
+    }
+    let values = source[declaration.upperBound..<close.lowerBound]
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \n\t\"'")) }
+        .filter { !$0.isEmpty }
+    guard !values.isEmpty else {
+        throw CheckFailure.failed("The engine CLI's REWRITING_MODES parsed empty.")
+    }
+    return Set(values)
+}
+
 /// The `--mode` values the engine's `process` subcommand actually accepts.
 ///
 /// Read out of `cli.py` at check time. Duplicating the list in Swift is what this check
@@ -105,7 +133,7 @@ do {
         defaults.whisperModel.path == "/tmp/voiceflow-project/models/ggml-large-v3-turbo.bin",
         "Default model path is incorrect."
     )
-    try check(defaults.cleaner == .literal, "Default cleaner is incorrect.")
+    try check(defaults.cleaner == .apple, "Default cleaner is incorrect.")
     try check(defaults.language == .auto, "Default language is incorrect.")
     try check(defaults.shortcut.displayName == "Fn/Globe", "Default shortcut is incorrect.")
     try check(defaults.shortcut.keyCode == nil, "Fn should be a modifier-only shortcut.")
@@ -123,7 +151,8 @@ do {
         arguments: [
             "--project-root", "/tmp/project",
             "--whisper-model", "models/custom.bin",
-            "--cleaner", "literal",
+            // Not literal: a rewriting mode with the literal cleaner is refused (D-23).
+            "--cleaner", "gemini",
             "--mode", "translate",
             "--language", "es",
             "--shortcut", "command+shift+f8",
@@ -136,7 +165,7 @@ do {
         explicit.whisperModel.path == "/tmp/project/models/custom.bin",
         "Explicit model path is incorrect."
     )
-    try check(explicit.cleaner == .literal, "Explicit cleaner is incorrect.")
+    try check(explicit.cleaner == .gemini, "Explicit cleaner is incorrect.")
     try check(explicit.mode == .translate, "Explicit mode is incorrect.")
     try check(explicit.language == .es, "Explicit language is incorrect.")
     try check(explicit.shortcut.displayName == "⇧⌘F8", "Explicit shortcut is incorrect.")
@@ -189,48 +218,35 @@ do {
         "An ordinary dictation announced a selection it does not have."
     )
 
-    // The selection to transform travels on stdin. As an argument it was printed in full
-    // by `ps -ww -ax` to every process the speaker runs, and a selection that was itself
-    // a flag — ordinary in an editor — was parsed as an option and failed the run.
-    let transformRun = EngineInvocation.make(
-        configuration: defaults,
-        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
-        baseEnvironment: ["PATH": "/usr/bin"],
-        mode: .transform,
-        contextText: "--verbose  # the highlighted line",
-        appName: "VS Code"
-    )
-    try check(
-        transformRun.standardInput == "--verbose  # the highlighted line",
-        "The selection did not reach the engine on standard input."
-    )
-    try check(
-        transformRun.arguments.contains("--context-text-stdin"),
-        "The engine was not told to read the selection from standard input."
-    )
-    try check(
-        !transformRun.arguments.contains(where: { $0.contains("highlighted line") }),
-        "The speaker's selection is still readable in the process arguments."
-    )
-    try check(
-        transformRun.arguments.contains("--app-name")
-            && transformRun.arguments.contains("VS Code"),
-        "The frontmost application never reached the {app} snippet macro."
-    )
-    let emptySelectionRun = EngineInvocation.make(
-        configuration: defaults,
-        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
-        baseEnvironment: ["PATH": "/usr/bin"],
-        mode: .transform,
-        contextText: ""
-    )
-    try check(
-        emptySelectionRun.standardInput == nil
-            && !emptySelectionRun.arguments.contains("--context-text-stdin"),
-        "An empty selection still opened a standard-input handshake."
-    )
     try check(invocation.arguments.contains("--json"), "Structured engine output is missing.")
     try check(invocation.arguments.contains("/tmp/input.wav"), "Audio path is missing.")
+
+    // The speech engine is named on every run, and Parakeet's run says where its model
+    // and helper are: the engine must never fall back to a default the window hides.
+    func value(after flag: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
+    }
+    try check(
+        value(after: "--transcriber", in: invocation.arguments) == "whisper"
+            && !invocation.arguments.contains("--parakeet-models"),
+        "A Whisper run must name its engine and carry nothing of Parakeet's."
+    )
+    let parakeetRun = EngineInvocation.make(
+        configuration: defaults,
+        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
+        baseEnvironment: ["PATH": "/usr/bin"],
+        speechEngine: .parakeet,
+        parakeetHelperURL: URL(fileURLWithPath: "/tmp/App.app/Contents/MacOS/voiceflow-parakeet")
+    )
+    try check(
+        value(after: "--transcriber", in: parakeetRun.arguments) == "parakeet"
+            && value(after: "--parakeet-models", in: parakeetRun.arguments)
+                == "/tmp/voiceflow-project/models/fluidaudio/parakeet-ultra"
+            && value(after: "--parakeet-bin", in: parakeetRun.arguments)
+                == "/tmp/App.app/Contents/MacOS/voiceflow-parakeet",
+        "A Parakeet run must name its engine, its model directory and its helper."
+    )
     try check(
         invocation.arguments.contains("--gemini-model"),
         "The Gemini model identifier is not passed to the engine."
@@ -244,7 +260,8 @@ do {
     // of cleaner that may put a secret in the engine environment.
     try check(CleanerMode(rawValue: "gemini") == .gemini, "Gemini is not selectable.")
     try check(CleanerMode.gemini.isCloud, "Gemini must be treated as a cloud provider.")
-    try check(!CleanerMode.ollama.isCloud, "Ollama must not be treated as a cloud provider.")
+    try check(CleanerMode(rawValue: "ollama") == nil, "Ollama was removed and must not be selectable.")
+    try check(!CleanerMode.apple.isCloud, "Apple's on-device model must not be treated as a cloud provider.")
     try check(!CleanerMode.literal.isCloud, "Literal must not be treated as a cloud provider.")
     try check(
         CleanerMode.gemini.apiKeyVariable == "VOICEFLOW_GEMINI_API_KEY",
@@ -260,8 +277,8 @@ do {
         "The Gemini credential source disclosure is missing."
     )
     try check(
-        CleanerMode.allCases.count == 3,
-        "The provider list shown in the window is incomplete."
+        CleanerMode.allCases == [.literal, .apple, .gemini],
+        "The engines shown in the window must be literal, Apple and Gemini, in that order."
     )
 
     let cloudRun = EngineInvocation.make(
@@ -319,7 +336,7 @@ do {
         configuration: defaults,
         audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
         baseEnvironment: ["PATH": "/usr/bin"],
-        cleaner: .ollama,
+        cleaner: .apple,
         providerAPIKey: "test-key"
     )
     try check(
@@ -687,6 +704,29 @@ do {
         "The Swift lock sidecar does not match the name memory.py takes."
     )
 
+    // D-40: the window and `vf snippet add` write the same file. An edit from the window
+    // must keep what the engine added after the window loaded its list.
+    let engineWrite = """
+        {"schema_version": 1, "snippets": [
+          {"trigger": "mi correo", "expansion": "user@example.com"},
+          {"trigger": "mi firma", "expansion": "Added from the terminal"}
+        ]}
+        """
+    try Data(engineWrite.utf8).write(to: snippetFixture)
+    let afterWindowAdd = VoiceSnippetStore.edit(at: snippetFixture) {
+        _ = $0.add(trigger: "mi web", expansion: "https://example.com")
+    }
+    let survivingTriggers = Set(VoiceSnippetStore.load(from: snippetFixture).snippets.map(\.trigger))
+    try check(
+        afterWindowAdd != nil && survivingTriggers == ["mi correo", "mi firma", "mi web"],
+        "An edit from the window erased a snippet the engine added: \(survivingTriggers.sorted())."
+    )
+    try Data("{ not json".utf8).write(to: snippetFixture)
+    try check(
+        VoiceSnippetStore.edit(at: snippetFixture, { _ = $0.add(trigger: "x", expansion: "y") }) == nil,
+        "An edit wrote over a store it could not read."
+    )
+
     // Keeping dictated text on disk is opt-in. An ordinary run must not carry the
     // flag, and cloud cleanup alone must not add it: the store fills only when the
     // speaker turned the setting on.
@@ -800,6 +840,32 @@ do {
         "An explicit mode shortcut was not applied."
     )
 
+    // D-23: a rewriting mode with the literal cleaner was refused by the engine after the
+    // recording was spent. The press and the launch both read this rule now.
+    for mode in ProcessingMode.allCases {
+        for cleaner in CleanerMode.allCases {
+            let refused = mode.refusal(with: cleaner) != nil
+            try check(
+                refused == (mode.needsRewritingCleaner && cleaner == .literal),
+                "\(mode.rawValue) with \(cleaner.rawValue) was "
+                    + (refused ? "refused although it can run." : "accepted although the engine refuses it.")
+            )
+        }
+    }
+    var literalTranslateRejected = false
+    do {
+        _ = try VoiceFlowConfiguration.parse(
+            arguments: ["--cleaner", "literal", "--mode", "translate"],
+            currentDirectory: root
+        )
+    } catch ConfigurationError.modeNeedsRewritingCleaner {
+        literalTranslateRejected = true
+    }
+    try check(
+        literalTranslateRejected,
+        "--cleaner literal --mode translate was accepted, so every dictation would be refused after recording."
+    )
+
     var conflictRejected = false
     do {
         _ = try VoiceFlowConfiguration.parse(
@@ -908,7 +974,7 @@ do {
     let logExpectations: [(String, LogCategory)] = [
         ("gemini is at capacity (503)", .gemini),
         ("cloud key verified for Gemini — cloud, text only", .gemini),
-        ("provider: Local cleanup — Ollama", .ollama),
+        ("provider: Local cleanup — Apple", .apple),
         ("whisper heard: hola", .stt),
         ("⚡ action: Open site: youtube.com", .action),
         ("no action recognized · dictated instead: \"hola\"", .action),
@@ -1001,41 +1067,26 @@ do {
         "An unlisted application's short name exceeds what the capsule can draw: \(longNameCtx.shortName)."
     )
     try check(
-        HUDBadge.recording(mode: .transform, context: longNameCtx).count <= 24,
-        "The recording badge is wider than the row it is drawn in: \(HUDBadge.recording(mode: .transform, context: longNameCtx))."
+        HUDBadge.recording(mode: .translate, context: longNameCtx).count <= 24,
+        "The recording badge is wider than the row it is drawn in: \(HUDBadge.recording(mode: .translate, context: longNameCtx))."
     )
 
-    // A transform dictation was filed in the history menu as CLEAN, because the label
-    // switch never learned the mode.
-    let transformRecord = DictationRecord(
-        rawText: "hazlo formal",
-        personalizedText: "hazlo formal",
-        finalText: "Estimado equipo",
+    // A dictation was filed in the history menu as CLEAN, because the label switch
+    // never learned the mode it ran under.
+    let modeLabelRecord = DictationRecord(
+        rawText: "juan revisa el codigo hoy",
+        personalizedText: "juan revisa el codigo hoy",
+        finalText: "- [ ] Juan: revisar el código hoy",
         cleaner: "gemini",
-        mode: ProcessingMode.transform.rawValue,
+        mode: ProcessingMode.meeting.rawValue,
         model: nil,
         latencySeconds: 1.0,
         usedFallback: false,
         didAutoPaste: true
     )
     try check(
-        transformRecord.menuTitle.contains("(TRANSFORM)"),
-        "A transform dictation is filed under another mode: \(transformRecord.menuTitle)."
-    )
-
-    // The size of a captured selection is what tells the speaker whether the run is about
-    // to send the sentence she highlighted or the file behind it, while Escape still works.
-    try check(
-        !HUDBadge.selectionIsLarge(HUDBadge.largeSelectionCharacters),
-        "The large-selection warning fires at the boundary instead of past it."
-    )
-    try check(
-        HUDBadge.selectionIsLarge(HUDBadge.largeSelectionCharacters + 1),
-        "A selection past the boundary is not reported as large."
-    )
-    try check(
-        !HUDBadge.selectionIsLarge(280),
-        "A highlighted sentence is reported as a large selection."
+        modeLabelRecord.menuTitle.contains("(NOTES)"),
+        "A dictation is filed under another mode: \(modeLabelRecord.menuTitle)."
     )
 
     // The window must be able to hold what is drawn in it. Two places sized the capsule
@@ -1097,7 +1148,7 @@ do {
     // Row 1: on-air dot, its spacing, the minimum spacer, and the wordmark.
     let badgeBudget = HUDLayout.contentColumn - 7 - 5 - 4 - wordmark
     let widestBadge = HUDBadge.recording(
-        mode: .transform,
+        mode: .translate,
         context: AppContext(
             bundleIdentifier: "com.example.unlisted",
             localizedName: "Twelve Chars",
@@ -1192,15 +1243,22 @@ do {
         CleanerMode.gemini.factsMeasuredOn == "2026-08-31",
         "The cloud figures lost the date they were measured on."
     )
-    for local in CleanerMode.allCases where !local.isCloud {
+    // A date exists exactly when figures do, and a latency may be stated only by an
+    // engine that was measured. Until 2026-09-18 this was written as "no local engine
+    // has figures", which was true then and became a false rule the moment the two
+    // local engines faced the same corpus the cloud one had faced.
+    for cleaner in CleanerMode.allCases {
+        let measured = cleaner.corpusNote != nil || cleaner.isCloud
         try check(
-            local.factsMeasuredOn == nil,
-            "\(local.rawValue) claims a measurement date for figures it does not have."
+            (cleaner.factsMeasuredOn != nil) == measured,
+            "\(cleaner.rawValue) disagrees with itself about whether it has been measured."
         )
-        try check(
-            !local.facts.contains { $0.value.contains("s median") },
-            "\(local.rawValue) states a latency nothing measured."
-        )
+        if !measured {
+            try check(
+                !cleaner.facts.contains { $0.value.contains("s median") },
+                "\(cleaner.rawValue) states a latency nothing measured."
+            )
+        }
     }
 
     // --- The hold delay before the microphone opens ---
@@ -1304,6 +1362,234 @@ do {
             searched = rest[close...]
         }
     }
+
+    // The interface must decline exactly the pairings the engine declines.
+    //
+    // The refusal shipped in the engine first, for `transform` alone, and the tiles went
+    // on offering every mode with every cleaner: the speaker spent a recording to be told
+    // no. Both sides now answer from one rule, and this check reads the engine's own list
+    // rather than a second copy of it.
+    let engineRewriting = try enginesRewritingModes()
+    let swiftRewriting = Set(
+        ProcessingMode.allCases.filter { $0.needsRewritingCleaner }.map { $0.engineMode }
+    )
+    try check(
+        swiftRewriting == engineRewriting,
+        "The modes needing a rewriting cleaner disagree: the engine refuses "
+            + "\(engineRewriting.sorted()), the interface declines \(swiftRewriting.sorted())."
+    )
+    try check(
+        !ProcessingMode.clean.needsRewritingCleaner && !ProcessingMode.actions.needsRewritingCleaner,
+        "clean or actions was marked as needing a rewriting cleaner. clean is the default "
+            + "pairing and actions reaches the engine as clean, so the refusal would stop "
+            + "ordinary dictation."
+    )
+
+    // Apple's helper is found by path, never by PATH.
+    //
+    // The engine runs a binary that lives inside the signed bundle, where nothing the
+    // child searches would find it. A run that selects this engine and does not carry
+    // the path reaches the engine's own default and fails on a Mac that has the model.
+    let appleRun = EngineInvocation.make(
+        configuration: defaults,
+        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
+        baseEnvironment: ["PATH": "/usr/bin"],
+        cleaner: .apple,
+        appleCleanerURL: URL(fileURLWithPath: "/Apps/VoiceFlow.app/Contents/MacOS/voiceflow-apple-cleaner")
+    )
+    try check(
+        appleRun.arguments.contains("--apple-bin"),
+        "An Apple cleanup run does not tell the engine where the helper is."
+    )
+    try check(
+        appleRun.arguments.contains("/Apps/VoiceFlow.app/Contents/MacOS/voiceflow-apple-cleaner"),
+        "The Apple helper path did not reach the engine's arguments."
+    )
+    try check(
+        appleRun.environment["VOICEFLOW_APPLE_API_KEY"] == nil,
+        "A local engine was handed a credential it has no use for."
+    )
+
+    let localRun = EngineInvocation.make(
+        configuration: defaults,
+        audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
+        baseEnvironment: ["PATH": "/usr/bin"],
+        cleaner: .apple
+    )
+    try check(
+        !localRun.arguments.contains("--apple-bin"),
+        "A build with no helper still pointed the engine at one."
+    )
+
+    // framework.md R3d: a shortcut's text was written, not dictated, and nothing on
+    // screen would say it was leaving this Mac.
+    let shortcutRun = try EngineInvocation.makeTextRun(
+        configuration: defaults,
+        text: "hola mundo",
+        mode: .clean,
+        cleaner: .apple
+    )
+    try check(
+        shortcutRun.arguments.contains("--no-memory"),
+        "A shortcut's text run applies corrections and snippets meant for speech."
+    )
+    try check(
+        shortcutRun.standardInput == "hola mundo" && !shortcutRun.arguments.contains("hola mundo"),
+        "A shortcut's text must travel on standard input, never in the process arguments."
+    )
+    for cleaner in CleanerMode.allCases where cleaner.isCloud {
+        var refused = false
+        do {
+            _ = try EngineInvocation.makeTextRun(
+                configuration: defaults,
+                text: "hola mundo",
+                mode: .clean,
+                cleaner: cleaner
+            )
+        } catch TextRunRefusal.cloudEngine(let named) {
+            refused = named == cleaner
+        }
+        try check(
+            refused,
+            "A shortcut built a run that sends text to \(cleaner.shortName) with nothing on screen."
+        )
+    }
+
+    // Words: the window asks the engine, which owns both stores and their locks.
+    let learnRun = EngineInvocation.makeWordsRun(
+        configuration: defaults,
+        command: .learn(heard: "olama", intended: "Ollama", everywhere: true, source: .fix)
+    )
+    try check(
+        Array(learnRun.arguments.dropFirst(3)) == [
+            "correct", "--heard", "olama", "--intended", "Ollama", "--source", "fix", "--allow-global",
+        ]
+            && learnRun.standardInput == nil,
+        "LEARN did not ask the engine to confirm the pair with its source and consent."
+    )
+    try check(
+        !EngineInvocation.makeWordsRun(
+            configuration: defaults,
+            command: .learn(heard: "sun blue dot", intended: "sanblue", everywhere: false, source: .window)
+        ).arguments.contains("--allow-global"),
+        "A correction the speaker did not mark as everywhere was confirmed as everywhere."
+    )
+    let snapshotJSON = """
+    {"vocabulary": ["UTEL", "Gim", "PowerShell"], "in_prompt": 2, "corrections": [
+      {"heard": "chequeen", "intended": "checking", "confirmed_at": "2026-09-18T10:00:00+00:00", "source": "", "everywhere": true},
+      {"heard": "sun blue dot", "intended": "sanblueᵈᵒᵗ", "confirmed_at": "2026-09-26T10:00:00+00:00", "source": "fix", "everywhere": false},
+      {"heard": "olama", "intended": "Ollama", "confirmed_at": "2026-09-27T10:00:00+00:00", "source": "window", "everywhere": true}
+    ]}
+    """
+    let snapshot = try JSONDecoder().decode(WordsSnapshot.self, from: Data(snapshotJSON.utf8))
+    try check(
+        snapshot.isRead("Gim") && !snapshot.isRead("PowerShell"),
+        "A term past the prompt budget must read as unread, and one inside it as read."
+    )
+    try check(
+        snapshot.corrections(filter: .all, search: "").map(\.heard)
+            == ["olama", "sun blue dot", "chequeen"],
+        "The Words list must show the newest correction first."
+    )
+    try check(
+        snapshot.corrections(filter: .learnedFromFix, search: "").map(\.heard) == ["sun blue dot"]
+            && snapshot.corrections(filter: .addedHere, search: "").map(\.heard) == ["olama"],
+        "A Words filter showed a pair from the wrong source."
+    )
+    try check(
+        snapshot.corrections(filter: .all, search: "SANBLUE").map(\.heard) == ["sun blue dot"]
+            && snapshot.corrections(filter: .all, search: "chequeen").count == 1,
+        "The Words search must match either side, ignoring case and accents."
+    )
+    try check(
+        snapshot.corrections[1].confirmedDay == "26 Sept",
+        "A correction's date must read as the day it was confirmed."
+    )
+
+    // A fix is kept in the row it came from. As a row of its own it duplicated the
+    // dictation and, with ten slots, pushed a real one out of History.
+    let dictated = DictationRecord(
+        rawText: "manda el reporte el lunes no perdon el martes",
+        personalizedText: "manda el reporte el lunes no perdon el martes",
+        finalText: "Manda el reporte el lunes, no, perdón, el martes.",
+        cleaner: "apple",
+        mode: "clean",
+        latencySeconds: 1.0
+    )
+    var fixStore = DictationHistoryStore(records: [dictated])
+    try check(
+        fixStore.attachFix("Manda el reporte el martes.", to: dictated.id)
+            && fixStore.records.count == 1
+            && fixStore.records[0].id == dictated.id
+            && fixStore.records[0].currentText == "Manda el reporte el martes."
+            && fixStore.records[0].finalText == dictated.finalText,
+        "A fix must stay in its own row, keep the delivered text, and add no row."
+    )
+    try check(
+        !fixStore.attachFix("x", to: UUID()),
+        "A fix for a row History no longer holds must be reported, not stored."
+    )
+    try check(
+        DictationRecord.sameWords("google.com", "Google.com.")
+            && DictationRecord.sameWords("la reunion es hoy", "La reunión es hoy.")
+            && !DictationRecord.sameWords("el lunes no el martes", "El martes."),
+        "A fix that changes no word must read as nothing to correct, and only then."
+    )
+    // FIX applies the pair it teaches to the dictation it came from, the way the engine
+    // applies a pair: whole words, any case, the replacement taking the case it replaces.
+    try check(
+        CorrectionApplication.apply(
+            heard: "co-rational", intended: "core rationale",
+            to: "Identify the co-rational behind the data."
+        ) == "Identify the core rationale behind the data."
+            && CorrectionApplication.apply(heard: "reporte", intended: "informe", to: "Reporte y reporte.")
+                == "Informe y informe."
+            && CorrectionApplication.apply(heard: "utel", intended: "Utel", to: "UTEL y utel")
+                == "UTEL y Utel",
+        "FIX must replace the heard words in that dictation, keeping the case they had."
+    )
+    try check(
+        CorrectionApplication.apply(heard: "gim", intended: "Gim", to: "the gimbal is ready") == nil
+            && CorrectionApplication.apply(heard: "mas", intended: "más", to: "Thomas llega") == nil
+            && CorrectionApplication.apply(heard: "lunes", intended: "martes", to: "El viernes.") == nil,
+        "FIX must not rewrite part of a longer word, and must report a pair it cannot find."
+    )
+    // FIX by editing the sentence: each run of changed words becomes a pair, and applying
+    // the pairs to what was heard gives back exactly what the speaker wrote.
+    let heardSentence = "creo que se multiplicaria todo por -1 y el el reporte sale mal"
+    let editedSentences = [
+        "creo que se multiplicaría todo por menos uno y el reporte sale bien",
+        "creo que se multiplicaria todo multiplicado por -1 y el el reporte sale mal",
+        "creo que se multiplicaria todo por -1 y el el informe sale mal",
+    ]
+    for edited in editedSentences {
+        let pairs = CorrectionDiff.pairs(original: heardSentence, edited: edited, everywhere: false)
+        var rebuilt = heardSentence
+        for pair in pairs {
+            rebuilt = CorrectionApplication.apply(heard: pair.heard, intended: pair.intended, to: rebuilt)
+                ?? rebuilt
+        }
+        try check(
+            rebuilt == edited && !pairs.isEmpty && pairs.allSatisfy { !$0.isOneWord },
+            "An edited sentence must turn into pairs that rebuild it, none of them one word: \(edited)"
+        )
+    }
+    try check(
+        CorrectionDiff.pairs(original: "abre oyama ahora", edited: "abre Ollama ahora", everywhere: true)
+            == [CorrectionPair(heard: "oyama", intended: "Ollama")]
+            && CorrectionDiff.pairs(original: "abre oyama ahora", edited: "abre Ollama ahora", everywhere: false)
+                == [CorrectionPair(heard: "abre oyama ahora", intended: "abre Ollama ahora")]
+            && CorrectionDiff.pairs(original: "sin cambios", edited: "sin  cambios ", everywhere: false).isEmpty,
+        "A one-word change is learned alone only when the speaker asked for it everywhere."
+    )
+    let legacyRecord = try JSONDecoder().decode(
+        DictationRecord.self,
+        from: try JSONEncoder().encode(dictated)
+    )
+    try check(
+        legacyRecord.fixedText == nil && legacyRecord.currentText == dictated.finalText,
+        "A record written before fixes existed must still decode and show its text."
+    )
 
     print("VoiceFlowMacCore checks passed.")
 } catch {

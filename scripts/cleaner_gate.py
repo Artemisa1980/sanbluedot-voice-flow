@@ -36,6 +36,7 @@ from replay import load_samples
 
 from sanbluedot_voiceflow.cleaners import (
     CLEANER_NAMES,
+    DEFAULT_APPLE_BINARY,
     DEFAULT_GEMINI_MODEL,
     LiteralCleaner,
     build_cleaner,
@@ -307,9 +308,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--whisper-model", type=Path, required=True)
     parser.add_argument("--whisper-bin", default="whisper-cli")
     parser.add_argument("--language", default="auto", choices=["auto", "en", "es"])
-    parser.add_argument("--cleaner", default="ollama", choices=list(CLEANER_NAMES))
-    parser.add_argument("--ollama-model", default="qwen3:4b")
+    parser.add_argument("--cleaner", default="apple", choices=list(CLEANER_NAMES))
     parser.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
+    parser.add_argument(
+        "--apple-bin",
+        default=DEFAULT_APPLE_BINARY,
+        help="The helper that reaches Apple's on-device model, for --cleaner apple.",
+    )
     parser.add_argument("--no-memory", action="store_true")
     parser.add_argument("--label", default="cleaner gate")
     return parser.parse_args()
@@ -333,8 +338,8 @@ def main() -> int:
 
     cleaner = build_cleaner(
         args.cleaner,
-        ollama_model=args.ollama_model,
         gemini_model=args.gemini_model,
+        apple_binary=args.apple_bin,
     )
     report = evaluate(cleaner, transcribed)
     outcome, reason = verdict(report)

@@ -36,15 +36,18 @@ cannot be told apart from one that was missed.
 | `hud-design-proposals.html` | Floating HUD, three-row capsule proposals | Built and shipped 2026-09-03; `design-system.md` records the result |
 | `menubar-icon-proposals.html` | macOS menu bar icon proposals | Option 7 built and shipped 2026-09-03; `design-system.md` records the result |
 | `product-directions.html` | Full-size comparison of three product directions | Proposed 2026-09-08; all interfaces visible on one self-contained page |
-| `product-directions-inline.html` | In-conversation version of the full interface comparison | Same proposal content; HTML fragment with embedded font and styles |
 | `product-direction-01-focus-home.html` | Focus Home, sidebar and central dictation surface | Selected 2026-09-08; native shell implemented on the evolution branch, not installed for daily use |
 | `product-direction-02-compact-deck.html` | Compact Deck, small control window and expandable drawers | Alternative retained for comparison; not selected |
 | `product-direction-03-writing-studio.html` | Writing Studio, transcript library and full-text review | Alternative retained for comparison; not selected |
+| `history-redesign-01.html` | History, the list inside the unchanged chassis | Approved and built 2026-09-26; `design-system.md` records the result |
+| `words-section-01.html` | Words, replacing Modes: corrections, vocabulary and modes | Approved and built 2026-09-27; `design-system.md` records the result |
 
 Proposals 02–03 share `product-directions.css`; keep it beside those individual previews.
 The [full comparison](product-directions.html) embeds the interfaces, styles and bundled
-font, so each design is visible without opening a separate file. The inline fragment
-contains the same interface composition for display in conversation.
+font, so each design is visible without opening a separate file. It carries its font as a
+data URI because its own `Content-Security-Policy` allows no other source; an
+in-conversation duplicate of it was deleted on 2026-09-18 rather than kept as a second
+copy of the same 157 KB face.
 Focus Home is the selected design direction. Sample text, counts and device states
 are fictional, and proposed recovery retention is not shipped behavior. Proposal 01
 preserves the original concept's layout and uses the bundled pixel font for its chrome.

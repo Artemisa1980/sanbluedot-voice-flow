@@ -5,17 +5,25 @@ and a safety instruction that drifts between adapters is a safety instruction no
 owns. Local and cloud cleanup therefore share this text verbatim.
 """
 
-CONSERVATIVE_SYSTEM_PROMPT = """Edit a voice transcript conservatively and return JSON only.
-Remove fillers such as "um" and abandoned repetitions. When the speaker says
-"X, no, actually Y", keep Y and remove X plus the correction cues. Add punctuation
-and format paragraphs only when the structure is clear.
-Preserve every remaining word in its original language; mixed language must stay mixed.
+from ..output_guard import _REMOVABLE_FILLERS
+
+# The cleanup may only ask for what the output guard accepts. It used to ask for
+# self-corrections to be resolved and repetitions removed, and the guard refuses both,
+# so every such dictation lost its whole cleanup, punctuation included. The filler list
+# is the guard's own, so the two cannot drift apart.
+_FILLERS = ", ".join(f'"{word}"' for word in sorted(_REMOVABLE_FILLERS))
+
+CONSERVATIVE_SYSTEM_PROMPT = f"""Edit a voice transcript conservatively and return JSON only.
+Delete only these fillers: {_FILLERS}. Keep every other word in the order spoken,
+including repeated words and self-corrections: nothing else may be removed.
+Add punctuation and format paragraphs only when the structure is clear.
+Preserve every word in its original language; mixed language must stay mixed.
 Never translate, paraphrase, add facts, change names, alter numbers, alter URLs, or
 reinterpret code. When uncertain, preserve the original wording.
-Example input: Please book Friday, no, actually Saturday.
-Example output: {"cleaned_text":"Please book Saturday."}
+Example input: eh bueno la reunion es el viernes no el sabado
+Example output: {{"cleaned_text":"Bueno, la reunión es el viernes, no, el sábado."}}
 Example input: Hola, um, I need el reporte.
-Example output: {"cleaned_text":"Hola, I need el reporte."}"""
+Example output: {{"cleaned_text":"Hola, I need el reporte."}}"""
 
 TRANSLATE_EN_SYSTEM_PROMPT = """Translate a spoken voice transcript into clear, idiomatic, professional English and return JSON only.
 Remove verbal fillers such as "eh", "um", "este" and self-corrections.
@@ -37,16 +45,22 @@ Preserve all names, deadlines, numbers, and technical terms.
 Example input: En la reunión acordamos que Juan revisa el código hoy, María envía la cotización mañana a las diez, y yo preparo la presentación para el viernes.
 Example output: {"cleaned_text":"### Puntos Clave\n- Acuerdos de entrega y asignación de responsabilidades.\n\n### Action Items\n- [ ] Juan: Revisar el código hoy.\n- [ ] María: Enviar la cotización mañana a las 10:00.\n- [ ] Preparar la presentación para el viernes."}"""
 
-TRANSFORM_SYSTEM_PROMPT = """Transform the input text according to the spoken voice instruction and return JSON only.
-When context text is provided ("Original text: ..."), apply the voice instruction ("Instruction: ...") to transform the original text (e.g. summarize, change tone to formal/casual, format as bullet points, fix grammar, rewrite, or translate if requested).
-When no context text is provided, refine and format the spoken text directly in its spoken language (Spanish in Spanish, English in English).
-Maintain the original language unless an explicit translation command (such as 'translate to English', 'traducir', 'en inglés') is requested.
-Preserve code syntax, variable names, proper nouns, and numerical values.
-Return only the transformed result in cleaned_text without commentary.
-Example input: Original text: "We need to fix the authentication bug by tomorrow." Instruction: "make it bullet points"
-Example output: {"cleaned_text":"- Fix authentication bug\n- Deadline: tomorrow"}
-Example input: Original text: "hola como estas necesito el reporte hoy" Instruction: "hazlo más formal"
-Example output: {"cleaned_text":"Estimado/a, espero que se encuentre bien. Quisiera solicitar la entrega del reporte el día de hoy."}"""
+# Asked for on one delivered dictation, never by default. Its guard allows deletion and
+# refuses every word the speaker did not say, so the examples here must pass that guard.
+FIX_SYSTEM_PROMPT = """Return what the speaker finally meant, as JSON only.
+The speaker corrected themselves while dictating. When they take words back with cues
+such as "no", "mejor", "perdón", "digo", "borra eso", "actually", "I mean", "wait" or
+"scratch that", delete the words they replaced together with the cue, and keep the
+final version. Delete fillers and stutters. Add punctuation.
+Use only the speaker's own words, in their order and in their language; mixed language
+stays mixed. Never add, translate, paraphrase or reorder a word. Keep web addresses, file
+paths, code and numbers exactly as written, with no capital and no period added to them.
+Example input: nos vemos a las cuatro no mejor no a las cinco
+Example output: {"cleaned_text":"Nos vemos a las cinco."}
+Example input: manda el correo a Juan digo a Pedro mañana
+Example output: {"cleaned_text":"Manda el correo a Pedro mañana."}
+Example input: let's meet at three actually no wait scratch that let's meet at four
+Example output: {"cleaned_text":"Let's meet at four."}"""
 
 CLEANED_TEXT_SCHEMA = {
     "type": "object",

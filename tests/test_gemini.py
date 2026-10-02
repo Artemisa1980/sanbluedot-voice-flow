@@ -1,9 +1,11 @@
 import json
+import socket
 import unittest
 from urllib.error import HTTPError, URLError
 
 from sanbluedot_voiceflow.cleaners.gemini import (
     CONTACT_AT_CAPACITY,
+    CONTACT_DROPPED,
     CONTACT_TIMED_OUT,
     DEFAULT_MODEL,
     DEFAULT_TIMEOUT_SECONDS,
@@ -216,32 +218,6 @@ class TransmissionGuardTests(unittest.TestCase):
         payload = json.loads(request.data.decode("utf-8"))
         self.assertIn("Format a spoken voice dictation into clear, structured Markdown meeting notes", payload["systemInstruction"]["parts"][0]["text"])
 
-    def test_transform_mode_uses_transform_system_prompt_and_announcement(self) -> None:
-        """The cloud branch of transform, which shipped with no test of its own.
-
-        `ollama.py` gained one in the same change; this provider is the one that sends
-        the selection off the machine, so it is the branch that most needed the cover.
-        """
-        announced: list[str] = []
-        opener = Recorder(reply("- Fix authentication bug\n- Deadline: tomorrow"))
-
-        result = build(opener, mode="transform", announced=announced).clean(
-            'Original text:\nWe need to fix the authentication bug by tomorrow.\n\n'
-            'Instruction:\nmake it bullet points',
-            language_hint="en",
-        )
-
-        self.assertEqual(result, "- Fix authentication bug\n- Deadline: tomorrow")
-        self.assertEqual(len(announced), 1)
-        self.assertIn("transform", announced[0])
-        request = opener.requests[0]
-        payload = json.loads(request.data.decode("utf-8"))
-        self.assertIn(
-            "Transform the input text according to the spoken voice instruction",
-            payload["systemInstruction"]["parts"][0]["text"],
-        )
-
-
 class ResponseTests(unittest.TestCase):
     def test_the_cleaned_text_is_returned(self) -> None:
         self.assertEqual(
@@ -339,6 +315,68 @@ class FailureTests(unittest.TestCase):
     def test_an_unreachable_provider_becomes_a_cleanup_error(self) -> None:
         with self.assertRaises(CleanupError):
             build(Recorder(error=URLError("offline"))).clean("hola")
+
+    def test_an_unreachable_network_is_not_reported_as_a_slow_provider(self) -> None:
+        """Nothing left the Mac, so nothing can be said about Google's speed.
+
+        A name that does not resolve raised the same internal timeout as a slow reply,
+        so an offline machine was told every model "ran out of the time budget" —
+        instantly, having waited for none of them. R6 asks what happened to each model
+        this run contacted, and this run contacted nothing.
+        """
+        opener = Recorder(error=URLError(socket.gaierror(8, "nodename nor servname provided")))
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, fallback=True).clean("hola")
+
+        message = str(raised.exception)
+        self.assertIn("could not be reached", message)
+        self.assertNotIn("time budget", message)
+        self.assertNotIn("capacity", message)
+
+    def test_an_unreachable_network_stops_the_chain_at_the_first_model(self) -> None:
+        """Walking the rest costs the speaker time and proves nothing.
+
+        The chain exists to survive one busy model. When the machine has no route to the
+        provider, every model behind it is just as unreachable.
+        """
+        opener = Recorder(error=URLError(socket.gaierror(8, "nodename nor servname provided")))
+
+        with self.assertRaises(CleanupError):
+            build(opener, fallback=True).clean("hola")
+
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_a_dropped_connection_still_walks_the_chain(self) -> None:
+        """A reset mid-call ends the attempt, not the route to the provider.
+
+        Telling a timeout apart from an unreachable host first sent every non-timeout
+        socket error straight to a failure, which cost the chain a recovery it used to
+        make: the connection was there, one attempt died on it.
+        """
+        opener = SequenceRecorder([ConnectionResetError("reset by peer"), reply("Hola.")])
+
+        self.assertEqual(build(opener, fallback=True).clean("hola"), "Hola.")
+        self.assertEqual(len(opener.requests), 2)
+
+    def test_a_dropped_connection_is_not_called_a_time_budget(self) -> None:
+        """The message says what happened. A reset is not the clock running out."""
+        opener = Recorder(error=ConnectionResetError("reset by peer"))
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, fallback=True).clean("hola")
+
+        message = str(raised.exception)
+        self.assertIn("dropped the connection", message)
+        self.assertNotIn("time budget", message)
+        self.assertNotIn("capacity", message)
+
+    def test_a_real_timeout_still_walks_the_chain(self) -> None:
+        """The separation must not cost the fallback its reason to exist."""
+        opener = SequenceRecorder([TimeoutError("slow"), reply("Hola.")])
+
+        self.assertEqual(build(opener, fallback=True).clean("hola"), "Hola.")
+        self.assertEqual(len(opener.requests), 2)
 
     def test_a_timeout_becomes_a_cleanup_error(self) -> None:
         with self.assertRaises(CleanupError):
@@ -499,7 +537,7 @@ class ModelChainTests(unittest.TestCase):
         opener = SequenceRecorder([
             unavailable(), unavailable(),
             unavailable(), unavailable(),
-            URLError("slow"),
+            TimeoutError("slow"),
         ])
 
         with self.assertRaises(CleanupError) as raised:
@@ -634,6 +672,21 @@ class ChainFailureMessageTests(unittest.TestCase):
         self.assertNotIn("gemini-3.6-flash", head)
         self.assertIn("gemini-3.6-flash", tail)
         self.assertIn("gemini-3.7-flash", tail)
+
+    def test_a_dropped_model_is_named_as_dropped(self) -> None:
+        message = describe_chain_failure([("gemini-3.5-flash", CONTACT_DROPPED)])
+        self.assertIn("dropped the connection", message)
+        self.assertNotIn("time budget", message)
+
+    def test_three_reasons_are_reported_per_model(self) -> None:
+        message = describe_chain_failure([
+            ("gemini-3.5-flash", CONTACT_AT_CAPACITY),
+            ("gemini-3.6-flash", CONTACT_TIMED_OUT),
+            ("gemini-3.7-flash", CONTACT_DROPPED),
+        ])
+        self.assertIn("gemini-3.5-flash was at capacity", message)
+        self.assertIn("gemini-3.6-flash ran out of the time budget", message)
+        self.assertIn("gemini-3.7-flash dropped the connection", message)
 
     def test_contacting_nothing_says_nothing_was_contacted(self) -> None:
         message = describe_chain_failure([], skipped=list(MODEL_CHAIN))

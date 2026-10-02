@@ -17,6 +17,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
     case shortcutConflict(String)
     case modifierOnlyModeShortcut(String)
     case invalidHoldDelay(String)
+    case modeNeedsRewritingCleaner(String)
 
     public var errorDescription: String? {
         switch self {
@@ -27,7 +28,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
         case .invalidCleaner(let cleaner):
             return "Unsupported cleaner: \(cleaner)."
         case .invalidMode(let mode):
-            return "Unsupported mode: \(mode). Use clean, translate, meeting, actions, or transform."
+            return "Unsupported mode: \(mode). Use clean, translate, meeting, or actions."
         case .invalidLanguage(let language):
             return "Unsupported language: \(language)."
         case .invalidShortcut(let shortcut):
@@ -36,6 +37,8 @@ public enum ConfigurationError: LocalizedError, Equatable {
             return "\(shortcut) is already the push-to-talk shortcut. Give --mode-shortcut a different chord."
         case .invalidHoldDelay(let value):
             return "Invalid hold delay: \(value). Give a number of seconds between 0 and 3."
+        case .modeNeedsRewritingCleaner(let refusal):
+            return "\(refusal)."
         case .modifierOnlyModeShortcut(let shortcut):
             return "\(shortcut) is a modifier by itself. The mode switch is tapped, not held, "
                 + "so --mode-shortcut needs a modifier plus a key, such as control+option+m."
@@ -45,7 +48,7 @@ public enum ConfigurationError: LocalizedError, Equatable {
 
 public enum CleanerMode: String, CaseIterable, Sendable {
     case literal
-    case ollama
+    case apple
     case gemini
 
     /// Whether choosing this cleaner sends the transcript off the device.
@@ -53,7 +56,7 @@ public enum CleanerMode: String, CaseIterable, Sendable {
         // Keep this exhaustive: adding a provider must make an explicit privacy
         // classification before the project can compile.
         switch self {
-        case .literal, .ollama:
+        case .literal, .apple:
             return false
         case .gemini:
             return true
@@ -67,12 +70,35 @@ public enum CleanerMode: String, CaseIterable, Sendable {
         ProviderCredentialEnvironment.variableName(for: rawValue)
     }
 
+    /// The name on the engine button.
+    ///
+    /// `displayName` reads well in a sentence and does not fit in a row of four: the
+    /// bank truncated it to "Literal…", "Local c…", "Local c…", "Gemini…", which made
+    /// the two local engines indistinguishable from each other. The short name is the
+    /// engine; `kindName` beside it is what choosing it means.
+    public var shortName: String {
+        switch self {
+        case .literal: return "Literal"
+        case .apple: return "Apple"
+        case .gemini: return "Gemini"
+        }
+    }
+
+    /// One word for where the text goes. The privacy fact, at a glance.
+    public var kindName: String {
+        switch self {
+        case .literal: return "no cleanup"
+        case .apple: return "on this Mac"
+        case .gemini: return "cloud"
+        }
+    }
+
     public var displayName: String {
         switch self {
         case .literal:
             return "Literal — no cleanup"
-        case .ollama:
-            return "Local cleanup — Ollama"
+        case .apple:
+            return "Local cleanup — Apple"
         case .gemini:
             return "Gemini — cloud, text only"
         }
@@ -82,10 +108,47 @@ public enum CleanerMode: String, CaseIterable, Sendable {
     /// a future provider supply an accurate disclosure before it can compile.
     public var apiKeySourceName: String? {
         switch self {
-        case .literal, .ollama:
+        case .literal, .apple:
             return nil
         case .gemini:
             return "Google AI Studio"
+        }
+    }
+}
+
+/// Which local engine turns the recording into text. Both run on this Mac.
+///
+/// Whisper reads the vocabulary before it listens, and that prompt is what suppresses its
+/// punctuation. Parakeet Ultra reads no vocabulary, writes its own punctuation and
+/// capitals, and runs on the Neural Engine through FluidAudio.
+public enum SpeechEngine: String, CaseIterable, Sendable {
+    case whisper
+    case parakeet
+
+    public var shortName: String {
+        switch self {
+        case .whisper: return "Whisper turbo"
+        case .parakeet: return "Parakeet Ultra"
+        }
+    }
+
+    /// The name on the signal chain's speech stage.
+    public var chainName: String {
+        switch self {
+        case .whisper: return "whisper turbo"
+        case .parakeet: return "parakeet ultra"
+        }
+    }
+
+    /// When the figures below were taken. Nothing re-measures, so they carry the date.
+    public static let measurementDate = "2026-10-01"
+
+    /// Word error and engine time on the owner's 19 recorded samples, the same corpus and
+    /// confirmed corrections for both, `scripts/replay.py`, measured on `measurementDate`.
+    public var measuredNote: String {
+        switch self {
+        case .whisper: return "10.6% · 2.37s"
+        case .parakeet: return "9.3% · 0.24s"
         }
     }
 }
@@ -141,7 +204,6 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
     case translate
     case meeting
     case actions
-    case transform
 
     public var displayName: String {
         switch self {
@@ -153,8 +215,6 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
             return "Meeting Notes & Action Items"
         case .actions:
             return "Voice Actions (macOS)"
-        case .transform:
-            return "Transform Selection"
         }
     }
 
@@ -166,7 +226,6 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
         case .translate: return "ES➔EN"
         case .meeting: return "NOTES"
         case .actions: return "ACTION"
-        case .transform: return "TRANSFORM"
         }
     }
 
@@ -181,8 +240,33 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
         case .clean, .actions: return "clean"
         case .translate: return "translate"
         case .meeting: return "meeting"
-        case .transform: return "transform"
         }
+    }
+
+    /// Whether this mode asks a model to rewrite the text.
+    ///
+    /// The literal cleaner returns what it was given, so each of these paired with it
+    /// produced an ordinary dictation under a label promising otherwise: translate
+    /// handed back the speaker's own Spanish under an English badge. The engine refuses the pairing in `cli.py`
+    /// `REWRITING_MODES`, which is the authority; this copy exists so the interface can
+    /// decline before a recording is spent, and `VoiceFlowMacCoreChecks` reads the
+    /// engine's list and fails the build if the two drift apart.
+    public var needsRewritingCleaner: Bool {
+        switch self {
+        case .translate, .meeting: return true
+        case .clean, .actions: return false
+        }
+    }
+
+    /// Why a dictation in this mode cannot run with this cleaner, or nil when it can.
+    ///
+    /// Five paths set one side or the other — the two mode banks, the ⌃⌥M cycle, the
+    /// menu and the launch arguments — and only one of them checked, so the engine
+    /// refused the run after the recording was spent (D-23). The press and the launch
+    /// read this one rule instead.
+    public func refusal(with cleaner: CleanerMode) -> String? {
+        guard needsRewritingCleaner, cleaner == .literal else { return nil }
+        return "\(badgeName) needs an engine that can rewrite text · pick local or cloud cleanup first"
     }
 
     /// Whether a dictation in this mode is examined for a spoken system command.
@@ -192,7 +276,7 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
     public var parsesVoiceActions: Bool {
         switch self {
         case .actions: return true
-        case .clean, .translate, .meeting, .transform: return false
+        case .clean, .translate, .meeting: return false
         }
     }
 
@@ -302,8 +386,6 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
     public let cleaner: CleanerMode
     public let mode: ProcessingMode
     public let language: LanguageMode
-    public let ollamaURL: String
-    public let ollamaModel: String
     public let geminiModel: String
     public let shortcut: Shortcut
     /// The chord that advances the processing mode from the HUD, without opening the
@@ -327,11 +409,14 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
         var projectRootValue: String?
         var whisperModelValue: String?
         var whisperBinary = "whisper-cli"
-        var cleaner = CleanerMode.literal
+        // Apple's on-device model, measured against the fixed corpus on 2026-09-26:
+        // 18 of 19 accepted by the guard, punctuation F1 34.8% → 84.8%, 0.61s median.
+        // Ollama held this place and reaches 34.8% → 48.0% on the same nineteen
+        // recordings, which is why the default moved rather than staying on literal:
+        // a cleanup step earns being on by measuring better than no cleanup at all.
+        var cleaner = CleanerMode.apple
         var mode = ProcessingMode.clean
         var language = LanguageMode.auto
-        var ollamaURL = "http://127.0.0.1:11434"
-        var ollamaModel = "qwen3:4b"
         var geminiModel = "gemini-3.5-flash"
         var shortcut = try Shortcut(specification: "fn")
         var modeShortcut = try Shortcut(specification: "control+option+m")
@@ -368,10 +453,6 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
                     throw ConfigurationError.invalidLanguage(value)
                 }
                 language = parsed
-            case "--ollama-url":
-                ollamaURL = value
-            case "--ollama-model":
-                ollamaModel = value
             case "--gemini-model":
                 geminiModel = value
             case "--shortcut":
@@ -403,6 +484,11 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
         guard modeShortcut.keyCode != nil else {
             throw ConfigurationError.modifierOnlyModeShortcut(modeShortcut.displayName)
         }
+        // `--cleaner literal --mode translate` would start an app whose every dictation
+        // the engine refuses after recording it.
+        if let refusal = mode.refusal(with: cleaner) {
+            throw ConfigurationError.modeNeedsRewritingCleaner(refusal)
+        }
 
         let projectRoot = resolve(
             projectRootValue ?? currentDirectory.path,
@@ -423,14 +509,17 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
             cleaner: cleaner,
             mode: mode,
             language: language,
-            ollamaURL: ollamaURL,
-            ollamaModel: ollamaModel,
             geminiModel: geminiModel,
             shortcut: shortcut,
             modeShortcut: modeShortcut,
             holdDelaySeconds: holdDelaySeconds,
             acceptanceLog: acceptanceLog
         )
+    }
+
+    /// Where Parakeet Ultra lives: under the project's ignored `models/`, beside Whisper.
+    public var parakeetModels: URL {
+        projectRoot.appendingPathComponent("models/fluidaudio/parakeet-ultra", isDirectory: true)
     }
 
     public static let help = """
@@ -440,11 +529,9 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
       --project-root PATH    Project root; defaults to the current directory.
       --whisper-model PATH   Model path; defaults to models/ggml-large-v3-turbo.bin.
       --whisper-bin NAME     whisper.cpp executable; defaults to whisper-cli.
-      --cleaner MODE         literal, ollama, or gemini; defaults to literal.
+      --cleaner MODE         literal, apple, or gemini; defaults to apple.
       --mode MODE            clean, translate, meeting, or actions; defaults to clean.
       --language MODE        auto, en, or es; defaults to auto.
-      --ollama-url URL       Ollama base URL.
-      --ollama-model NAME    Ollama model; defaults to qwen3:4b.
       --gemini-model NAME    Gemini model; defaults to gemini-3.5-flash.
       --shortcut CHORD       Defaults to fn (the Fn/Globe key alone).
       --mode-shortcut CHORD  Cycles the mode from the HUD; defaults to control+option+m.

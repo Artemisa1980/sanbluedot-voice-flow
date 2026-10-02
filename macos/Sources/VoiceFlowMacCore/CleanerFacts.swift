@@ -30,14 +30,15 @@ public extension CleanerMode {
                     value: "The transcript as the engine heard it, plus your confirmed corrections."
                 ),
             ]
-        case .ollama:
+        case .apple:
             return [
-                EngineFact(label: "SPEED", value: "Runs on this Mac. Not measured on the fixed corpus."),
-                EngineFact(label: "DELIVERS", value: "Always, while the Ollama daemon is running."),
+                EngineFact(label: "SPEED", value: "0.61s median on the fixed corpus."),
+                EngineFact(label: "DELIVERS", value: "Always, on a Mac that can run the model."),
+                EngineFact(label: "CHANGES", value: "Punctuation, 34.8% to 84.8% of the reference. 18 of 19 passed the guard."),
                 EngineFact(label: "PRIVACY", value: "Nothing leaves this Mac."),
                 EngineFact(
                     label: "NEEDS",
-                    value: "Ollama running locally. Without it the dictation falls back to the transcript."
+                    value: "macOS 26 or newer with Apple Intelligence. Without it the dictation falls back to the transcript."
                 ),
             ]
         case .gemini:
@@ -56,12 +57,42 @@ public extension CleanerMode {
         }
     }
 
+    /// The model this engine runs, when it has one to name.
+    ///
+    /// Gemini's model is a choice and gets its own row of buttons. A local engine's is
+    /// not a choice, but it is still the thing doing the work, and a panel that names
+    /// the cloud model while leaving the local one blank reads as though nothing is
+    /// there.
+    var localModelName: String? {
+        switch self {
+        case .literal, .gemini:
+            return nil
+        case .apple:
+            return "Apple's on-device model, macOS 26 and newer"
+        }
+    }
+
+    /// What the fixed corpus returned for this engine, or nil when it has no figure.
+    ///
+    /// Same corpus, same transcription, same output guard, so the two local engines can
+    /// be read against each other. R9 applies: these are measurements or they are absent.
+    var corpusNote: String? {
+        switch self {
+        case .literal, .gemini:
+            return nil
+        case .apple:
+            return "19 recordings · 18 accepted · punctuation 34.8% → 84.8% · 0.61s median"
+        }
+    }
+
     /// The day the figures above were taken, or nil when this engine has none to date.
     /// Shown with them, because nothing re-measures and an undated number reads as today.
     var factsMeasuredOn: String? {
         switch self {
-        case .literal, .ollama:
+        case .literal:
             return nil
+        case .apple:
+            return "2026-09-26"
         case .gemini:
             return "2026-08-31"
         }
@@ -72,8 +103,8 @@ public extension CleanerMode {
         switch self {
         case .literal:
             return "Use it when you want your own words untouched."
-        case .ollama:
-            return "Use it when the text must not leave the Mac and you can wait."
+        case .apple:
+            return "Use it when the text must not leave the Mac and you want an answer now."
         case .gemini:
             return "Best result when it answers. Avoid it when you cannot lose 45 seconds."
         }

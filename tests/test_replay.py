@@ -115,7 +115,6 @@ class ReplayEvidenceTests(unittest.TestCase):
             threads=None,
             beam_size=None,
             cleaner="literal",
-            ollama_model="qwen3:4b",
             gemini_model="gemini-3.7-flash",
         )
 
@@ -133,7 +132,6 @@ class ReplayEvidenceTests(unittest.TestCase):
             whisper_bin="whisper-cli",
             language="auto",
             cleaner="literal",
-            ollama_model="qwen3:4b",
             gemini_model="gemini-3.7-flash",
             no_vocab_prompt=False,
             prompt_budget=600,
@@ -173,8 +171,7 @@ class ReplayEvidenceTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             whisper_bin="whisper-cli",
             language="auto",
-            cleaner="ollama",
-            ollama_model="qwen3:4b",
+            cleaner="apple",
             gemini_model="gemini-3.7-flash",
             no_vocab_prompt=False,
             prompt_budget=600,
