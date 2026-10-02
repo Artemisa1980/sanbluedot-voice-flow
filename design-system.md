@@ -16,6 +16,58 @@ previously declared itself compliant with `sanblueᵈᵒᵗ pdf-station/design-s
 contract belonging to another project, which put this project's appearance under rules
 it does not own and cannot see change.
 
+## Selected Windows hub — A / Original station
+
+Approved design direction: `docs/voice-station-concept.html` (A), selected 2026-09-08.
+Use its mint canvas, cream panels, navy-and-gold chrome, central microphone dial,
+left navigation and four spaces: Station, Modes, Your words and Control.
+The preview is the retained composition reference; this contract owns its adoption.
+Its controls remain simulated until connected to the engine and verified on Windows.
+This selection does not close a functional gate or change the existing macOS layout.
+Keep B / Broadcast and C / Folio in `docs/` as alternate references, not implementation targets.
+
+Windows composition update, approved 2026-09-08: retain A's left navigation and illustrated
+microphone. Station uses a single-window overview with a four-stage signal chain, engine
+strip, capture panel, dark Andor result console and desktop output strip. Header: owner
+at left with the actual version in a gold badge, centered retro voice-station title, brand
+at right. Footer: centered brand and retro dev-station title on navy with a gold top rule.
+The main overview fits the window; long results scroll inside the console. Detailed pages
+remain accessible from the left navigation. Provider labels and telemetry reflect the
+Windows implementation rather than the sample values in the supplied reference.
+
+Sidebar update, approved 2026-09-09: use the Andor console background `#262319` for the
+left navigation. Replace numeric indexes with outlined microphone, sliders, speech bubble
+and gear icons beside Station, Modes, Your words and Control. Cream labels and muted blue
+icons remain readable on the dark surface; gold indicates the selected page. Keep the
+navigation labels and the existing layout.
+
+Provider interaction, approved 2026-09-09: engine selection synchronizes the highlighted
+button, cleanup node, local/cloud label, provider setup panel and console footer. Literal
+uses the local green cleanup icon; Ollama uses the same local color and Gemini uses gold.
+Unconfigured routes display setup-required status, not successful connection indicators.
+Their signal cards retain a solid border; the pending lamp and explicit status communicate
+readiness. A disabled microphone states that no audio is captured and points to Literal.
+LOG uses actual session events, provider tags, timestamps and category counts; RESULT
+preserves raw/final recovery. Reference model versions and verified-key claims are not
+product state. The original microphone, dark sidebar, fixed header and footer remain.
+
+Detail pages, approved 2026-09-09: insert Snippets immediately after Modes, with an
+outlined quotation icon. The navigation order is Station, Modes, Snippets, Your words,
+Control. Each detail page has its own terminal frame: navy border and offset shadow,
+cream paper `#F8ECCF`, dark text, a compact gold title badge and a fixed bottom status row.
+Content scrolls within the frame; the application header and footer stay visible.
+Snippets has only its own title, a trigger/optional-description/expansion form and a list
+below. Your words retains History, Vocabulary and Corrections, without a Snippets tab.
+Modes and Control use the same cream terminal shell around their existing content.
+The Station overview retains its dark Andor console and illustrated microphone.
+
+Voice motion, approved 2026-09-09: while recording, native microphone loudness expands
+the illustrated microphone disc by at most 4%, with a soft gold ring. The twelve bars
+show a short history of measured loudness as different heights, retaining their blue,
+gold and coral palette. This is a voice envelope, not a frequency-spectrum measurement.
+Silence, capture exit or missing audio updates settle the display. Reduced-motion users
+retain the level lights with no disc movement or changing bar heights.
+
 ## The one non-negotiable
 
 The `dot` is **always** `#7CB3E8`. `sanblue` adapts: navy `#16213E` on a light surface,
@@ -439,8 +491,8 @@ meter. Approved 2026-09-02, after they had already shipped as literals.
 | `onAir` | `#FF453B` | the meter's last bars and the capsule's ON AIR badge |
 
 The APPLE badge takes `inputCream`, a brand token already readable on the olive ground,
-so the third engine needs no new colour. GEMINI is `gold`, OLLAMA `appBg`, and all three
-count under the AI CLEAN filter.
+so the third engine needs no new colour. GEMINI is `gold`, and both count under the
+AI CLEAN filter. The Mac console has no OLLAMA badge since Ollama left the app.
 
 **Every colour is declared in `VoiceStationTokens` and referenced by name.** A literal
 written beside the view that uses it is a copy that stops moving with the token. Four had

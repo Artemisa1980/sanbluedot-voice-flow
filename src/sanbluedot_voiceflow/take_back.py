@@ -93,24 +93,38 @@ _ANCHOR_WORDS = frozenset((
 def take_back_spans(
     words: list[str],
     withdrew_before: Callable[[int], bool] = lambda _index: False,
+    gone: Callable[[int], bool] = lambda _index: False,
 ) -> list[tuple[int, int]]:
     """Index ranges, inclusive, of every take-back cue in a list of words.
 
     Every phrase above is a cue. A bare anchor word is one only when
-    `withdrew_before(i)` says the real word just before it was deleted.
+    `withdrew_before(i)` says the real word just before it was deleted. A bare "no"
+    must also join a phrase through words that are all `gone`: "que no" deleted
+    together otherwise justified each other, seven words from the real cue, and the
+    sentence lost its negation (session-audit-03 F2).
     """
     normalized = [_normalized(word) for word in words]
-    spans: list[tuple[int, int]] = []
+    phrases: list[tuple[int, int]] = []
     for cue in (_normalized(phrase).split() for phrase in TAKE_BACK_PHRASES):
         size = len(cue)
         for start in range(len(normalized) - size + 1):
             if normalized[start:start + size] == cue:
-                spans.append((start, start + size - 1))
-    spans += [
+                phrases.append((start, start + size - 1))
+
+    def joins_a_phrase(index: int) -> bool:
+        return any(
+            all(gone(between) for between in range(end + 1, index)) if end < index
+            else all(gone(between) for between in range(index + 1, start))
+            for start, end in phrases
+            if not start <= index <= end
+        )
+
+    anchors = [
         (index, index) for index, word in enumerate(normalized)
         if word in _ANCHOR_WORDS and withdrew_before(index)
+        and (word != "no" or joins_a_phrase(index))
     ]
-    return spans
+    return phrases + anchors
 
 
 def deletable(

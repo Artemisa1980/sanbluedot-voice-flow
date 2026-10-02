@@ -444,27 +444,49 @@ class PracticeStore:
         was already wrong.
         """
         with exclusive_file_lock(self.index):
-            existed = self.index.exists()
             indexed = {int(item["id"]) for item in self.load()}
-            if existed and not self.index.exists():
-                # The index was unreadable and is now quarantined. It may still claim
-                # every kept take, and an empty view of it deleted them all (D-54).
+            claimed = self._claimed_ids()
+            if claimed is None:
+                # The index is still there and still unreadable: moving it aside failed.
+                # It may claim every kept take, so nothing is swept (D-54).
                 return []
-            indexed |= self._claimed_ids()
+            indexed |= claimed
+            indexed |= self._takes_a_quarantined_index_may_claim()
             return sweep_orphan_takes(self.directory, indexed)
 
-    def _claimed_ids(self) -> set[int]:
-        """Every id the index names, including entries `load` skips as incomplete."""
+    def _claimed_ids(self) -> set[int] | None:
+        """Every id the index names, incomplete entries included; None if unreadable."""
+        if not self.index.exists():
+            return set()
         try:
             payload = json.loads(self.index.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return set()
+            return None
         entries = payload.get("sessions", []) if isinstance(payload, dict) else []
         if not isinstance(entries, list):
-            return set()
+            return None
         return {
             item["id"] for item in entries
             if isinstance(item, dict) and type(item.get("id")) is int
+        }
+
+    def _takes_a_quarantined_index_may_claim(self) -> set[int]:
+        """Takes no older than the last write of an index that was moved aside.
+
+        A quarantined index can no longer say which takes it claimed, and reading it as
+        empty deleted every kept recording — in the run that quarantined it and in every
+        sweep after (D-54). `os.replace` keeps the file's time, so anything recorded
+        before that index was last written may be one of its sessions and is kept; a
+        take reserved after it and never indexed is still swept.
+        """
+        quarantined = list(self.directory.glob(f"{self.index.name}.corrupt-*"))
+        if not quarantined:
+            return set()
+        last_write = max(path.stat().st_mtime for path in quarantined)
+        return {
+            int(path.stem)
+            for path in self.directory.glob("[0-9][0-9][0-9].wav")
+            if path.stem.isdigit() and path.stat().st_mtime <= last_write
         }
 
     def next_audio_path(self) -> Path:

@@ -247,6 +247,37 @@ class OrphanTakeTests(unittest.TestCase):
             self.assertEqual(store.sweep_orphans(), [])
         self.assertTrue(kept.exists())
 
+    def test_a_sweep_after_an_earlier_quarantine_keeps_the_takes_it_may_claim(self) -> None:
+        # `vf practice --list` quarantines the index; the next `vf practice --text`
+        # sweeps. The first fix guarded only a quarantine made by the sweep itself, and
+        # this sequence still deleted every kept recording (session-audit-03 F1).
+        store = PracticeStore(self.directory)
+        kept = self._take("001.wav", age_seconds=MAX_TAKE_SECONDS + 600)
+        store.index.write_text('{"schema_version": 1, "sessions": [{"id": 1', encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(store.load(), [])
+            self.assertEqual(store.sweep_orphans(), [])
+        self.assertTrue(kept.exists())
+
+    def test_a_take_stranded_after_the_quarantine_is_still_swept(self) -> None:
+        store = PracticeStore(self.directory)
+        store.index.write_text("{", encoding="utf-8")
+        stamp = time.time() - (MAX_TAKE_SECONDS + 600)
+        os.utime(store.index, (stamp, stamp))
+        with contextlib.redirect_stderr(io.StringIO()):
+            store.load()
+        stranded = self._take("002.wav", age_seconds=MAX_TAKE_SECONDS + 60)
+        self.assertEqual(store.sweep_orphans(), [stranded])
+
+    def test_an_index_that_cannot_be_moved_aside_sweeps_nothing(self) -> None:
+        store = PracticeStore(self.directory)
+        kept = self._take("001.wav", age_seconds=MAX_TAKE_SECONDS + 600)
+        store.index.write_text("{", encoding="utf-8")
+        with patch("sanbluedot_voiceflow.memory.os.replace", side_effect=OSError("busy")):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(store.sweep_orphans(), [])
+        self.assertTrue(kept.exists())
+
     def test_an_incomplete_entry_still_claims_its_take(self) -> None:
         store = PracticeStore(self.directory)
         kept = self._take("002.wav", age_seconds=MAX_TAKE_SECONDS + 60)

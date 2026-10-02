@@ -1,15 +1,37 @@
 /* sanblueᵈᵒᵗ VoiceFlow — Windows Retro HUD Stylesheet */
-/* Dimensions: 330px × 88px, adhering to HUDLayout.swift and design-system.md */
+/* Every measurement the HUD contract pins is declared once, below, and read from there. */
 
 :root {
   --navy: #16213E;
   --dot-blue: #7CB3E8;
   --gold: #EFC15E;
   --danger: #C0392B;
-  --ok: #27AE60;
+  --on-air: #FF453B;
+  --ok: #5F7050;
   --panel-bg: rgba(22, 33, 62, 0.94);
   --text-cream: #FFF7EF;
   --text-muted: #98AAB2;
+  /* The panel and the three pieces that sit inside it. The contract fixes 330 x 88 and
+     a 44 + 14 + 226 row inside 14px padding. `windows/tests/contract.test.cjs` fails if a
+     value here stops agreeing with tauri.conf.json or with that arithmetic. */
+  --capsule-width: 330px;
+  --capsule-height: 88px;
+  --capsule-padding-x: 14px;
+  --mic-disc: 44px;
+  --mic-gap: 14px;
+  --content-width: 226px;
+  /* Twelve bars of 9px with 3px gaps spend 141 of the row's 226, which is what leaves
+     the ESC reminder somewhere to sit that the bars never used. */
+  --vu-bar: 9px;
+  --vu-bar-height: 12px;
+  --vu-gap: 3px;
+  /* The capsule renders over other applications, so the contract draws it as black at
+     85% over a blurred navy wash rather than on the sage canvas the windows use. */
+  --capsule-ink: color-mix(in srgb, #000000 85%, transparent);
+  --capsule-wash: color-mix(in srgb, var(--navy) 55%, transparent);
+  --disc-ink: color-mix(in srgb, var(--navy) 85%, transparent);
+  --telemetry-ink: color-mix(in srgb, #000000 45%, transparent);
+  --bar-idle: color-mix(in srgb, #FFFFFF 10%, transparent);
   --font-mono: "SF Mono", "Cascadia Code", "Consolas", "Courier New", monospace;
 }
 
@@ -23,8 +45,8 @@
 
 body {
   background: transparent;
-  width: 330px;
-  height: 88px;
+  width: var(--capsule-width);
+  height: var(--capsule-height);
   overflow: hidden;
   font-family: var(--font-mono);
   display: flex;
@@ -32,43 +54,63 @@ body {
   justify-content: center;
 }
 
-/* 330px × 88px Capsule Container with 18px corner radius */
+/* The capsule itself: the panel size above, with an 18px corner radius. */
 .hud-container {
-  width: 330px;
-  height: 88px;
-  background: var(--navy);
+  width: var(--capsule-width);
+  height: var(--capsule-height);
+  background-color: var(--capsule-wash);
+  background-image: linear-gradient(var(--capsule-ink), var(--capsule-ink));
+  backdrop-filter: blur(12px);
   border-radius: 18px;
-  padding: 10px 14px;
+  padding: 10px var(--capsule-padding-x);
   display: flex;
   align-items: center;
   position: relative;
+  cursor: grab;
   border: 1px solid rgba(124, 179, 232, 0.35);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 -6px 14px rgba(0, 0, 0, 0.45);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.hud-container * {
+  pointer-events: none;
+}
+
+.hud-container .esc-marker {
+  pointer-events: auto;
+}
+
+.hud-container:active {
+  cursor: grabbing;
+}
+
 .hud-container.recording {
-  border-color: var(--danger);
-  box-shadow: 0 8px 20px rgba(192, 57, 43, 0.35), inset 0 0 0 1px rgba(192, 57, 43, 0.4);
+  border-color: var(--on-air);
+  box-shadow: inset 0 0 0 1px rgba(255, 69, 59, 0.4), inset 0 0 18px rgba(255, 69, 59, 0.3);
 }
 
 .hud-container.processing {
-  border-color: var(--gold);
-  box-shadow: 0 8px 20px rgba(239, 193, 94, 0.35), inset 0 0 0 1px rgba(239, 193, 94, 0.4);
+  border-color: var(--dot-blue);
+  box-shadow: inset 0 0 0 1px rgba(124, 179, 232, 0.4), inset 0 0 18px rgba(124, 179, 232, 0.3);
+}
+
+.hud-container.failed {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px rgba(192, 57, 43, 0.4), inset 0 0 18px rgba(192, 57, 43, 0.3);
 }
 
 .hud-container.completed {
   border-color: var(--ok);
-  box-shadow: 0 8px 20px rgba(39, 174, 96, 0.35), inset 0 0 0 1px rgba(39, 174, 96, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(95, 112, 80, 0.4), inset 0 0 18px rgba(95, 112, 80, 0.3);
 }
 
-/* 44px Vintage Microphone Disc */
+/* Vintage microphone disc. */
 .mic-disc {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
+  width: var(--mic-disc);
+  height: var(--mic-disc);
+  min-width: var(--mic-disc);
   border-radius: 50%;
-  background: var(--navy);
+  background: var(--disc-ink);
   border: 1.5px solid var(--dot-blue);
   display: flex;
   align-items: center;
@@ -79,11 +121,15 @@ body {
 }
 
 .hud-container.recording .mic-disc {
-  border-color: var(--danger);
+  border-color: var(--on-air);
 }
 
 .hud-container.processing .mic-disc {
-  border-color: var(--gold);
+  border-color: var(--dot-blue);
+}
+
+.hud-container.failed .mic-disc {
+  border-color: var(--danger);
 }
 
 .hud-container.completed .mic-disc {
@@ -114,11 +160,15 @@ body {
 }
 
 .hud-container.recording .mic-outer-frame {
-  border-color: var(--danger);
+  border-color: var(--on-air);
 }
 
 .hud-container.processing .mic-outer-frame {
-  border-color: var(--gold);
+  border-color: var(--dot-blue);
+}
+
+.hud-container.failed .mic-outer-frame {
+  border-color: var(--danger);
 }
 
 .hud-container.completed .mic-outer-frame {
@@ -163,7 +213,7 @@ body {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  border: 1.5px solid var(--danger);
+  border: 1.5px solid var(--on-air);
   opacity: 0;
   pointer-events: none;
 }
@@ -177,10 +227,10 @@ body {
   100% { transform: scale(1.6); opacity: 0; }
 }
 
-/* 226px Content Column */
+/* The three rows beside the disc. */
 .content-column {
-  width: 226px;
-  margin-left: 14px;
+  width: var(--content-width);
+  margin-left: var(--mic-gap);
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -208,13 +258,17 @@ body {
 }
 
 .hud-container.recording .status-dot {
-  background: var(--danger);
-  box-shadow: 0 0 6px var(--danger);
+  background: var(--on-air);
+  box-shadow: 0 0 6px var(--on-air);
 }
 
 .hud-container.processing .status-dot {
-  background: var(--gold);
+  background: var(--dot-blue);
   animation: blink 0.8s infinite alternate;
+}
+
+.hud-container.failed .status-dot {
+  background: var(--danger);
 }
 
 .hud-container.completed .status-dot {
@@ -278,37 +332,41 @@ body {
 
 .vu-meter {
   display: flex;
-  flex: 1;
-  height: 10px;
-  gap: 3px;
-  background: rgba(10, 15, 30, 0.6);
-  padding: 2px;
-  border-radius: 3px;
-  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  flex: none;
+  height: var(--vu-bar-height);
+  gap: var(--vu-gap);
 }
 
 .vu-bar {
-  flex: 1;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 1px;
+  flex: none;
+  width: var(--vu-bar);
+  height: var(--vu-bar-height);
+  background: var(--bar-idle);
+  border-radius: 1.5px;
   overflow: hidden;
 }
 
+/* The idle bar is the white the contract gives it; the fill only appears when lit, so
+   an unlit bar is one flat value rather than a dimmed colour standing in for one.
+   `color` is set beside `background` because the glow below reads `currentColor`, and
+   with nothing declared it drew in whatever the capsule happened to inherit. */
 .vu-fill {
   width: 100%;
   height: 100%;
   background: var(--dot-blue);
-  opacity: 0.15;
+  color: var(--dot-blue);
+  opacity: 0;
   transition: opacity 0.05s ease;
 }
 
-.vu-bar:nth-child(n+9) .vu-fill {
+.vu-bar:nth-child(n+8) .vu-fill {
   background: var(--gold);
+  color: var(--gold);
 }
 
 .vu-bar:nth-child(n+11) .vu-fill {
-  background: var(--danger);
+  background: var(--on-air);
+  color: var(--on-air);
 }
 
 .vu-bar.active .vu-fill {
@@ -338,7 +396,7 @@ body {
   font-weight: 700;
   color: var(--text-muted);
   letter-spacing: 0.5px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--telemetry-ink);
   padding: 0 6px;
   border-radius: 3px;
   border: 0.5px solid rgba(255, 255, 255, 0.08);

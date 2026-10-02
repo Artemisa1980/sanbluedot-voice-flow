@@ -27,7 +27,7 @@ from .distill import (
     create_ollama_model,
     write_modelfile,
 )
-from .doctor import run_checks
+from .doctor import PROJECT_MODELS, bundled_binary, bundled_model, run_checks
 from .errors import CleanupFailed, VoiceFlowError
 from .memory import (
     CORRECTION_SOURCES,
@@ -54,6 +54,18 @@ from .transcribers.parakeet import DEFAULT_MODEL_DIR as DEFAULT_PARAKEET_MODEL_D
 
 
 DEFAULT_WHISPER_MODEL = Path("models/ggml-large-v3-turbo.bin")
+
+
+def _doctor_model() -> Path | None:
+    """The model `doctor` checks when none is named: the one this platform dictates with.
+
+    The Windows adapter picks base first; the Mac dictates with turbo, and checking a
+    base file kept for tests would report a model the app never runs.
+    """
+    if sys.platform == "win32":
+        return bundled_model()
+    mac_default = PROJECT_MODELS / DEFAULT_WHISPER_MODEL.name
+    return mac_default if mac_default.is_file() else bundled_model()
 
 # The modes that ask a model to rewrite the text. `literal` returns what it was given, so
 # each of these paired with it produces an ordinary dictation under a label that promises
@@ -87,8 +99,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     doctor = subparsers.add_parser("doctor", help="Inspect local engine dependencies.")
-    doctor.add_argument("--whisper-bin", default="whisper-cli")
-    doctor.add_argument("--whisper-model", type=Path)
+    # Defaults fall back to the project's own `models/` before PATH, so a bare `doctor`
+    # reports the files the adapter actually runs. An explicit flag still wins.
+    doctor.add_argument("--whisper-bin", default=bundled_binary("whisper-cli"))
+    doctor.add_argument("--whisper-model", type=Path, default=_doctor_model())
+    # Ollama is the Windows adapter's local cleanup; the macOS app no longer offers it,
+    # so a bare `doctor` checks it only on Windows.
+    doctor.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    doctor.add_argument("--ollama-model", default="qwen3:4b" if sys.platform == "win32" else None)
 
     process = subparsers.add_parser("process", help="Transcribe one local audio file.")
     process.add_argument("audio", type=Path)
@@ -116,6 +134,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Frontmost application name, substituted for the {app} snippet macro.",
     )
     process.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
+    # The Windows adapter's local cleanup; the macOS app never selects it.
+    process.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    process.add_argument("--ollama-model", default="qwen3:4b")
     process.add_argument(
         "--apple-bin",
         default=DEFAULT_APPLE_BINARY,
@@ -167,6 +188,8 @@ def _build_parser() -> argparse.ArgumentParser:
     clean.add_argument("--language", default=None, help="Language hint for the cleaner.")
     clean.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
     clean.add_argument("--apple-bin", default=DEFAULT_APPLE_BINARY)
+    clean.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    clean.add_argument("--ollama-model", default="qwen3:4b")
     clean.add_argument("--app-name", default=None)
     clean.add_argument("--no-memory", action="store_true")
     clean.add_argument("--json", action="store_true")
@@ -313,6 +336,8 @@ def _doctor(args: argparse.Namespace) -> int:
     checks = run_checks(
         whisper_binary=args.whisper_bin,
         whisper_model=args.whisper_model,
+        ollama_url=args.ollama_url,
+        ollama_model=args.ollama_model,
     )
     for check in checks:
         marker = "PASS" if check.ok else "MISSING"
@@ -582,6 +607,8 @@ def _process(args: argparse.Namespace) -> int:
         mode=mode,
         gemini_model=args.gemini_model,
         apple_binary=getattr(args, "apple_bin", DEFAULT_APPLE_BINARY),
+        ollama_model=getattr(args, "ollama_model", "qwen3:4b"),
+        ollama_url=getattr(args, "ollama_url", "http://127.0.0.1:11434"),
     )
     pipeline = DictationPipeline(
         transcriber=transcriber,
@@ -724,6 +751,8 @@ def _clean(args: argparse.Namespace) -> int:
         mode=mode,
         gemini_model=args.gemini_model,
         apple_binary=args.apple_bin,
+        ollama_model=getattr(args, "ollama_model", "qwen3:4b"),
+        ollama_url=getattr(args, "ollama_url", "http://127.0.0.1:11434"),
     )
     pipeline = DictationPipeline(
         transcriber=None,

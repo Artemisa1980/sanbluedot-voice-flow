@@ -89,6 +89,10 @@ path is under `dist/previews/`; it never replaces `dist/sanblueᵈᵒᵗ VoiceFl
 The preview simulates controls without connecting a microphone, model, personal store,
 clipboard, keychain or cloud provider. See `docs/README.md` for its scope and limitations.
 
+The Windows development adapter now includes the selected A station, local capture,
+session recovery, personal-memory controls and shortcut settings. Its live acceptance
+remains open; see `windows/README.md` for current commands and limitations.
+
 ## Personal memory
 
 Local files under `~/Library/Application Support/sanblue.voiceflow/` personalize
@@ -410,9 +414,11 @@ PYTHONPATH=src python3 -m sanbluedot_voiceflow process sample.wav \
   --copy
 ```
 
-## Ollama, removed
+## Ollama, removed from the Mac
 
-Ollama was a local cleanup engine until 2026-10-01, when the owner removed it. A cleanup
+Ollama was the Mac's local cleanup engine until 2026-10-01, when the owner removed it from
+the app. The engine still carries it, because the Windows adapter has no on-device model
+and cleans with Ollama there; `--cleaner ollama` exists for that machine. A cleanup
 model writes every word again, so its time grows with the dictation: 80 words took Ollama
 2.8 s and Apple 1.8–2.4 s, and Parakeet now supplies the punctuation that was most of
 the reason to clean. Apple covers local cleanup and Gemini the cloud. The Apple-against-
@@ -650,6 +656,7 @@ recorded work.
 - `macos/` — native menu-bar runner and dependency-free checks.
 - `macos/Sources/VoiceFlowMacCore/PasteTarget.swift` — which applications may receive a keystroke.
 - `macos/Sources/VoiceFlowMacCore/VoiceAction.swift` — spoken-intent parsing.
+- `windows/` — Windows platform adapter: builds locally; Gate 5 live acceptance remains open.
 - `scripts/build-macos-app.sh` — stable local `.app` packaging and Apple Development signing.
 - `acceptance/` — one runbook and report per framework gate; `acceptance/README.md` indexes them.
 - `docs/` — HTML previews of interface surfaces, built from the `design-system.md` tokens.

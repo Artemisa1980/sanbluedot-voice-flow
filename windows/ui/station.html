@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceFlow — personal voice station</title>
+<link rel="stylesheet" href="station.css">
+</head>
+<body>
+<header class="chrome"><div class="identity"><span class="sys">SANDY.SYSDEV</span><span class="version-badge" id="appVersion"></span></div><span class="product">retro voice-station</span><span class="mark">sanblue<sup>dot</sup></span></header>
+<div class="shell">
+<aside><div class="label side-title">Your workspace</div><nav aria-label="VoiceFlow sections">
+<button data-page="station" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M8 21h8"/></svg>Station</button>
+<button data-page="modes"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Modes</button>
+<button data-page="snippets"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16M4 19h16M8 9H5v4h4V9H8m10 0h-3v4h4V9h-1"/></svg>Snippets</button>
+<button data-page="words"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2Z M7 9h10M7 13h6"/></svg>Your words</button>
+<button data-page="control"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m10 3-.6 2.2-2 .9-2-.7-2 3.4 1.5 1.5v2.4l-1.5 1.5 2 3.4 2-.7 2 .9.6 2.2h4l.6-2.2 2-.9 2 .7 2-3.4-1.5-1.5v-2.4l1.5-1.5-2-3.4-2 .7-2-.9L14 3Z"/><circle cx="12" cy="11.5" r="3"/></svg>Control</button>
+</nav><div class="side-note"><strong><i></i>Personal by design</strong>Your voice.<br>Your models.<br>Your choice.</div></aside>
+<main>
+<p id="notice" role="alert" hidden></p><div class="overline"><span class="label">VoiceFlow / <span id="sectionName">Station</span></span><span class="tag" id="connectionTag" role="status">CONNECTING</span></div>
+<section id="station" aria-label="Station overview">
+<div class="signal-chain" aria-label="Processing path">
+<div class="signal-node"><span class="signal-icon">●</span><div><small>INPUT</small><b>Microphone</b></div><i></i></div>
+<div class="signal-node"><span class="signal-icon">●</span><div><small>SPEECH · LOCAL</small><b id="activeModel">—</b></div><i></i></div>
+<div class="signal-node" id="cleanupNode"><span class="signal-icon" id="cleanupIcon">●</span><div><small id="cleanupScope">CLEANUP · LOCAL</small><b id="cleanupName">no cleanup</b></div><i id="cleanupLamp"></i></div>
+<div class="signal-node"><span class="signal-icon orange">●</span><div><small>OUTPUT</small><b>Desktop</b></div><i></i></div>
+</div>
+<div class="engine-strip"><span>ENGINE</span>
+<div class="engine-choice"><button id="providerLiteral" class="engine selected" disabled aria-pressed="true">◉ Literal — no cleanup</button><button id="helpLiteral" class="engine-help" aria-label="About Literal">?</button></div>
+<div class="engine-choice"><button id="providerOllama" class="engine" disabled aria-pressed="false">○ Local cleanup — Ollama</button><button id="helpOllama" class="engine-help" aria-label="About Ollama">?</button></div>
+<div class="engine-choice"><button id="providerGemini" class="engine" disabled aria-pressed="false">○ Gemini — cloud, text only</button><button id="helpGemini" class="engine-help" aria-label="About Gemini">?</button></div></div>
+<div class="station-deck">
+<article class="capture-panel surface">
+<div class="capture-status" id="capsule"><span id="capsuleState">CONNECTING</span></div>
+<div class="dial" id="voiceDial"><button class="mic-button" id="dialButton" aria-label="Hold to record" disabled><span class="mic" aria-hidden="true"></span><span class="stem" aria-hidden="true"></span></button></div>
+<div class="capture-meter bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+<p id="captureCaption">Keep the words. Keep the meaning.</p>
+<div class="capture-actions"><button class="primary" id="recordButton" disabled>Hold to talk</button><button class="secondary" id="cancelButton" hidden>Cancel recording</button></div>
+<span class="hint" id="captureHint">Connecting to the desktop engine…</span>
+<div class="capture-modes"><div class="label">MODE <span id="capsuleMode">LITERAL</span></div><div class="mode-group">
+<button class="mode" aria-pressed="true" disabled>▣ Literal</button><button class="mode" disabled title="Text-provider setup required">□ Clean</button><button class="mode" disabled title="Text-provider setup required">□ ES → EN</button><button class="mode" disabled title="Text-provider setup required">□ Notes</button>
+</div></div>
+</article>
+<article class="station-console">
+<div class="console-top"><button id="consoleLog" class="console-tab" aria-pressed="true">LOG</button><button id="consoleResult" aria-pressed="false">RESULT</button><button id="consoleHistory">HISTORY <span id="historyCount">0</span></button><button id="consoleSnippets">SNIPPETS</button><span class="console-name">ANDOR CONSOLE</span></div>
+<div class="telemetry"><span class="telemetry-label">● TELEMETRY</span><div><small>SPEECH</small><b id="sttReading">—</b></div><div><small>CLEANUP</small><b id="cleanupReading">OFF</b></div><div><small>RATE</small><b id="wpmReading">—</b></div></div>
+<div class="console-provider"><span id="routeProcessing">On this device</span><span id="providerStatus">LITERAL · NO CLOUD</span></div>
+<div id="providerSetup" class="provider-setup" hidden><span id="setupModel">MODEL · Not configured</span><span id="setupConnection">Not connected</span></div>
+<div id="logFilters" class="log-filters"><button id="logAll" aria-pressed="true">ALL</button><button id="logCapture">MIC/STT</button><button id="logCleanup">AI CLEAN</button><button id="logSystem">SYSTEM</button><button id="logErrors">ERRORS</button></div>
+<div id="eventLog" class="console-document event-log" role="log" aria-label="Session activity"></div>
+<div id="resultPanel" class="console-document" hidden><div class="log-line"><span class="log-badge">SYS</span><span id="sessionStatus">Connecting to the native station…</span></div><div class="transcript-block"><span class="label">LAST DELIVERY</span><p id="finalText">Room for your next thought.</p><p class="empty" id="deliveryLabel">Your transcript will appear here after a dictation.</p><p class="empty" id="fallbackNote" hidden></p><pre id="rawText" hidden></pre></div></div>
+<div id="resultActions" class="console-actions result-actions" hidden><button id="copyLast" disabled>Copy result</button><button id="toggleRaw" disabled>Show original</button></div>
+<div class="console-bottom"><span id="consoleStatus">Connecting</span><span id="providerFooter">Local · Whisper</span></div>
+</article>
+</div>
+<div class="output-strip"><span class="signal-icon">↓</span><div><b>Desktop</b><small id="deliverySetting">Verified target</small></div><span class="output-badge" id="outputBadge">AUTO-PASTE</span></div>
+</section>
+<section id="modes" class="detail-terminal" hidden aria-labelledby="modesTitle"><div class="terminal-heading"><span aria-hidden="true">&gt;_</span><h1 id="modesTitle">MODES</h1></div><div class="terminal-body"><p class="intro">Literal is connected to local Whisper. Clean, Translate and Notes describe the next provider integration; they are unavailable until a text provider is configured.</p><div class="mode-list">
+<div class="mode-row"><h3>Literal</h3><div><p>Keep the speech transcript, apply only your confirmed vocabulary and corrections, and expand your saved snippets once.</p><em>Local speech recognition</em></div></div>
+<div class="mode-row"><h3>Clean</h3><div><p>Add conservative punctuation and remove verified fillers. Keep the raw version available when an edit is rejected.</p><em>Local or explicitly selected cloud cleanup</em></div></div>
+<div class="mode-row"><h3>Translate</h3><div><p>Turn Spanish or mixed dictation into English while preserving names, numbers, links and technical terms.</p><em>Rewrite provider required</em></div></div>
+<div class="mode-row"><h3>Notes</h3><div><p>Structure one spoken thought into clear bullets and action items. Continuous meeting capture is a separate future capability.</p><em>Rewrite provider required</em></div></div>
+</div></div><div class="terminal-status"><span>Choose your intention</span><span>Provider selection in Station</span></div></section>
+<section id="snippets" class="detail-terminal" hidden aria-labelledby="snippetsTitle"><div class="terminal-heading"><span aria-hidden="true">❝≡</span><h1 id="snippetsTitle">SNIPPETS</h1></div><div class="terminal-body snippet-workspace">
+<form id="snippetForm" class="snippet-editor"><h2>Add voice snippet / macro</h2><label>Spoken trigger<input name="trigger" required maxlength="16000" placeholder="e.g. my signature"></label><label>Description (optional)<input name="description" maxlength="16000" placeholder="A short label for your snippet"></label><label class="snippet-expansion">Replacement text or template<textarea name="expansion" required maxlength="16000" rows="2" placeholder="The words to insert when you say the trigger"></textarea></label><button type="submit">+ Save snippet</button><p class="hint">Saving an existing trigger replaces it. Use Edit to review its text first.</p></form>
+<p id="snippetWarning" role="status" hidden></p><div id="snippetList" class="terminal-list snippet-list"></div>
+</div><div class="terminal-status"><span id="snippetCount">Local voice snippets</span><button id="refreshSnippets">Refresh</button></div></section>
+<section id="words" class="detail-terminal" hidden aria-labelledby="wordsTitle"><div class="terminal-heading"><span aria-hidden="true">&gt;_</span><h1 id="wordsTitle">YOUR WORDS</h1></div><div class="terminal-body words-workspace"><div class="word-tabs" aria-label="Personal library categories"><button data-library="history" aria-pressed="true">History</button><button data-library="vocabulary" aria-pressed="false">Vocabulary</button><button data-library="corrections" aria-pressed="false">Corrections</button></div>
+<div class="library-content"><div id="historyPanel"><div class="library-toolbar"><span>Last 10 dictations · this session only</span><button id="clearHistory" disabled>Clear history</button></div><div id="historyList"></div></div>
+<div id="memoryPanel" hidden><button id="refreshMemory">Refresh local memory</button><p class="hint" id="memoryPath"></p><p id="memoryWarning" role="status"></p><div id="memoryList"></div>
+<form id="correctionForm" hidden><h2>Confirm a correction</h2><label>What the engine heard<input name="heard" required maxlength="16000"></label><label>What you intended<input name="intended" required maxlength="16000"></label><label class="check"><input type="checkbox" name="allow_global"> A single-word correction may replace that word everywhere.</label><p class="hint">Saving the same heard text replaces its existing correction.</p><button type="submit">Save correction</button></form>
+
+</div></div></div><div class="terminal-status"><span>History · this session</span><span>Vocabulary &amp; corrections · local</span></div></section>
+<section id="control" class="detail-terminal" hidden aria-labelledby="controlTitle"><div class="terminal-heading"><span aria-hidden="true">&gt;_</span><h1 id="controlTitle">CONTROL</h1></div><div class="terminal-body control-layout"><form id="preferencesForm">
+<label>Local speech model<select name="speech_model" id="speechModel"></select></label><div class="model-tools"><span id="speechModelStatus" class="hint">Open Control to inspect installed models.</span><button type="button" id="refreshModels">Refresh models</button></div><p class="hint">Models stay on this computer. Header and size checks do not measure accuracy. Save settings to use your selection for the next dictation.</p>
+<label>Local cleanup model<select name="ollama_model" id="cleanupModel"></select></label><div class="model-tools"><span id="cleanupModelStatus" class="hint">Select Ollama in Station to check the local service.</span><button type="button" id="checkCleanup">Check local service</button></div><p class="hint">Ollama runs on this computer. Nothing is downloaded from here: a model that is not installed is reported, not fetched. Save settings to use your selection.</p>
+<label>Global hold-to-talk key<select name="shortcut"><option value="right_ctrl">Right Ctrl</option><option value="f8">F8</option><option value="f9">F9</option></select></label><p class="hint">These keys still reach Windows. Right Ctrl + Escape can open Start; F8 or F9 avoids that modifier combination. The visible hold button does not use a global key.</p>
+<label>Hold delay (milliseconds)<input name="hold_delay_ms" type="number" min="0" max="3000" step="50" required></label><label class="check"><input name="auto_paste" type="checkbox"> Insert automatically when the original target is still focused</label><button type="submit" id="savePreferences">Save settings</button><p id="unsavedNote" class="hint" hidden>Not saved yet. Your choice reaches a dictation only after you save.</p><p class="hint">Controls lock during a dictation. Finish or cancel before closing the app.</p></form>
+<div class="controls"><div class="control-row"><div><h3>Processing</h3><p>Speech recognition and confirmed memory stay local. No cloud provider is connected.</p></div><span class="control-value">Literal</span></div><div class="control-row"><div><h3>Recording audio</h3><p>Temporary recordings are deleted after processing or cancellation.</p></div><span class="control-value">Not retained</span></div><div class="control-row"><div><h3>Session history</h3><p>The last ten raw and final transcripts stay in memory, including results whose clipboard delivery failed. Closing the app clears them.</p></div><span class="control-value">This session</span></div></div></div><div class="terminal-status"><span>Settings on this computer</span><span>Applied to the next dictation</span></div></section>
+</main></div><footer class="footer"><span><span class="mark">sanblue<sup>dot</sup></span><span class="footer-title"> — retro dev-station</span></span></footer>
+<dialog id="providerHelp"><p id="providerHelpText"></p><div class="result-actions"><button id="closeProviderHelp">Close</button></div></dialog><dialog id="confirmDialog"><p id="confirmText"></p><div class="result-actions"><button id="confirmNo">Keep</button><button id="confirmYes">Delete</button></div></dialog><script src="station.js"></script>
+</body></html>

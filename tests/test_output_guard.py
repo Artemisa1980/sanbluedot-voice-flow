@@ -297,6 +297,25 @@ class FixGuardReachTests(unittest.TestCase):
                 "El cliente aprobó el informe del sur.",
             )
 
+    def test_a_no_deleted_with_the_word_before_it_still_needs_a_real_cue(self) -> None:
+        """session-audit-03 F2: "que no" deleted together justified each other."""
+        for source, candidate in (
+            ("ana dijo que no puede venir el lunes perdón el martes",
+             "Ana dijo puede venir el martes."),
+            ("quiere pagar no sé cuánto, perdón, cuánto cuesta",
+             "Quiere sé cuánto cuesta."),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(CleanupError):
+                    guard_fix_cleanup(source, candidate)
+
+    def test_a_no_joined_to_a_real_cue_can_go_with_it(self) -> None:
+        candidate = "Manda el reporte el martes."
+        self.assertEqual(
+            guard_fix_cleanup("manda el reporte el lunes no perdón el martes", candidate),
+            candidate,
+        )
+
     def test_a_take_back_inside_a_sentence_is_accepted(self) -> None:
         candidate = "Envíalo el martes, y avísame."
         self.assertEqual(

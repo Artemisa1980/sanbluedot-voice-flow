@@ -1,10 +1,11 @@
+import os
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from sanbluedot_voiceflow.doctor import inspect_whisper_model, run_checks
+from sanbluedot_voiceflow.doctor import inspect_whisper_model, bundled_binary, bundled_model, run_checks
 
 
 def write_model(
@@ -34,6 +35,20 @@ def write_model(
     )
     path.write_bytes(header + b"\0" * padding)
     return path
+
+
+class FakeResponse:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body
 
 
 class WhisperModelInspectionTests(unittest.TestCase):
@@ -133,6 +148,57 @@ class WhisperModelInspectionTests(unittest.TestCase):
 
         model_check = next(check for check in checks if check.name == "Whisper model")
         self.assertFalse(model_check.ok)
+
+
+class BundledDependencyTests(unittest.TestCase):
+    """The adapter keeps the binary and the weights beside the sources, not on PATH."""
+
+    def test_the_projects_own_binary_wins_over_a_path_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self.assertEqual(bundled_binary("whisper-cli", root), "whisper-cli")
+            installed = root / ("whisper-cli.exe" if os.name == "nt" else "whisper-cli")
+            installed.touch()
+            self.assertEqual(bundled_binary("whisper-cli", root), str(installed))
+
+    def test_an_absent_model_still_reads_as_unconfigured(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            # None rather than a guessed path: a name that is not there must not be
+            # reported as a model that failed its header check.
+            self.assertIsNone(bundled_model(root))
+            (root / "ggml-large-v3-turbo.bin").touch()
+            self.assertEqual(bundled_model(root), root / "ggml-large-v3-turbo.bin")
+            # Base is the adapter's first choice, so it wins once both are installed.
+            (root / "ggml-base.bin").touch()
+            self.assertEqual(bundled_model(root), root / "ggml-base.bin")
+
+
+class DoctorTests(unittest.TestCase):
+    def test_wrong_shape_ollama_json_is_reported_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model = Path(temp_dir) / "model.bin"
+            model.touch()
+            with (
+                patch(
+                    "sanbluedot_voiceflow.doctor.resolve_binary",
+                    return_value=Path("/usr/local/bin/whisper-cli"),
+                ),
+                patch(
+                    "sanbluedot_voiceflow.doctor.urlopen",
+                    return_value=FakeResponse(b"[]"),
+                ),
+            ):
+                checks = run_checks(
+                    whisper_binary="whisper-cli",
+                    whisper_model=model,
+                    ollama_url="http://127.0.0.1:11434",
+                    ollama_model="qwen3:4b",
+                )
+
+        ollama = next(check for check in checks if check.name == "Ollama")
+        self.assertFalse(ollama.ok)
+        self.assertEqual(ollama.detail, "service not reachable")
 
 
 if __name__ == "__main__":

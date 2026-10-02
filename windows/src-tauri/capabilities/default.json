@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Local capsule and station event access. Memory and capture commands validate the station window in Rust.",
+  "windows": [
+    "main",
+    "station"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

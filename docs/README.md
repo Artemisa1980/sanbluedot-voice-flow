@@ -30,6 +30,9 @@ cannot be told apart from one that was missed.
 
 | File | Surface | State |
 |---|---|---|
+| `voice-station-broadcast.html` | B / Broadcast: dark horizontal studio console, microphone bay and mode bank | Retained alternative; A selected 2026-09-08 |
+| `voice-station-folio.html` | C / Folio: paper workspace, intention rail and compact capture bar | Retained alternative; A selected 2026-09-08 |
+| `voice-station-concept.html` | A / Original station: personal hub with Station, Modes, Your words and Control | Selected 2026-09-08; implemented in `windows/ui/station.html`; live acceptance pending |
 | `andor-console-preview.html` | Station window, Andor Telemetry Console redesign | Built and shipped 2026-09-01 |
 | `station-redesign-01-signal-chain.html` | Station window, signal-chain redesign | Approved and shipped 2026-09-01; `design-system.md` records the result |
 | `station-palette-01-mint-partners.html` | Station window, palette proposals over the mint canvas | Superseded 2026-09-01 by the signal-chain preview; kept for the colour decision it records |
@@ -88,3 +91,8 @@ The colours did, in two steps and both times through `design-system.md` first: t
 palette — sage, amber and coral — was approved on 2026-09-01, and the console badge
 palette, including the violet, on 2026-09-02. The preview did not authorize them; it
 proposed them.
+
+The Broadcast and Folio proposals share `voice-station-alternatives.css` and
+`voice-station-alternatives.js`. Their comparison links also open the original
+`voice-station-concept.html`, which remains unchanged. The new layouts and relative
+surface areas are design proposals, not amendments to `design-system.md`.

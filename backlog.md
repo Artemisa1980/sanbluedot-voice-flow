@@ -52,9 +52,13 @@ six logs `gates/full-code-audit-02-*.local.md` of 2026-10-01; `01` is
   **Fix:** never sweep when the index was unreadable; sweep only against ids the file
   actually claims.
   `practice.py:440` `sweep_orphans` · `02-cli` 1 · executed 2026-10-02
-  Done 2026-10-02 — the sweep stops when the index was just quarantined and keeps every
-  id the file names, incomplete entries included · two new tests failed before the fix
-  and pass after; the reproduction in a temporary home now keeps `001.wav`.
+  Done 2026-10-02, in two steps. The first fix guarded only a quarantine made by the
+  sweep itself, so `vf practice --list` followed by `vf practice --text` still deleted
+  every take (`session-audit-03` F1). Now the sweep keeps every take no newer than the
+  last write of a quarantined index, keeps every id the index names, and sweeps nothing
+  while an unreadable index could not be moved aside · five tests; the audit's sequence
+  and the failed move each failed before the second fix; a take stranded after the
+  quarantine is still swept.
 
 - [x] **D-55 · The Parakeet helper can delete and re-download its model during a
   dictation.** It checks only that the files exist; FluidAudio's loader re-downloads on
@@ -98,7 +102,8 @@ six logs `gates/full-code-audit-02-*.local.md` of 2026-10-01; `01` is
   capsule and the log say why, no recording starts) and at launch (`--cleaner literal
   --mode translate` is refused); the mode tiles and the engine bank decline it where it
   is chosen, in both directions · new checks failed with the rule disabled and pass with
-  it; both refusals driven in the preview.
+  it; the tile and engine-bank refusals were driven in the preview. The press refusal in
+  the capsule has not been seen on screen (D-04).
 
 - [x] **D-39 · A bare "no" far from the real take-back cue can be deleted and invert the
   sentence.** `el cliente no aprobó… perdón, del sur` is accepted as `El cliente
@@ -107,9 +112,12 @@ six logs `gates/full-code-audit-02-*.local.md` of 2026-10-01; `01` is
   `take_back.py:78` `_GUARD_ANCHOR_WORDS`, `output_guard.py` `guard_fix_cleanup` · `01`
   F-01 · executed
   Done 2026-10-02 — a bare anchor word counts as a cue only when the word before it was
-  deleted too, and a deletion must form one unbroken run up to its cue · three new tests
-  (two failed before the fix); both inversion examples from `01` are now refused, every
-  fix-prompt example still passes.
+  deleted too, a bare "no" only when it also joins a real phrase through deleted words,
+  and a deletion must form one unbroken run up to its cue. The "joins a phrase" rule
+  closes the hole `session-audit-03` F2 found: "que no" deleted together justified each
+  other seven words from the cue · five new tests, each failed before its fix; both
+  inversion examples from `01` and both from the audit are refused, every fix-prompt
+  example still passes.
 
 - [x] **D-40 · Snippets added from the terminal are erased by the next add in the
   window.** The app saves the list it loaded at launch.
@@ -126,11 +134,13 @@ six logs `gates/full-code-audit-02-*.local.md` of 2026-10-01; `01` is
   **Fix:** reorder or prune the list in Words.
   `memory.py:148` · 2026-09-26
 
-- [ ] **D-16 · The Apple cleaner, App Intents, Parakeet helper and Xcode project are not
+- [x] **D-16 · The Apple cleaner, App Intents, Parakeet helper and Xcode project are not
   in version control.** The working tree's build script needs `generate-xcodeproj.py`,
   which is untracked.
   **Fix:** commit them, after the privacy check `AGENTS.md` requires.
   working tree · 2026-09-26
+  Done 2026-10-02 — committed in `96fd83d` after the privacy scan; `session-audit-03`
+  found nothing personal in it.
 
 ### Medium
 
@@ -320,10 +330,11 @@ six logs `gates/full-code-audit-02-*.local.md` of 2026-10-01; `01` is
 - [ ] **D-86** The Parakeet helper needs macOS 14; the app declares 13. **Fix:** raise
   the minimum to 14 or hide Parakeet below it. `ParakeetHelper/Package.swift:9` ·
   `02-core` 8
-- [ ] **D-87** Ollama leftovers: `distill modelfile` and `distill create` still post
-  pairs to any `--ollama-url`; the Words placeholder says "Oyama → Ollama". **Fix:**
-  remove both commands and the example. `distill.py:166`, `cli.py:238` · `02-cli` 12,
-  2026-10-02
+- [ ] **D-87** `distill create` posts the stored pairs to any `--ollama-url`, not only
+  this machine; the Words placeholder says "Oyama → Ollama". Ollama stays in the engine
+  for Windows (D-121), so the commands stay. **Fix:** accept only a loopback URL, as
+  `desktop.py` and `OllamaCleaner` already do; change the placeholder. `distill.py:237`,
+  `cli.py:270`, `FocusHomeView.swift` · `02-cli` 12, 2026-10-02
 - [ ] **D-88** A failed `--copy` exits 1 after printing the JSON, and the app discards
   the finished dictation. **Fix:** exit 0 with the copy failure on stderr. `cli.py:685` ·
   `02-cli` 7
@@ -421,6 +432,31 @@ six logs `gates/full-code-audit-02-*.local.md` of 2026-10-01; `01` is
   Done 2026-10-02 — the build script reads the team from the Apple Development
   certificate and passes it to `xcodebuild`; no tracked file carries it · the rebuilt app
   is signed with the same team and passes `codesign --verify --deep --strict`.
+- [x] **D-121** Merging the Windows commit `b8d6797` would have removed the Ollama
+  cleaner the Windows adapter uses for local cleanup, and broken its memory bridge
+  (`desktop.py` imports `doctor.ollama_status`). **Fix:** keep Ollama in the shared engine
+  for Windows only. `cleaners/ollama.py`, `cleaners/__init__.py`, `cli.py`, `doctor.py` ·
+  merge 2026-10-02 · executed
+  Done 2026-10-02 — by owner decision the cleaner is back, adapted to the current prompts
+  and to the per-call fix mode; `doctor` checks Ollama only when a model is named, which
+  `cli.py` does by default on Windows alone · the suite passes, its Ollama tests included,
+  and `./vf doctor` on this Mac still shows no Ollama check.
+- [ ] **D-122** The D-53 steady-noise threshold (1.6) was measured on this Mac's
+  microphone and now also governs the Windows adapter, whose microphones are unmeasured.
+  Speech under steady noise louder than about −3 dB SNR is refused as no speech.
+  **Blocked** on the Windows machine measuring it at Gate 5. **Fix:** confirm 1.6 there,
+  or read the ratio from an override the Windows adapter sets. `whisper_cpp.py:25` ·
+  `session-audit-03` F4
+- [x] **D-123** A bare `doctor` checked `ggml-base.bin` first, the Windows choice, while
+  the Mac dictates with turbo. **Fix:** check the model this platform runs. `cli.py`
+  `_doctor_model` · `session-audit-03` F5
+  Done 2026-10-02 — the Mac checks turbo, Windows keeps base first · `./vf doctor`
+  reports turbo.
+- [x] **D-124** The restored Ollama cleaner sent the transcript to any `--ollama-url`
+  while Ollama is classed as local, against R7. **Fix:** refuse a non-local host before
+  anything is sent. `cleaners/ollama.py` · `session-audit-03` F6
+  Done 2026-10-02 — only 127.0.0.1, localhost and ::1 are accepted · a test with two
+  remote addresses fails if anything is sent.
 - [ ] **D-06** App Intents read stdout then stderr serially, with no watchdog. **Fix:**
   I-19. `VoiceFlowIntents.swift:88` · 2026-09-26
 - [ ] **D-08** RECHECK stays live during a run and only beeps; its handler is empty.
@@ -582,7 +618,7 @@ macOS 27.0, Xcode 27 / Swift 6.4.
 
 | Measurement | Result | How |
 |---|---|---|
-| Python suite | 360 tests pass, 2026-10-02 | `PYTHONPATH=src python3 -m unittest discover -s tests` |
+| Python suite | pass on 2026-10-02 — run it rather than trust a count | `PYTHONPATH=src python3 -m unittest discover -s tests` |
 | Swift build and checks | pass, 2026-10-02 | `swift build --package-path macos`, `swift run --package-path macos VoiceFlowMacCoreChecks` |
 | Installed app | signed, `codesign --verify --deep --strict` passes, bundled engine identical to `src/`, 2026-10-02 | `dist/sanblueᵈᵒᵗ VoiceFlow.app` |
 | Local cleanup, fixed corpus | Apple 18/19 accepted, punctuation F1 34.8% → 84.8%, 0.61 s median | `scripts/cleaner_gate.py`, 2026-09-26 |

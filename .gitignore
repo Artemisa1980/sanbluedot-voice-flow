@@ -28,6 +28,13 @@ config.local.*
 # alone matched `x.local.txt` but nothing inside `corpus.local/`, so a directory of
 # practice texts would have been committed.
 *.local/
+# Internal working notes: a defect list, an author review and two plans. They carry no
+# personal data; they are simply not the repository's to publish. The HTML previews in
+# `docs/` stay tracked, because `design-system.md` points at them as its own evidence.
+docs/windows-repair-checklist.md
+docs/windows-repair-review.md
+docs/windows-model-integration-plan.md
+docs/private-correction-memory-plan.md
 *.jsonl
 *-audio/
 practice/
@@ -64,6 +71,10 @@ src-tauri/binaries/
 # left the compiler's own output, which is where the gigabytes are, untracked but not
 # ignored — one `git add -A` from entering the repository.
 target/
+# Tauri regenerates these from `tauri.conf.json` and `capabilities/` on every build, so
+# committing them adds a diff to every build and never a decision.
+src-tauri/gen/schemas/
+windows/src-tauri/gen/schemas/
 
 # Xcode's per-user state. The project file itself is tracked: it is the build that
 # carries App Intents metadata, and `scripts/generate-xcodeproj.py` regenerates it.

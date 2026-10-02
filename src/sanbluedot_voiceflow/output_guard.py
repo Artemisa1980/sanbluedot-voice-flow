@@ -211,7 +211,7 @@ def guard_fix_cleanup(source: str, candidate: str) -> str:
             earlier -= 1
         return earlier >= 0 and earlier not in kept
 
-    spans = take_back_spans([token for token, _ in source_tokens], withdrew_before)
+    spans = take_back_spans([token for token, _ in source_tokens], withdrew_before, gone)
 
     for index, (token, removable) in enumerate(source_tokens):
         if index in kept or removable:

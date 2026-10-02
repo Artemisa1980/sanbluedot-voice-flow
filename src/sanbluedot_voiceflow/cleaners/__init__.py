@@ -11,6 +11,7 @@ from .apple import AppleCleaner
 from .gemini import DEFAULT_MODEL as DEFAULT_GEMINI_MODEL
 from .gemini import GeminiCleaner
 from .literal import LiteralCleaner
+from .ollama import OllamaCleaner
 
 __all__ = [
     "AppleCleaner",
@@ -20,13 +21,14 @@ __all__ = [
     "DEFAULT_GEMINI_MODEL",
     "GeminiCleaner",
     "LiteralCleaner",
+    "OllamaCleaner",
     "build_cleaner",
 ]
 
-# Ollama was removed on 2026-10-01 by the owner's decision: cleanup time grows with every
-# word a model rewrites, and Apple's on-device model and Gemini cover the cases that
-# still need one.
-CLEANER_NAMES = ("literal", "apple", "gemini")
+# Ollama left the macOS app on 2026-10-01: cleanup time grows with every word a model
+# rewrites, and Apple's on-device model and Gemini cover the Mac. The engine keeps it
+# for the Windows adapter, which has no on-device model (owner decision, 2026-10-02).
+CLEANER_NAMES = ("literal", "apple", "ollama", "gemini")
 CLEANER_MODES = ("clean", "translate", "meeting")
 # Named separately so a caller can warn, gate, or refuse before anything leaves the
 # device, without hard-coding which providers happen to be remote today.
@@ -39,9 +41,13 @@ def build_cleaner(
     mode: str = "clean",
     gemini_model: str = DEFAULT_GEMINI_MODEL,
     apple_binary: str = DEFAULT_APPLE_BINARY,
+    ollama_model: str = "qwen3:4b",
+    ollama_url: str = "http://127.0.0.1:11434",
 ) -> Cleaner:
     if name == "apple":
         return AppleCleaner(binary=apple_binary, mode=mode)
+    if name == "ollama":
+        return OllamaCleaner(model=ollama_model, base_url=ollama_url, mode=mode)
     if name == "gemini":
         return GeminiCleaner(model=gemini_model, mode=mode)
     return LiteralCleaner()

@@ -22,8 +22,13 @@ Provide personal, low-friction dictation on macOS. A configurable push-to-talk s
   process. This single-button behavior is an explicit owner decision.
 - The trigger remains configurable. Other modifier keys alone are rejected to avoid
   collisions with ordinary keyboard use.
+- The default Windows trigger is right Ctrl alone. The Windows adapter has no Fn/Globe
+  equivalent to bind, so it satisfies the rule above by taking the modifier that collides
+  least: right Ctrl types no character on any keyboard layout and, unlike a released Alt,
+  opens no menu bar. This is an explicit platform exception to that rule, and Gate 5
+  measures the collisions it still carries rather than assuming there are none.
 - The application exposes recording, processing, success, and failure states.
-- This specification governs the macOS implementation. A second platform is adapted, gated and measured on the machine it targets, and is not specified, audited or planned from here.
+- This specification governs the macOS implementation. A second platform is adapted, gated and measured on the machine it targets, and is not specified, audited or planned from here, except where a rule names the Windows adapter explicitly — its trigger above, and the Ollama cleaner the shared engine keeps for it (R6).
 
 ### R2 — Speech recognition
 
@@ -230,8 +235,10 @@ explicitly and never inferred from the choice of provider.
   corpus. It reads no vocabulary prompt; confirmed corrections apply after it as they do
   after Whisper. It reports no language, so the label stays unknown. A dictation never
   downloads it: a missing model is reported, and fetching it is a separate run.
-- Ollama was the first local cleanup runtime and was removed on 2026-10-01 by the owner's
-  decision. Apple's on-device model is the local cleanup engine.
+- Ollama was the first local cleanup runtime and left the macOS app on 2026-10-01 by the
+  owner's decision. Apple's on-device model is the local cleanup engine on this Mac. The
+  shared engine keeps Ollama for the Windows adapter, which has no on-device model, by the
+  owner's decision of 2026-10-02; the macOS app never offers it.
 - Apple's on-device model is a second local cleanup runtime, reached through a helper
   binary the engine runs rather than by moving cleanup into the application: the pipeline,
   the personalization and the output guard stay where this document draws them. It needs
