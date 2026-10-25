@@ -312,6 +312,11 @@ def _bounded_pattern(heard: str) -> re.Pattern[str]:
 
 
 def _match_case(matched: str, replacement: str) -> str:
+    # A capital after the first letter (`iPhone`, `eBay`) is a spelling the speaker
+    # confirmed, not a case to adjust; a sentence start used to make it `IPhone`.
+    # `CorrectionApplication.matchingCase` in `Words.swift` holds the same rule.
+    if any(character.isupper() for character in replacement[1:]):
+        return replacement
     if matched.isupper() and len(matched) > 1:
         return replacement.upper()
     if matched[:1].isupper():

@@ -87,7 +87,7 @@ public enum HUDBadge {
         }
     }
 
-    /// `gemini-3.6-flash` reads as `3.6` in a capsule this narrow. The full identifier
+    /// `gemini-3.8-flash` reads as `3.8` in a capsule this narrow. The full identifier
     /// stays in the station window's activity log.
     /// Above this many captured characters the size reads as a warning rather than a fact.
     ///

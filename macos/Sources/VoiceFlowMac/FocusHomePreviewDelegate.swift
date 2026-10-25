@@ -37,9 +37,10 @@ final class FocusHomePreviewDelegate: NSObject, NSApplicationDelegate {
         model.onOpenInputMonitoring = { [weak self] in self?.reportSimulation("Input Monitoring settings") }
         model.onRetryPermissions = { [weak self] in self?.reportSimulation("Permission check") }
         model.onAddSnippet = { [weak self] trigger, expansion, description in
-            guard let self else { return }
+            guard let self else { return false }
             self.model.snippets.removeAll { $0.trigger.localizedCaseInsensitiveCompare(trigger) == .orderedSame }
             self.model.snippets.append(VoiceSnippet(trigger: trigger, expansion: expansion, description: description))
+            return true
         }
         model.onDeleteSnippet = { [weak self] id in self?.model.snippets.removeAll { $0.id == id } }
         model.onAcceptRejectedCleanup = { [weak self] _ in self?.model.rejectedCleanup = nil }

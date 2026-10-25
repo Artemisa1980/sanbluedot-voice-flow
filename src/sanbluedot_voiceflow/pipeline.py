@@ -147,8 +147,10 @@ class DictationPipeline:
         # Keep both layers so the engine transcript remains independently recoverable.
         personalized_text = apply_corrections(raw_text, self._corrections)
 
+        # Stripped because it is delivered text: the engine's leading segment space stays
+        # in `raw_text` and `personalized_text`, never at the speaker's cursor.
         fallback = expand_snippets(
-            personalized_text, self._snippets, app_name=self._app_name
+            personalized_text.strip(), self._snippets, app_name=self._app_name
         )
 
         cleanup_started = self._monotonic()

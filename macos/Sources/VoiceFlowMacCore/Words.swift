@@ -105,9 +105,12 @@ public enum CorrectionApplication {
         return result as String
     }
 
-    /// `_match_case` in `memory.py`: an all-caps match stays all caps, a capitalised one
-    /// keeps its capital, anything else takes the replacement as written.
+    /// `_match_case` in `memory.py`: a replacement with a capital after its first letter
+    /// (`iPhone`, `eBay`) is written as confirmed; otherwise an all-caps match stays all
+    /// caps, a capitalised one keeps its capital, anything else takes the replacement as
+    /// written.
     private static func matchingCase(of matched: String, _ replacement: String) -> String {
+        if replacement.dropFirst().contains(where: \.isUppercase) { return replacement }
         let isAllCaps = matched.count > 1
             && matched == matched.uppercased()
             && matched != matched.lowercased()

@@ -143,8 +143,23 @@ extension View {
     }
 }
 
+/// Type scale for the activity console. The compact console keeps 1; the window's
+/// Diagnostics section reads at the size of the paper sections around it.
+private struct ConsoleTextScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    var consoleTextScale: CGFloat {
+        get { self[ConsoleTextScaleKey.self] }
+        set { self[ConsoleTextScaleKey.self] = newValue }
+    }
+}
+
 /// A block cursor blinking after the last console entry: the machine is still listening.
 private struct ConsoleCursorView: View {
+    /// 1 in the compact console; larger in the window's Diagnostics section.
+    @Environment(\.consoleTextScale) private var k
     let paused: Bool
 
     var body: some View {
@@ -152,18 +167,18 @@ private struct ConsoleCursorView: View {
             let on = Int(context.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
             HStack(spacing: 6) {
                 Text("listening")
-                    .font(VoiceStationTokens.mono(size: 8.5))
+                    .font(VoiceStationTokens.mono(size: 8.5 * k))
                     .foregroundColor(VoiceStationTokens.gold.opacity(0.45))
                 Rectangle()
                     .fill(VoiceStationTokens.appBg)
-                    .frame(width: 7, height: 11)
+                    .frame(width: 7 * k, height: 11 * k)
                     .opacity(on ? 1 : 0.1)
                 Spacer(minLength: 0)
             }
             .padding(.leading, 2)
             .padding(.top, 2)
         }
-        .frame(height: 14)
+        .frame(height: 14 * k)
     }
 }
 
@@ -347,7 +362,8 @@ public final class VoiceStationViewModel: ObservableObject {
         pageRequest = .words
     }
     public var onClearHistory: (() -> Void)?
-    public var onAddSnippet: ((String, String, String?) -> Void)?
+    /// Returns whether the snippet was written, so the form keeps what was typed when not.
+    public var onAddSnippet: ((String, String, String?) -> Bool)?
     public var onDeleteSnippet: ((UUID) -> Void)?
 
     public init() {
@@ -660,7 +676,7 @@ public struct VoiceStationWindowView: View {
         PaperChassis(viewModel: viewModel, system: "SNIPPETS.SYS", subtitle: "VOICE MACROS") {
             ChassisCount(value: viewModel.snippets.count, noun: "snippets")
         } content: {
-            VoiceSnippetsTabView(viewModel: viewModel, palette: .paper)
+            VoiceSnippetsTabView(viewModel: viewModel, palette: .paper, metrics: .paper)
         }
     }
 
@@ -678,6 +694,7 @@ public struct VoiceStationWindowView: View {
             ChassisCount(value: viewModel.activityLogs.count, noun: "log entries")
         } content: {
             rightActivityCard(showsTabs: false, chrome: false)
+                .environment(\.consoleTextScale, 1.25)
         }
     }
 
@@ -809,11 +826,16 @@ public struct VoiceStationWindowView: View {
                     // is a reading of the speaker's voice and a wave large enough to see
                     // would be a wave large enough to lie.
                     let waveShare = viewModel.isRecording ? 0.22 : 0.65
-                    let height = meterFloor
-                        + (meterCeiling - meterFloor)
-                        * barProfile(index)
-                        * level
-                        * (1 - waveShare + waveShare * wave)
+                    // Clamped: a loud take drives `level` to 1.25, which put the tallest
+                    // bar at 47.5 against the 40 ceiling and drew it into the row above.
+                    let height = min(
+                        meterCeiling,
+                        meterFloor
+                            + (meterCeiling - meterFloor)
+                            * barProfile(index)
+                            * level
+                            * (1 - waveShare + waveShare * wave)
+                    )
 
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(meterColor(at: index))
@@ -1784,6 +1806,10 @@ struct PaperChassis<Trailing: View, Content: View>: View {
             // The strip continues down both sides and across the foot as a band of the
             // terminal's own colour, and the paper begins inside it.
             content()
+                // The paper is always cream, so system-drawn parts — placeholders, typed
+                // text, checkboxes — must resolve against light. Under macOS Dark Mode
+                // they came out white on cream and the field prompts disappeared.
+                .environment(\.colorScheme, ground == VoiceStationTokens.consoleBg ? .dark : .light)
                 .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(ground)
@@ -2182,59 +2208,88 @@ private struct HistoryEntryRow: View {
     }
 }
 
+/// Type sizes and frames for the snippets section. The compact console keeps its small
+/// set; the window's paper section takes the Words section's sizes, so the two forms
+/// read as one family.
+struct SnippetMetrics {
+    let label: CGFloat
+    let labelTracking: CGFloat
+    let field: CGFloat
+    let fieldPadH: CGFloat
+    let fieldPadV: CGFloat
+    let fieldCorner: CGFloat
+    let fieldStroke: CGFloat
+    let button: CGFloat
+    let buttonPadH: CGFloat
+    let buttonPadV: CGFloat
+    let buttonStroke: CGFloat
+    let buttonCorner: CGFloat
+    let cardPad: CGFloat
+    let cardCorner: CGFloat
+    let spacing: CGFloat
+    let sectionSpacing: CGFloat
+    let emptyTitle: CGFloat
+    let emptyBody: CGFloat
+    let rowTrigger: CGFloat
+    let rowBody: CGFloat
+    let rowDim: CGFloat
+    let rowPad: CGFloat
+
+    static let compact = SnippetMetrics(
+        label: 8, labelTracking: 0, field: 8.5, fieldPadH: 5, fieldPadV: 5, fieldCorner: 3,
+        fieldStroke: 1, button: 8, buttonPadH: 8, buttonPadV: 5, buttonStroke: 0, buttonCorner: 3,
+        cardPad: 6, cardCorner: 4, spacing: 5, sectionSpacing: 8, emptyTitle: 8.5, emptyBody: 7.5,
+        rowTrigger: 8.5, rowBody: 8.5, rowDim: 7.5, rowPad: 6
+    )
+
+    // Mirrors `teachCard`, `teachField`, `wordsLabel` and `wordsButton` in FocusHomeView.
+    static let paper = SnippetMetrics(
+        label: 9, labelTracking: 1.1, field: 12, fieldPadH: 10, fieldPadV: 7, fieldCorner: 6,
+        fieldStroke: 1.5, button: 9.5, buttonPadH: 10, buttonPadV: 8, buttonStroke: 1.5, buttonCorner: 5,
+        cardPad: 14, cardCorner: 9, spacing: 10, sectionSpacing: 10, emptyTitle: 12, emptyBody: 10.5,
+        rowTrigger: 12, rowBody: 12, rowDim: 10.5, rowPad: 12
+    )
+}
+
 private struct VoiceSnippetsTabView: View {
     @ObservedObject var viewModel: VoiceStationViewModel
     var palette: ConsolePalette = .terminal
+    var metrics: SnippetMetrics = .compact
     @State private var newTrigger: String = ""
     @State private var newExpansion: String = ""
     @State private var newDescription: String = ""
 
+    private func snippetField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(VoiceStationTokens.mono(size: metrics.field))
+            .padding(.horizontal, metrics.fieldPadH)
+            .padding(.vertical, metrics.fieldPadV)
+            .background(VoiceStationTokens.inputCream)
+            .foregroundColor(VoiceStationTokens.navy)
+            .clipShape(RoundedRectangle(cornerRadius: metrics.fieldCorner))
+            .overlay(
+                RoundedRectangle(cornerRadius: metrics.fieldCorner)
+                    .stroke(palette.fieldStroke, lineWidth: metrics.fieldStroke)
+            )
+    }
+
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: metrics.sectionSpacing) {
             // New Snippet Form Card
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: metrics.spacing) {
                 Text("ADD VOICE SNIPPET / MACRO")
-                    .font(VoiceStationTokens.mono(size: 8, weight: .bold))
+                    .font(VoiceStationTokens.mono(size: metrics.label, weight: .bold))
+                    .tracking(metrics.labelTracking)
                     .foregroundColor(palette.label)
 
-                HStack(spacing: 5) {
-                    TextField("Spoken trigger (e.g. mi linkedin)", text: $newTrigger)
-                        .textFieldStyle(.plain)
-                        .font(VoiceStationTokens.mono(size: 8.5))
-                        .padding(5)
-                        .background(VoiceStationTokens.inputCream)
-                        .foregroundColor(VoiceStationTokens.navy)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(palette.fieldStroke, lineWidth: 1)
-                        )
-
-                    TextField("Description (optional)", text: $newDescription)
-                        .textFieldStyle(.plain)
-                        .font(VoiceStationTokens.mono(size: 8.5))
-                        .padding(5)
-                        .background(VoiceStationTokens.inputCream)
-                        .foregroundColor(VoiceStationTokens.navy)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(palette.fieldStroke, lineWidth: 1)
-                        )
+                HStack(spacing: metrics.spacing) {
+                    snippetField("Spoken trigger (e.g. mi linkedin)", text: $newTrigger)
+                    snippetField("Description (optional)", text: $newDescription)
                 }
 
-                HStack(spacing: 5) {
-                    TextField("Replacement text or template", text: $newExpansion)
-                        .textFieldStyle(.plain)
-                        .font(VoiceStationTokens.mono(size: 8.5))
-                        .padding(5)
-                        .background(VoiceStationTokens.inputCream)
-                        .foregroundColor(VoiceStationTokens.navy)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3)
-                                .stroke(palette.fieldStroke, lineWidth: 1)
-                        )
+                HStack(spacing: metrics.spacing) {
+                    snippetField("Replacement text or template", text: $newExpansion)
 
                     let isAddDisabled = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newExpansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
@@ -2243,27 +2298,36 @@ private struct VoiceSnippetsTabView: View {
                         let exp = newExpansion.trimmingCharacters(in: .whitespacesAndNewlines)
                         let desc = newDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trig.isEmpty, !exp.isEmpty else { return }
-                        viewModel.onAddSnippet?(trig, exp, desc.isEmpty ? nil : desc)
+                        // Cleared only after a write: a failed save used to empty the
+                        // form, and what the speaker typed was gone (D-133).
+                        guard viewModel.onAddSnippet?(trig, exp, desc.isEmpty ? nil : desc) == true else {
+                            return
+                        }
                         newTrigger = ""
                         newExpansion = ""
                         newDescription = ""
                     }) {
                         Text("+ ADD")
-                            .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
+                            .font(VoiceStationTokens.mono(size: metrics.button, weight: .bold))
+                            .padding(.horizontal, metrics.buttonPadH)
+                            .padding(.vertical, metrics.buttonPadV)
                             .background(isAddDisabled ? VoiceStationTokens.panelHeader : VoiceStationTokens.gold)
                             .foregroundColor(VoiceStationTokens.navy)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .clipShape(RoundedRectangle(cornerRadius: metrics.buttonCorner))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: metrics.buttonCorner)
+                                    .stroke(VoiceStationTokens.navy, lineWidth: metrics.buttonStroke)
+                            )
+                            .opacity(isAddDisabled && metrics.buttonStroke > 0 ? 0.5 : 1)
                     }
                     .buttonStyle(.plain)
                     .disabled(isAddDisabled)
                 }
             }
-            .padding(6)
+            .padding(metrics.cardPad)
             .background(palette.sunkenForm)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.rule, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: metrics.cardCorner))
+            .overlay(RoundedRectangle(cornerRadius: metrics.cardCorner).stroke(palette.rule, lineWidth: 1))
 
             // Snippets List
             if viewModel.snippets.isEmpty {
@@ -2273,10 +2337,10 @@ private struct VoiceSnippetsTabView: View {
                         .font(.system(size: 20))
                         .foregroundColor(palette.inkDim)
                     Text("No voice snippets registered yet.")
-                        .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                        .font(VoiceStationTokens.mono(size: metrics.emptyTitle, weight: .bold))
                         .foregroundColor(palette.label)
                     Text("Say your trigger phrase to expand URLs, signatures, or templates instantly.")
-                        .font(VoiceStationTokens.mono(size: 7.5))
+                        .font(VoiceStationTokens.mono(size: metrics.emptyBody))
                         .foregroundColor(palette.inkDim)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 12)
@@ -2294,7 +2358,7 @@ private struct VoiceSnippetsTabView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 5) {
                                         Text("[\(snippet.trigger)]")
-                                            .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                                            .font(VoiceStationTokens.mono(size: metrics.rowTrigger, weight: .bold))
                                             .padding(.horizontal, 4)
                                             .padding(.vertical, 1)
                                             .background(VoiceStationTokens.gold)
@@ -2303,13 +2367,13 @@ private struct VoiceSnippetsTabView: View {
 
                                         if let desc = snippet.description, !desc.isEmpty {
                                             Text(desc)
-                                                .font(VoiceStationTokens.mono(size: 7.5))
+                                                .font(VoiceStationTokens.mono(size: metrics.rowDim))
                                                 .foregroundColor(palette.inkDim)
                                         }
                                     }
 
                                     Text(snippet.expansion)
-                                        .font(VoiceStationTokens.mono(size: 8.5))
+                                        .font(VoiceStationTokens.mono(size: metrics.rowBody))
                                         .foregroundColor(palette.ink)
                                         .lineLimit(2)
                                 }
@@ -2320,7 +2384,7 @@ private struct VoiceSnippetsTabView: View {
                                     viewModel.onDeleteSnippet?(snippet.id)
                                 }) {
                                     Image(systemName: "trash")
-                                        .font(.system(size: 8))
+                                        .font(.system(size: metrics.rowTrigger - 0.5))
                                         .padding(4)
                                         .background(VoiceStationTokens.danger.opacity(0.8))
                                         .foregroundColor(.white)
@@ -2328,7 +2392,7 @@ private struct VoiceSnippetsTabView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(6)
+                            .padding(metrics.rowPad)
                             .background(palette.sunkenRow)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                             .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.rule, lineWidth: 1))
@@ -2462,6 +2526,8 @@ private struct AppTargetMonitorView: View {
 
 // MARK: - Telemetry Header View
 private struct TelemetryHeaderView: View {
+    /// 1 in the compact console; larger in the window's Diagnostics section.
+    @Environment(\.consoleTextScale) private var k
     @ObservedObject var viewModel: VoiceStationViewModel
     @State private var isPulsing: Bool = false
 
@@ -2503,14 +2569,16 @@ private struct TelemetryHeaderView: View {
     /// photograph and should not read as today's ranking.
     private var cloudMeasurementCaption: some View {
         HStack(spacing: 4) {
-            Text("measured \(GeminiModel.measurementDate)")
+            Text(GeminiModel.measurementDate.map { "measured \($0)" } ?? "not measured yet")
             Text("·")
-            Text("busy → \(fallbackOrderAfterSelection) → local transcript")
+            Text(fallbackOrderAfterSelection.isEmpty
+                 ? "busy → retry once → local transcript"
+                 : "busy → \(fallbackOrderAfterSelection) → local transcript")
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 0)
         }
-        .font(VoiceStationTokens.mono(size: 7, weight: .regular))
+        .font(VoiceStationTokens.mono(size: 7 * k, weight: .regular))
         .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
     }
 
@@ -2532,7 +2600,7 @@ private struct TelemetryHeaderView: View {
                     .shadow(color: VoiceStationTokens.danger, radius: isPulsing ? 3 : 0)
 
                 Text("TELEMETRY")
-                    .font(VoiceStationTokens.mono(size: 8.5, weight: .bold))
+                    .font(VoiceStationTokens.mono(size: 8.5 * k, weight: .bold))
                     .foregroundColor(VoiceStationTokens.gold)
                     .lineLimit(1)
             }
@@ -2569,7 +2637,7 @@ private struct TelemetryHeaderView: View {
     private var cloudRow: some View {
         HStack(spacing: 7) {
             Text("MODEL")
-                .font(VoiceStationTokens.mono(size: 7, weight: .bold))
+                .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
                 .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
 
             ForEach(GeminiModel.allCases, id: \.self) { model in
@@ -2592,7 +2660,7 @@ private struct TelemetryHeaderView: View {
             Spacer(minLength: 6)
 
             Text("KEY")
-                .font(VoiceStationTokens.mono(size: 7, weight: .bold))
+                .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
                 .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
 
             consoleChip(
@@ -2626,11 +2694,11 @@ private struct TelemetryHeaderView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title)
-                        .font(VoiceStationTokens.mono(size: 9, weight: .bold))
+                        .font(VoiceStationTokens.mono(size: 9 * k, weight: .bold))
                         .lineLimit(1)
                     if let detail {
                         Text(detail)
-                            .font(VoiceStationTokens.mono(size: 7))
+                            .font(VoiceStationTokens.mono(size: 7 * k))
                             .opacity(0.7)
                             .lineLimit(1)
                     }
@@ -2659,12 +2727,12 @@ private struct TelemetryHeaderView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(VoiceStationTokens.mono(size: 7, weight: .bold))
+                .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
                 .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
                 .lineLimit(1)
 
             Text(value ?? "—")
-                .font(VoiceStationTokens.mono(size: 13, weight: .bold))
+                .font(VoiceStationTokens.mono(size: 13 * k, weight: .bold))
                 .foregroundColor(value == nil ? VoiceStationTokens.gold.opacity(0.35) : VoiceStationTokens.inputCream)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -2693,6 +2761,8 @@ private struct TelemetryHeaderView: View {
 
 // MARK: - Tactical Filter Chips View
 private struct TacticalFilterChipsView: View {
+    /// 1 in the compact console; larger in the window's Diagnostics section.
+    @Environment(\.consoleTextScale) private var k
     @Binding var selectedFilter: ConsoleFilterMode
     let logs: [ActivityLogItem]
 
@@ -2706,9 +2776,9 @@ private struct TacticalFilterChipsView: View {
                     let count = countFor(filter)
                     Button(action: { selectedFilter = filter }) {
                         Text("\(filter.rawValue)\(count > 0 ? " (\(count))" : "")")
-                            .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 3)
+                            .font(VoiceStationTokens.mono(size: 8 * k, weight: .bold))
+                            .padding(.horizontal, 5 * k)
+                            .padding(.vertical, 3 * k)
                             .background(selectedFilter == filter ? VoiceStationTokens.dotBlue.opacity(0.3) : Color.black.opacity(0.2))
                             .foregroundColor(selectedFilter == filter ? VoiceStationTokens.dotBlue : VoiceStationTokens.gold.opacity(0.7))
                             .clipShape(RoundedRectangle(cornerRadius: 3))
@@ -2765,6 +2835,8 @@ private struct CRTScanlinesOverlay: View {
 
 // MARK: - Log Entry Row View
 private struct LogEntryRowView: View {
+    /// 1 in the compact console; larger in the window's Diagnostics section.
+    @Environment(\.consoleTextScale) private var k
     let log: ActivityLogItem
     @State private var isHovered: Bool = false
 
@@ -2772,25 +2844,25 @@ private struct LogEntryRowView: View {
         HStack(alignment: .top, spacing: 6) {
             // Timestamp
             Text("[\(log.timestamp)]")
-                .font(VoiceStationTokens.mono(size: 8.5, weight: .regular))
+                .font(VoiceStationTokens.mono(size: 8.5 * k, weight: .regular))
                 .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
-                .frame(width: 54, alignment: .leading)
+                .frame(width: 54 * k, alignment: .leading)
 
             // Category Badge
             Text(log.category.rawValue)
-                .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
+                .font(VoiceStationTokens.mono(size: 7.5 * k, weight: .bold))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(log.category.badgeColor)
                 .foregroundColor(VoiceStationTokens.navy)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black.opacity(0.5), lineWidth: 1))
-                .frame(width: 64, alignment: .center)
+                .frame(width: 64 * k, alignment: .center)
 
             // Message & Latency Tags
             VStack(alignment: .leading, spacing: 2) {
                 Text(log.message)
-                    .font(VoiceStationTokens.mono(size: 8.5, weight: log.isHighlight ? .bold : .regular))
+                    .font(VoiceStationTokens.mono(size: 8.5 * k, weight: log.isHighlight ? .bold : .regular))
                     .foregroundColor(log.isHighlight ? VoiceStationTokens.inputCream : VoiceStationTokens.gold.opacity(0.95))
                     .lineLimit(nil)
                     .multilineTextAlignment(.leading)
@@ -2799,12 +2871,12 @@ private struct LogEntryRowView: View {
                     HStack(spacing: 4) {
                         if let latency = log.latency {
                             Text("⚡ \(String(format: "%.2f", latency))s")
-                                .font(VoiceStationTokens.mono(size: 7, weight: .bold))
+                                .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
                                 .foregroundColor(VoiceStationTokens.dotBlue)
                         }
                         ForEach(log.tags, id: \.self) { tag in
                             Text(tag)
-                                .font(VoiceStationTokens.mono(size: 7))
+                                .font(VoiceStationTokens.mono(size: 7 * k))
                                 .padding(.horizontal, 3)
                                 .padding(.vertical, 1)
                                 .background(VoiceStationTokens.appBg.opacity(0.2))
@@ -2824,7 +2896,7 @@ private struct LogEntryRowView: View {
                     pasteboard.setString(log.message, forType: .string)
                 }) {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 8))
+                        .font(.system(size: 8 * k))
                         .padding(3)
                         .background(VoiceStationTokens.gold)
                         .foregroundColor(VoiceStationTokens.navy)

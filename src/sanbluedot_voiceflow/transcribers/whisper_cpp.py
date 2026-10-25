@@ -29,6 +29,10 @@ SPEECH_VARIATION = 1.6
 FRAME_SECONDS = 0.03
 MINIMUM_FRAMES = 10
 
+# One or more bracketed tags and nothing else: whisper.cpp's annotation for a sound that
+# is not speech. A tag inside a real sentence is the speaker's own text and is kept.
+_NON_SPEECH_ONLY = re.compile(r"\s*(?:[\[(][^\[\]()]{1,40}[\])]\s*)+")
+
 
 def is_effectively_silent(audio_path: Path, floor: float = SILENCE_RMS) -> bool:
     """True when a 16-bit PCM WAV carries no speech worth transcribing.
@@ -237,6 +241,11 @@ class WhisperCppTranscriber:
             # one breath into lines. Segments are joined with one space.
             if "\n" in text:
                 text = " ".join(line.strip() for line in text.splitlines() if line.strip())
+            # A cough or a click loud enough to pass the noise gate comes back as a tag
+            # such as `[BLANK_AUDIO]` or `(coughing)`. Nobody dictated it, so a transcript
+            # made of nothing else is refused like silence rather than pasted.
+            if _NON_SPEECH_ONLY.fullmatch(text):
+                raise TranscriptionError("The recording contains no audible speech.")
 
         language = (
             detected_language(completed) if self.language == "auto" else self.language

@@ -294,8 +294,8 @@ The development Mac passed the engine checks on 2026-08-29 with:
 - Ollama 0.33.0 with `qwen3:4b`, approximately 2.5 GB, the local cleaner until it was
   removed on 2026-10-01.
 
-Whisper Small is also present. Replaying one fixed 20-recording set put turbo ahead of
-both it and large-v3: 10.1% mean WER against 14.8% for Small and 15.1% for large-v3, at
+Whisper Small was measured and moved to the Trash on 2026-10-01. Replaying one fixed
+20-recording set put turbo ahead of both it and large-v3: 10.1% mean WER against 14.8% for Small and 15.1% for large-v3, at
 1.98 seconds of engine time against 0.80 and 3.02. large-v3 was measured then and is no
 longer kept on this Mac. Model files remain local and are ignored by version control.
 
@@ -733,8 +733,8 @@ Do not place recordings, transcripts, vocabulary, corrections, API keys, local c
 - `doctor` passes both provisioned models with their layer count, mel bands and size,
   and rejects a 100 kB head of `ggml-small.bin` as truncated against a 20.0 MB floor
   derived from that same header.
-- The local cleaner was measured on 37 recorded samples across both corpora and does
-  not earn being on by default. It changed one sample, adding one correct punctuation
+- The local cleaner of that time, Ollama, was measured on 37 recorded samples across both
+  corpora and did not earn being on by default; Apple replaced it (§Local cleanup). It changed one sample, adding one correct punctuation
   mark; the output guard refused three of its attempts because it tried to insert words;
   every other accepted result was identical to the engine transcript, for about 0.6
   seconds per dictation. Verdicts: CONDITIONAL on the Phase 2 corpus, PASS on Phase 3 on
@@ -753,9 +753,10 @@ Do not place recordings, transcripts, vocabulary, corrections, API keys, local c
   against a 20-second timeout, so healthy replies were being cancelled on arrival. The
   timeout is now 45 seconds bounding the whole call, and one transient status is retried
   inside that same budget.
-- The default is `gemini-3.5-flash`, the model that answers rather than the highest
-  version. Three candidates were measured interleaved on 2026-08-31, same minutes, same
-  request shape, with identical output quality on cleanup, translation and meeting notes:
+- Since 2026-10-24 the only model is `gemini-3.8-flash`, by owner decision: Google
+  deprecated 3.5 and 3.7 on 2026-10-08. It is not measured here yet. The record below is
+  the earlier chain, measured interleaved on 2026-08-31, same minutes, same request
+  shape, with identical output quality on cleanup, translation and meeting notes:
 
   | Model | Delivered | Median |
   |---|---|---|
@@ -789,10 +790,10 @@ Do not place recordings, transcripts, vocabulary, corrections, API keys, local c
 - A recording with no audible speech is rejected before the engine runs. Near-silence
   otherwise makes whisper.cpp invent text, and with the vocabulary prompt loaded it
   invents terms from that prompt straight onto the clipboard.
-- The local cleaner is still unevaluated. It altered no word in 20 results, and the
-  metric normalizes away the punctuation it adds, so this corpus cannot judge it. It is
-  now opt-in, and a deterministic guard rejects lexical invention, reordering,
-  substitution, and non-filler deletion before clipboard delivery.
+- On the Phase 2 corpus that same Ollama cleaner altered no word in 20 results, and word
+  error rate normalizes away the punctuation it added, so that corpus could not judge it.
+  A deterministic guard rejects lexical invention, reordering, substitution and
+  non-filler deletion before clipboard delivery, for every cleaner.
 
 ## License
 

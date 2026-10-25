@@ -75,10 +75,12 @@ enum IntentEngine {
         } catch {
             throw IntentFailure.engineUnavailable(error.localizedDescription)
         }
+        // The throwing API: the legacy `write(_:)` raises an Objective-C exception on a
+        // broken pipe, which Swift cannot catch and which ends the app (D-69).
         if let data = invocation.standardInput?.data(using: .utf8) {
-            input.fileHandleForWriting.write(data)
+            try? input.fileHandleForWriting.write(contentsOf: data)
         }
-        input.fileHandleForWriting.closeFile()
+        try? input.fileHandleForWriting.close()
 
         let stdout = output.fileHandleForReading.readDataToEndOfFile()
         let stderr = errors.fileHandleForReading.readDataToEndOfFile()

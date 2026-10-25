@@ -40,38 +40,29 @@ Announcer = Callable[[str], None]
 
 PROVIDER = "gemini"
 DEFAULT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-# Interleaved measurements on 2026-08-31, same minutes, same request shape, one synthetic
-# Spanish sentence, identical output quality on cleanup, translation and meeting notes:
-#
-#   gemini-3.5-flash   5/6 delivered   2.3s median
-#   gemini-3.6-flash   4/6 delivered  14.3s median
-#   gemini-3.7-flash   3/6 delivered  12.5s median
-#
-# The default is the model that answers, not the highest version. 3.7 does return
-# inference — the earlier "no response" reading was the old 20-second ceiling cancelling
-# replies as they arrived — but it is the least available of the three. Change this
-# against a fresh measurement of the candidates, never from the version number.
-DEFAULT_MODEL = "gemini-3.5-flash"
+# One model, by owner decision on 2026-10-24: Google deprecated `gemini-3.5-flash` and
+# `gemini-3.7-flash` on 2026-10-08 and routes them to 3.6 and 3.8, so the earlier
+# measured chain no longer reached the models it named. `gemini-3.8-flash` is the newest
+# Flash and has not been measured here yet; re-measure with `scripts/cleaner_gate.py`.
+DEFAULT_MODEL = "gemini-3.8-flash"
 
-# Ordered by measured delivery, not by version. A 503 is Google reporting capacity on one
-# model, so the next model here is tried inside the same timeout budget rather than
-# dropping the speaker to the unpunctuated transcript. Ordering by version instead would
-# send a fallback from 3.5 straight to the least available model. Every model here
-# produced equivalent output on the 2026-08-31 samples, so moving down the chain costs
-# quality nothing measurable. A model reaches this list only after it is measured.
-MODEL_CHAIN = ("gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash")
+# The fallback walk stays: a 503 is still retried once inside the budget, and an unlisted
+# `--gemini-model` still falls back to the model here. With one model listed there is no
+# second model to hand a busy request to, so a 503 that survives the retry delivers the
+# plain transcript.
+MODEL_CHAIN = ("gemini-3.8-flash",)
 
 
 def model_chain(preferred: str) -> tuple[str, ...]:
     """The preferred model first, then the remaining known models in order."""
     return (preferred,) + tuple(m for m in MODEL_CHAIN if m != preferred)
 
-# The same measurement: successful replies took 5.4 to 34.6 seconds, so the previous
+# The 2026-08-31 measurement of the earlier chain: successful replies took 5.4 to 34.6 seconds, so the previous
 # 20-second ceiling cancelled calls that were about to succeed and made a healthy model
 # look unreachable. The budget is wider than the slowest observed reply.
 DEFAULT_TIMEOUT_SECONDS = 45.0
 
-# The same measurement returned HTTP 503 on 6 of 9 calls to 3.7 and 2 of 6 to 3.6.
+# That measurement returned HTTP 503 on 6 of 9 calls to 3.7 and 2 of 6 to 3.6.
 # A 503 is Google reporting transient capacity, not a rejected request, and the retry
 # costs one extra call against a failure that would otherwise drop the speaker straight
 # to the unpunctuated transcript. The retry shares the one timeout budget, so recovery

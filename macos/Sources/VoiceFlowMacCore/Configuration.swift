@@ -153,48 +153,39 @@ public enum SpeechEngine: String, CaseIterable, Sendable {
     }
 }
 
-/// The Gemini models the window offers, listed newest first for the picker.
+/// The Gemini model the window offers.
 ///
-/// A model is listed here only after it has been measured against the live endpoint on
-/// the same request shape. Display order is by version because that is how a person
-/// scans a picker; the fallback order is `fallbackOrder`, by measured delivery.
+/// One model, by owner decision on 2026-10-24: Google deprecated 3.5 and 3.7 on
+/// 2026-10-08 and routes them to 3.6 and 3.8. `gemini-3.8-flash` is the newest Flash and
+/// has not been measured here yet.
 public enum GeminiModel: String, CaseIterable, Sendable {
-    case flash37 = "gemini-3.7-flash"
-    case flash36 = "gemini-3.6-flash"
-    case flash35 = "gemini-3.5-flash"
+    case flash38 = "gemini-3.8-flash"
 
-    public static let preferredDefault = GeminiModel.flash35
+    public static let preferredDefault = GeminiModel.flash38
 
-    /// The order the engine walks on a capacity error, by measured delivery rather than
-    /// by version. Mirrors `MODEL_CHAIN` in `cleaners/gemini.py`, which is the authority;
-    /// this copy exists only so the window can show the real order. `VoiceFlowMacCoreChecks`
-    /// asserts the two stay the same size and content.
-    public static let fallbackOrder: [GeminiModel] = [.flash35, .flash36, .flash37]
+    /// The order the engine walks on a capacity error. Mirrors `MODEL_CHAIN` in
+    /// `cleaners/gemini.py`, which is the authority; this copy exists only so the window
+    /// can show the real order. `VoiceFlowMacCoreChecks` asserts the two stay the same
+    /// size and content.
+    public static let fallbackOrder: [GeminiModel] = [.flash38]
 
     /// Short label for the picker. The full identifier is the `rawValue`.
     public var shortName: String {
         switch self {
-        case .flash37: return "3.7"
-        case .flash36: return "3.6"
-        case .flash35: return "3.5"
+        case .flash38: return "3.8"
         }
     }
 
-    /// When the figures below were taken.
-    ///
-    /// Shown beside them because nothing re-measures: the numbers are a photograph, and
-    /// a picker that presents a dated measurement as a current fact recommends a model
-    /// that may no longer be the one that answers. Re-measure with
-    /// `scripts/cleaner_gate.py --cleaner gemini` and update this date with the figures.
-    public static let measurementDate = "2026-08-31"
+    /// When the figures below were taken; `nil` until the model is measured with
+    /// `scripts/cleaner_gate.py --cleaner gemini`. Shown beside them because nothing
+    /// re-measures, so a figure is a photograph of one day.
+    public static let measurementDate: String? = nil
 
-    /// Delivery measured on 2026-08-31, interleaved, identical output quality.
-    /// Shown in the window so the choice is informed rather than a guess.
+    /// Delivery and median time, once measured. Says so plainly until then, so the
+    /// window never presents a guess as a measurement.
     public var measuredNote: String {
         switch self {
-        case .flash37: return "3/6 · 12.5s"
-        case .flash36: return "4/6 · 14.3s"
-        case .flash35: return "5/6 · 2.3s"
+        case .flash38: return "not measured yet"
         }
     }
 }
@@ -417,7 +408,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
         var cleaner = CleanerMode.apple
         var mode = ProcessingMode.clean
         var language = LanguageMode.auto
-        var geminiModel = "gemini-3.5-flash"
+        var geminiModel = "gemini-3.8-flash"
         var shortcut = try Shortcut(specification: "fn")
         var modeShortcut = try Shortcut(specification: "control+option+m")
         var holdDelaySeconds: TimeInterval = 0.5
@@ -532,7 +523,7 @@ public struct VoiceFlowConfiguration: Equatable, Sendable {
       --cleaner MODE         literal, apple, or gemini; defaults to apple.
       --mode MODE            clean, translate, meeting, or actions; defaults to clean.
       --language MODE        auto, en, or es; defaults to auto.
-      --gemini-model NAME    Gemini model; defaults to gemini-3.5-flash.
+      --gemini-model NAME    Gemini model; defaults to gemini-3.8-flash.
       --shortcut CHORD       Defaults to fn (the Fn/Globe key alone).
       --mode-shortcut CHORD  Cycles the mode from the HUD; defaults to control+option+m.
       --hold-delay SECONDS   Hold before the microphone opens; defaults to 0.5, max 3.

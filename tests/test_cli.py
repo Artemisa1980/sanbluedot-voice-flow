@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from argparse import Namespace
 from contextlib import redirect_stderr, redirect_stdout
@@ -9,6 +10,8 @@ from unittest.mock import patch
 from sanbluedot_voiceflow import cli
 from sanbluedot_voiceflow.errors import CleanupFailed, VoiceFlowError
 from sanbluedot_voiceflow.contracts import PipelineResult
+from sanbluedot_voiceflow.memory import CorrectionStore
+from sanbluedot_voiceflow.snippets import SnippetStore
 
 
 class CliTests(unittest.TestCase):
@@ -343,7 +346,21 @@ class DistillationConsentTests(unittest.TestCase):
     def test_cloud_cleanup_alone_records_nothing(self) -> None:
         args = CliTests._process_args(cleaner="gemini", no_memory=False)
 
+        # Memory stays on, as in daily use, but in a temporary folder: with the real
+        # stores unpatched every suite run read the owner's corrections and snippets,
+        # and a damaged one would have been quarantined by a test (D-131).
         with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(
+                cli,
+                "CorrectionStore",
+                lambda *_a, **_k: CorrectionStore(Path(temp_dir) / "corrections.local.json"),
+            ),
+            patch.object(
+                cli,
+                "SnippetStore",
+                lambda *_a, **_k: SnippetStore(Path(temp_dir) / "snippets.local.json"),
+            ),
             patch.object(
                 cli.DictationPipeline, "process", return_value=self._gemini_result()
             ),

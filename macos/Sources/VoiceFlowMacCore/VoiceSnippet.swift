@@ -111,13 +111,35 @@ public final class VoiceSnippetStore: @unchecked Sendable {
     /// Parse an envelope, or return nil so the caller can decide what a damaged file means.
     /// Returning an empty store here is what allowed a decode failure to look like an
     /// empty store and be overwritten; the distinction now survives to the caller.
+    ///
+    /// Read by the engine's rules in `snippets.py`, because both processes own this file:
+    /// a missing `schema_version` is version 1, any other version is refused (D-102), and
+    /// an item that is not a usable snippet is skipped rather than condemning the file.
+    /// A strict decoder here quarantined stores the engine read fine (D-129).
     public static func decode(from data: Data) -> VoiceSnippetStore? {
-        guard let envelope = try? JSONDecoder().decode(Envelope.self, from: data) else {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let items = root["snippets"] as? [Any] else {
             return nil
         }
-        let loaded = envelope.snippets.compactMap { payload -> VoiceSnippet? in
-            guard !payload.trigger.isEmpty, !payload.expansion.isEmpty else { return nil }
-            return VoiceSnippet(trigger: payload.trigger, expansion: payload.expansion, description: payload.description)
+        if let version = root["schema_version"] {
+            // JSON `true` and `1.0` both bridge to an NSNumber equal to 1; the engine
+            // accepts only the integer.
+            guard let number = version as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  !CFNumberIsFloatType(number),
+                  number.intValue == 1 else { return nil }
+        }
+        let loaded = items.compactMap { item -> VoiceSnippet? in
+            guard let fields = item as? [String: Any],
+                  let trigger = fields["trigger"] as? String,
+                  let expansion = fields["expansion"] as? String else { return nil }
+            let snippet = VoiceSnippet(
+                trigger: trigger,
+                expansion: expansion,
+                description: fields["description"] as? String
+            )
+            guard !snippet.trigger.isEmpty, !snippet.expansion.isEmpty else { return nil }
+            return snippet
         }
         return VoiceSnippetStore(snippets: loaded)
     }

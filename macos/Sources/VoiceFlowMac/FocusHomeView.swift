@@ -876,11 +876,15 @@ struct FocusHomeView: View {
                     // What the figures are, and what happens when the chosen model is
                     // the one that is busy. Both were on the console strip this card
                     // replaced, and neither is obvious from the buttons alone.
-                    Text("Delivered / median, measured \(GeminiModel.measurementDate). Nothing re-measures, so read them as that day's figures.")
-                        .font(T.mono(size: 10))
-                        .foregroundColor(T.textMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("If the model you picked is busy, VoiceFlow walks the rest in measured order — \(fallbackOrder) — and delivers the plain transcript if none of them answers.")
+                    if let date = GeminiModel.measurementDate {
+                        Text("Delivered / median, measured \(date). Nothing re-measures, so read them as that day's figures.")
+                            .font(T.mono(size: 10))
+                            .foregroundColor(T.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(fallbackOrder.isEmpty
+                         ? "If Gemini is busy, VoiceFlow retries once and delivers the plain transcript if it still does not answer."
+                         : "If the model you picked is busy, VoiceFlow walks the rest in measured order — \(fallbackOrder) — and delivers the plain transcript if none of them answers.")
                         .font(T.mono(size: 10))
                         .foregroundColor(T.textMuted)
                         .fixedSize(horizontal: false, vertical: true)

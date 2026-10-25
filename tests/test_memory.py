@@ -106,6 +106,16 @@ class ApplyCorrectionsTests(unittest.TestCase):
             "Dictation and DICTATION",
         )
 
+    def test_a_mixed_case_replacement_keeps_its_own_casing(self) -> None:
+        # A sentence start used to turn `iPhone` into `IPhone`. The same cases are
+        # checked in `VoiceFlowMacCoreChecks` for `CorrectionApplication`.
+        corrections = [pair("i phone", "iPhone"), pair("ebay", "eBay")]
+
+        self.assertEqual(
+            apply_corrections("I phone y i phone. Ebay y EBAY", corrections),
+            "iPhone y iPhone. eBay y eBay",
+        )
+
     def test_matches_accented_terms(self) -> None:
         corrections = [pair("jerarquia", "jerarquía")]
 

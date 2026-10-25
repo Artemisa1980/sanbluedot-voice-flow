@@ -274,19 +274,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Every edit re-reads the file under the engine's lock, so a `vf snippet add` made
         // while the app runs survives the next edit here (D-40).
         controlWindow.onAddSnippet = { [weak self] trigger, expansion, description in
-            guard let self else { return }
+            guard let self else { return false }
             var added: VoiceSnippet?
             guard let written = VoiceSnippetStore.edit({
                 added = $0.add(trigger: trigger, expansion: expansion, description: description)
             }) else {
                 self.controlWindow.addLog("the snippet was not saved · the store could not be read or written", isHighlight: true)
-                return
+                return false
             }
             self.snippetStore = written
             self.controlWindow.updateSnippets(written.snippets)
-            if let snip = added {
-                self.controlWindow.addLog("added voice snippet [\(snip.trigger)]", isHighlight: true)
-            }
+            guard let snip = added else { return false }
+            self.controlWindow.addLog("added voice snippet [\(snip.trigger)]", isHighlight: true)
+            return true
         }
         controlWindow.onDeleteSnippet = { [weak self] id in
             guard let self,

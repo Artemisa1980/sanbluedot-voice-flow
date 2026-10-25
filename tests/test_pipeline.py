@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+from sanbluedot_voiceflow.cleaners.literal import LiteralCleaner
 from sanbluedot_voiceflow.contracts import Transcript
 from sanbluedot_voiceflow.errors import CleanupFailed
 from sanbluedot_voiceflow.memory import Correction
@@ -106,6 +107,28 @@ class DictationPipelineTests(unittest.TestCase):
         result = pipeline.process(Path("unused.wav"))
 
         self.assertEqual(result.final_text, "We will deploy today. It is ready.")
+
+    def test_literal_delivery_drops_the_segment_space_and_raw_keeps_it(self) -> None:
+        # whisper.cpp opens every segment with a space; a one-segment dictation used to
+        # land at the cursor as " Hola, mundo." while the raw transcript must stay exact.
+        pipeline = DictationPipeline(FakeTranscriber(" Hola, mundo.", "es"), LiteralCleaner())
+
+        result = pipeline.process(Path("unused.wav"))
+
+        self.assertEqual(result.raw_text, " Hola, mundo.")
+        self.assertEqual(result.final_text, "Hola, mundo.")
+
+    def test_fallback_drops_the_segment_space(self) -> None:
+        pipeline = DictationPipeline(
+            FakeTranscriber(" texto original", "es"),
+            FakeCleaner(error=RuntimeError("offline")),
+        )
+
+        with self.assertRaises(CleanupFailed) as raised:
+            pipeline.process(Path("unused.wav"))
+
+        self.assertEqual(raised.exception.raw_text, " texto original")
+        self.assertEqual(raised.exception.fallback_text, "texto original")
 
 
 class PipelineTimingTests(unittest.TestCase):

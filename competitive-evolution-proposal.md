@@ -1,10 +1,9 @@
 # VoiceFlow — Personal Voice Station Direction
 
-Status: hub design A selected; capability roadmap remains proposed, with no gate closed.
-The selected composition is `docs/voice-station-concept.html`, adopted by `design-system.md`
-on 2026-09-08. B / Broadcast and C / Folio remain stored as alternate references.
-`framework.md` remains the behavior authority. Windows stabilization is the active slice;
-the existing macOS app remains a separate platform adapter over the shared engine.
+Status: historical record, not Mac work. Its one durable decision — hub design A,
+`docs/voice-station-concept.html` — lives in `design-system.md` since 2026-09-08. The
+sequence below belongs to the other platform's own machine (`AGENTS.md`); on this Mac the
+open work is `backlog.md`, and `framework.md` remains the behavior authority.
 
 ## Product direction
 

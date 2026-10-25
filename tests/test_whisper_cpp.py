@@ -80,6 +80,35 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             "Ok, voy a comenzar con literal We want to change languages So, let's see",
         )
 
+    def _transcribe_file_text(self, written: str):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
+            for path in (binary, model, audio):
+                path.touch()
+            binary.chmod(0o755)
+
+            def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                Path(f"{command[command.index('-of') + 1]}.txt").write_text(
+                    written, encoding="utf-8"
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            return WhisperCppTranscriber(
+                model_path=model, binary=str(binary), runner=runner
+            ).transcribe(audio)
+
+    def test_a_transcript_of_only_non_speech_tags_is_no_speech(self) -> None:
+        """A cough that passes the noise gate came back as `[BLANK_AUDIO]` and was pasted."""
+        for written in (" [BLANK_AUDIO]\n", " (coughing)\n", " [BLANK_AUDIO]\n (tos)\n"):
+            with self.subTest(written=written):
+                with self.assertRaises(TranscriptionError):
+                    self._transcribe_file_text(written)
+
+    def test_a_tag_inside_real_speech_is_kept(self) -> None:
+        result = self._transcribe_file_text(" Hola (en serio) mundo\n")
+        self.assertEqual(result.text, " Hola (en serio) mundo")
+
     def test_automatic_mode_recovers_the_language_whisper_detected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

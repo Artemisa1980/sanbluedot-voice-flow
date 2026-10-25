@@ -18,6 +18,9 @@ it does not own and cannot see change.
 
 ## Selected Windows hub — A / Original station
 
+**This section, down to "The one non-negotiable", governs the Windows hub only.** The macOS
+window is Focus Home, below; nothing here changes it.
+
 Approved design direction: `docs/voice-station-concept.html` (A), selected 2026-09-08.
 Use its mint canvas, cream panels, navy-and-gold chrome, central microphone dial,
 left navigation and four spaces: Station, Modes, Your words and Control.
@@ -445,11 +448,10 @@ the one surface that does not use the sage canvas.
   its share of the row rather than trusting a count that was true at five. The microphone
   disc carries the mode's glyph while it is shown, and the capsule springs between states
   rather than cutting.
-- One accent rule for that strip: every mode lights brand gold `#EFC15E`, except
-  and `ACTION`, which lights the approved coral `#FF7B6B`. `TRANSFORM` lit dot
-  blue. The two modes that reach outside the dictation — one acts on the machine, one
-  rewrites text the speaker did not dictate — are the two that read differently, and no
-  new colour enters the palette.
+- One accent rule for that strip: every mode lights brand gold `#EFC15E` except
+  `ACTION`, which lights the approved coral `#FF7B6B` (`rec`). It is the one mode that
+  acts on the machine instead of writing, so it is the one that reads differently, and
+  no new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
 ## Menu bar item
@@ -478,7 +480,7 @@ whether or not the HUD or the station window is open.
 ## Console badge palette
 
 Nine log categories must be told apart at `7px` on the dark olive console ground, where
-the brand family collapses into two readable hues. These four are therefore **not brand
+the brand family collapses into two readable hues. These tokens are therefore **not brand
 colours**, are never used on the mint canvas, and exist only inside the console and the
 meter. Approved 2026-09-02, after they had already shipped as literals.
 
@@ -618,11 +620,8 @@ The macOS keyboard focus ring is suppressed on custom controls, through
 `focusEffectDisabled`, which is macOS 14. The package's floor is macOS 13, where the call
 is a no-op and the system ring still draws; that is accepted rather than worked around,
 because the development Mac runs well past that floor. Raise the package floor and this
-becomes unconditional.
-
-The macOS keyboard focus ring is suppressed on custom controls. Selection is shown by the
-navy fill and the sage lamp; the system ring is a second, foreign selection language
-drawn on top of the first.
+becomes unconditional. Selection is shown by the navy fill and the sage lamp; the system
+ring is a second, foreign selection language drawn on top of the first.
 
 ## Logo assets
 

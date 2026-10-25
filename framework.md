@@ -247,11 +247,10 @@ explicitly and never inferred from the choice of provider.
 - Cloud cleanup is optional, text-only, and disabled by default.
 - Gemini is the first cloud cleanup provider. Gate 4 closed on 2026-08-31; see
   `acceptance/phase-4-acceptance.md`.
-- The configured default is `gemini-3.5-flash`: the model that answers, not the highest
-  version. Any change to it is a measurement, never an inference from the version number.
-  Interleaved on 2026-08-31 with the same request shape and identical output quality on
-  cleanup, translation and meeting notes: 3.5 delivered 5 of 6 at a 2.3-second median,
-  3.6 delivered 4 of 6 at 14.3 seconds, 3.7 delivered 3 of 6 at 12.5 seconds.
+- The only Gemini model is `gemini-3.8-flash`, by owner decision on 2026-10-24, after
+  Google deprecated 3.5 and 3.7 on 2026-10-08 and routed them to 3.6 and 3.8. It is not
+  measured here yet; the interface says so until a measurement is dated. A busy reply is
+  retried once inside the budget, then the plain transcript is delivered.
 - A measurement shown in the interface carries the date it was taken. Nothing in the
   application re-measures, so an undated figure would present a photograph as the current
   ranking and recommend a model that may no longer be the one that answers.

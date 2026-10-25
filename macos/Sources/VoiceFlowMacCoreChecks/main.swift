@@ -412,17 +412,14 @@ do {
         audioURL: URL(fileURLWithPath: "/tmp/input.wav"),
         baseEnvironment: [:],
         cleaner: .gemini,
-        // Deliberately not the default, so the assertion below proves the choice won.
-        geminiModel: .flash37,
+        // One model is offered, so the choice is the default; the check proves it
+        // reaches the engine as its full identifier.
+        geminiModel: .flash38,
         providerAPIKey: "test-key"
     )
     try check(
-        pickedModel.arguments.contains("gemini-3.7-flash"),
+        pickedModel.arguments.contains("gemini-3.8-flash"),
         "The chosen cloud model did not reach the engine."
-    )
-    try check(
-        !pickedModel.arguments.contains(GeminiModel.preferredDefault.rawValue),
-        "The launch default overrode the speaker's chosen model."
     )
     let unpickedModel = EngineInvocation.make(
         configuration: defaults,
@@ -439,8 +436,8 @@ do {
         "The configured default must be one of the models the window offers."
     )
     try check(
-        GeminiModel.allCases.count == 3,
-        "The window should offer the three measured models."
+        GeminiModel.allCases == [.flash38],
+        "The window should offer only gemini-3.8-flash."
     )
     try check(
         Set(GeminiModel.fallbackOrder) == Set(GeminiModel.allCases),
@@ -452,7 +449,7 @@ do {
     )
     try check(
         GeminiModel.fallbackOrder.first == GeminiModel.preferredDefault,
-        "The default should be the most available model, which leads the fallback order."
+        "The default should lead the fallback order."
     )
 
     // R4: the app must not synthesize a paste into its own window.
@@ -667,6 +664,38 @@ do {
         VoiceSnippetStore.decode(from: Data("{ not json".utf8)) == nil,
         "A damaged payload decoded to a store instead of reporting failure."
     )
+
+    // The engine reads an unversioned store as version 1 and skips one bad item
+    // (`snippets.py`). The app used to quarantine either at launch, after which no
+    // snippet expanded, so it now reads them the way the engine does (D-129).
+    let unversioned = VoiceSnippetStore.decode(from: Data("""
+        {"snippets": [{"trigger": "mi correo", "expansion": "user@example.com"}]}
+        """.utf8))
+    try check(
+        unversioned?.snippets.map(\.trigger) == ["mi correo"],
+        "An unversioned snippet store the engine reads was refused."
+    )
+    let oneBadItem = VoiceSnippetStore.decode(from: Data("""
+        {"schema_version": 1, "snippets": [
+          {"trigger": "mi firma", "expansion": null},
+          {"trigger": 7, "expansion": "x"},
+          {"trigger": "mi web", "expansion": "https://example.com", "description": 3}
+        ]}
+        """.utf8))
+    try check(
+        oneBadItem?.snippets.map(\.trigger) == ["mi web"],
+        "One unreadable snippet made the whole store unreadable, or a bad one was kept."
+    )
+    // D-102: a version the engine does not know is refused, never rewritten as 1.
+    for foreign in [#"{"schema_version": 2, "snippets": []}"#,
+                    #"{"schema_version": true, "snippets": []}"#,
+                    #"{"schema_version": 1.5, "snippets": []}"#,
+                    #"{"schema_version": 1}"#] {
+        try check(
+            VoiceSnippetStore.decode(from: Data(foreign.utf8)) == nil,
+            "A snippet store the engine refuses was accepted: \(foreign)"
+        )
+    }
 
     let snippetFixtureDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("voiceflow-snippet-checks-\(UUID().uuidString)")
@@ -952,11 +981,12 @@ do {
         )
     }
 
-    // The measured figures are dated, and the date is shown beside them. A number with
-    // no date reads as today's ranking, and nothing in this app re-measures.
+    // A figure is shown only with its date. 3.8 is not measured yet, so there is no
+    // date, and the note must say so instead of carrying a number.
     try check(
-        GeminiModel.measurementDate == "2026-08-31",
-        "The displayed measurement date no longer matches the figures in measuredNote."
+        GeminiModel.measurementDate == nil
+            && GeminiModel.allCases.allSatisfy { $0.measuredNote == "not measured yet" },
+        "A model shows a measured figure without a measurement date."
     )
     try check(
         GeminiModel.allCases.allSatisfy { !$0.measuredNote.isEmpty },
@@ -1130,6 +1160,33 @@ do {
     try check(
         !ShortcutMatch.isCancel(keyCode: 8, flags: [.maskSecondaryFn], trigger: [.fn]),
         "A key that is not Escape cancelled the recording."
+    )
+
+    // macOS sets the Function flag on F1–F20 and the navigation keys whether or not Fn is
+    // held, so a chord ending in one of them must not demand that the flag be absent.
+    // `command+shift+f8` was accepted at launch, shown in the menu, and never fired.
+    let f8 = try Shortcut(specification: "command+shift+f8")
+    try check(
+        ShortcutMatch.flagsMatch(
+            [.maskCommand, .maskShift, .maskSecondaryFn], f8.modifiers, keyCode: f8.keyCode
+        ),
+        "A chord ending in F8 does not match the Function flag macOS sets on every F-key."
+    )
+    try check(
+        !ShortcutMatch.flagsMatch(
+            [.maskCommand, .maskSecondaryFn], f8.modifiers, keyCode: f8.keyCode
+        ),
+        "An F-key chord matched with a modifier missing."
+    )
+    try check(
+        !ShortcutMatch.flagsMatch(
+            [.maskControl, .maskSecondaryFn], [.control], keyCode: 0
+        ),
+        "Fn held on a letter chord that does not name fn was accepted."
+    )
+    try check(
+        !ShortcutMatch.flagsMatch([.maskControl], [.control, .fn], keyCode: 96),
+        "A chord that names fn matched an F-key without it."
     )
 
     // The capsule's text has to fit the rows it is drawn in, and "it fits" is a
@@ -1547,6 +1604,16 @@ do {
             && CorrectionApplication.apply(heard: "utel", intended: "Utel", to: "UTEL y utel")
                 == "UTEL y Utel",
         "FIX must replace the heard words in that dictation, keeping the case they had."
+    )
+    // A replacement with a capital after its first letter is a spelling, not a case to
+    // adjust: a sentence start turned `iPhone` into `IPhone`. The same cases are tested
+    // in `test_a_mixed_case_replacement_keeps_its_own_casing` in `tests/test_memory.py`.
+    try check(
+        CorrectionApplication.apply(heard: "i phone", intended: "iPhone", to: "I phone y i phone.")
+            == "iPhone y iPhone."
+            && CorrectionApplication.apply(heard: "ebay", intended: "eBay", to: "Ebay y EBAY")
+                == "eBay y eBay",
+        "FIX re-cased a mixed-case replacement such as iPhone or eBay."
     )
     try check(
         CorrectionApplication.apply(heard: "gim", intended: "Gim", to: "the gimbal is ready") == nil

@@ -18,6 +18,21 @@ from sanbluedot_voiceflow.cleaners.gemini import (
     model_chain,
 )
 from sanbluedot_voiceflow.errors import CleanupError
+from unittest import mock
+
+# The product lists one model (`MODEL_CHAIN`), but the walk still runs whenever an
+# unlisted `--gemini-model` leads it. These tests pin a three-model chain so the walk
+# itself stays covered whatever the product list holds.
+THREE_MODEL_CHAIN = (DEFAULT_MODEL, "gemini-test-b", "gemini-test-c")
+
+
+class ThreeModelChain(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = mock.patch(
+            "sanbluedot_voiceflow.cleaners.gemini.MODEL_CHAIN", THREE_MODEL_CHAIN
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
 
 SECRET = "not-a-real-key-fixture"
@@ -302,7 +317,7 @@ class ResponseTests(unittest.TestCase):
             build(Recorder(reply("   "))).clean("hola")
 
 
-class FailureTests(unittest.TestCase):
+class FailureTests(ThreeModelChain):
     def test_an_http_error_reports_the_status_without_the_key(self) -> None:
         error = HTTPError("https://example.invalid", 429, "Too Many Requests", {}, None)
 
@@ -446,7 +461,7 @@ class TransientCapacityTests(unittest.TestCase):
         self.assertEqual(len(opener.requests), 1)
 
 
-class ModelChainTests(unittest.TestCase):
+class ModelChainTests(ThreeModelChain):
     """A 503 is one model being busy, so the next measured model gets the text.
 
     Falling back exists to save the cleanup, never to make the speaker wait longer than
@@ -454,15 +469,15 @@ class ModelChainTests(unittest.TestCase):
     """
 
     def test_the_chain_puts_the_preferred_model_first(self) -> None:
-        self.assertEqual(model_chain("gemini-3.6-flash")[0], "gemini-3.6-flash")
+        self.assertEqual(model_chain(THREE_MODEL_CHAIN[1])[0], THREE_MODEL_CHAIN[1])
         self.assertEqual(
-            set(model_chain("gemini-3.6-flash")), set(MODEL_CHAIN)
+            set(model_chain(THREE_MODEL_CHAIN[1])), set(THREE_MODEL_CHAIN)
         )
 
     def test_an_unknown_preferred_model_still_leads_its_own_chain(self) -> None:
         chain = model_chain("gemini-9-flash")
         self.assertEqual(chain[0], "gemini-9-flash")
-        self.assertEqual(chain[1:], MODEL_CHAIN)
+        self.assertEqual(chain[1:], THREE_MODEL_CHAIN)
 
     def test_a_busy_model_hands_the_text_to_the_next_one(self) -> None:
         opener = SequenceRecorder([unavailable(), unavailable(), reply("Hola.")])
@@ -473,7 +488,7 @@ class ModelChainTests(unittest.TestCase):
 
         # Two requests for the preferred model (first try plus its retry), then the second.
         self.assertEqual(len(opener.requests), 3)
-        self.assertIn(MODEL_CHAIN[1], opener.requests[2].full_url)
+        self.assertIn(THREE_MODEL_CHAIN[1], opener.requests[2].full_url)
 
     def test_the_model_that_answered_is_reported(self) -> None:
         opener = SequenceRecorder([unavailable(), unavailable(), reply("Hola.")])
@@ -481,7 +496,7 @@ class ModelChainTests(unittest.TestCase):
 
         cleaner.clean("hola")
 
-        self.assertEqual(cleaner.answered_with, MODEL_CHAIN[1])
+        self.assertEqual(cleaner.answered_with, THREE_MODEL_CHAIN[1])
 
     def test_no_fallback_means_the_answer_names_the_preferred_model(self) -> None:
         opener = SequenceRecorder([reply("Hola.")])
@@ -505,7 +520,7 @@ class ModelChainTests(unittest.TestCase):
         build(SequenceRecorder([reply("Hola.")]), announced=announced,
               fallback=True).clean("hola")
 
-        for model in MODEL_CHAIN:
+        for model in THREE_MODEL_CHAIN:
             self.assertIn(model, announced[0])
         self.assertIn("No audio is sent", announced[0])
 
@@ -527,7 +542,7 @@ class ModelChainTests(unittest.TestCase):
             build(opener, fallback=True).clean("hola")
 
         self.assertIn("capacity", str(raised.exception))
-        for model in MODEL_CHAIN:
+        for model in THREE_MODEL_CHAIN:
             self.assertIn(model, str(raised.exception))
 
     def test_the_last_model_timing_out_still_names_what_was_contacted(self) -> None:
@@ -544,8 +559,8 @@ class ModelChainTests(unittest.TestCase):
             build(opener, fallback=True).clean("hola")
 
         message = str(raised.exception)
-        self.assertIn(MODEL_CHAIN[0], message)
-        self.assertIn(MODEL_CHAIN[2], message)
+        self.assertIn(THREE_MODEL_CHAIN[0], message)
+        self.assertIn(THREE_MODEL_CHAIN[2], message)
         self.assertIn("time budget", message)
         self.assertIn("capacity", message)
 
@@ -562,12 +577,12 @@ class ModelChainTests(unittest.TestCase):
         message = str(raised.exception)
         self.assertEqual(len(opener.requests), 1)
         self.assertIn("Not contacted", message)
-        for skipped in MODEL_CHAIN[1:]:
+        for skipped in THREE_MODEL_CHAIN[1:]:
             self.assertNotIn(f"{skipped} was at capacity", message)
             self.assertIn(skipped, message.split("Not contacted", 1)[1])
 
 
-class PerModelBudgetTests(unittest.TestCase):
+class PerModelBudgetTests(ThreeModelChain):
     """No single model may spend the whole budget and starve the rest of the chain.
 
     Measured live on 2026-08-31: a busy `gemini-3.7-flash` consumed all 45 seconds, so
@@ -596,17 +611,17 @@ class PerModelBudgetTests(unittest.TestCase):
         cleaner = build(opener, announced=announced, fallback=True)
         self.assertEqual(cleaner.clean("hola"), "Hola.")
 
-        self.assertEqual(cleaner.answered_with, MODEL_CHAIN[1])
+        self.assertEqual(cleaner.answered_with, THREE_MODEL_CHAIN[1])
         self.assertTrue(any("ran out of its share" in m for m in announced))
 
     def test_the_slice_never_exceeds_the_whole_budget(self) -> None:
         self.assertLessEqual(
-            PER_MODEL_TIMEOUT_SECONDS * len(MODEL_CHAIN), DEFAULT_TIMEOUT_SECONDS
+            PER_MODEL_TIMEOUT_SECONDS * len(THREE_MODEL_CHAIN), DEFAULT_TIMEOUT_SECONDS
         )
 
     def test_the_slice_adapts_to_a_longer_chain(self) -> None:
         # `--gemini-model` accepts any identifier, so an unlisted model makes the chain
-        # longer than MODEL_CHAIN. A fixed slice would spend the budget before reaching
+        # longer than THREE_MODEL_CHAIN. A fixed slice would spend the budget before reaching
         # a healthy model.
         self.assertEqual(per_model_slice(45.0, 3), 15.0)
         self.assertEqual(per_model_slice(45.0, 4), 11.25)
@@ -644,10 +659,10 @@ class ChainFailureMessageTests(unittest.TestCase):
 
     def test_every_contacted_model_busy_says_so(self) -> None:
         message = describe_chain_failure(
-            [(model, CONTACT_AT_CAPACITY) for model in MODEL_CHAIN]
+            [(model, CONTACT_AT_CAPACITY) for model in THREE_MODEL_CHAIN]
         )
         self.assertIn("Every Gemini model contacted is at capacity", message)
-        for model in MODEL_CHAIN:
+        for model in THREE_MODEL_CHAIN:
             self.assertIn(model, message)
 
     def test_a_slow_model_is_not_called_busy(self) -> None:
@@ -689,7 +704,7 @@ class ChainFailureMessageTests(unittest.TestCase):
         self.assertIn("gemini-3.7-flash dropped the connection", message)
 
     def test_contacting_nothing_says_nothing_was_contacted(self) -> None:
-        message = describe_chain_failure([], skipped=list(MODEL_CHAIN))
+        message = describe_chain_failure([], skipped=list(THREE_MODEL_CHAIN))
         self.assertIn("No Gemini model was contacted", message)
 
 

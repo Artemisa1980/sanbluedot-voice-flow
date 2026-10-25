@@ -77,7 +77,7 @@ richer prompt is measured on the fixed corpus, punctuation included, before it s
 
 A fixed list of bilingual priming terms was added to `build_initial_prompt` and removed
 in the same session. Measured against the real store it never reached whisper: 226
-personal terms already fill 596 of the 600 characters, the priming was appended after
+personal terms then filled 596 of the 600 characters (42 terms, 357 characters since D-02), the priming was appended after
 them, and every term was cut. The prompt was byte-identical with the feature on and off,
 and the two tests covering it used two-term fixtures, which is why the budget never bound
 them and the feature read as working.

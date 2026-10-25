@@ -3,7 +3,19 @@
 > **Owner:** private  
 > **Status:** Approved for phased implementation  
 > **Platforms:** macOS. The Windows adapter is owned and measured on the Windows machine and is not worked from here.  
-> **Updated:** 2026-08-31
+> **Updated:** 2026-08-31 · status lines 2026-10-23
+
+**Status, 2026-10-23.** `framework.md` Gates 1 to 4 are closed (README). Phase 5's
+menu-bar app and settings ship; no record in this project says its acceptance matrix was
+run. The open work is `backlog.md`. Three things changed after this proposal was
+written, and the passages that predate them are marked where they stand:
+
+- Local cleanup on the Mac is Apple's on-device model; Ollama left the Mac app on
+  2026-10-01 and stays in the shared engine for another platform only (`framework.md`
+  R6, README §Ollama).
+- Terminals receive automatic paste under a single-line guard since 2026-09-01 (R4).
+- The Xcode project exists and builds the App Intents metadata (README §The Xcode
+  project); it entered version control on 2026-10-02 (`96fd83d`).
 
 ## Purpose
 
@@ -23,6 +35,10 @@ The product is for one user on two known computers. It does not need multi-tenan
 6. **Replaceable providers:** speech and cleanup models sit behind small interfaces rather than controlling the application architecture.
 
 ## Initial architecture
+
+The diagram and table are the 2026-08-31 design. Current: Whisper or Parakeet for speech,
+Apple's on-device model for local cleanup, Gemini for cloud cleanup; `framework.md`
+§Architecture boundaries draws the live pipeline.
 
 ```mermaid
 flowchart LR
@@ -75,7 +91,7 @@ This is prompt and correction memory, not continuous acoustic-model training. Si
 - Cloud providers receive text only in the initial design.
 - API keys belong in the operating-system credential store, never project files.
 - The raw transcript remains recoverable when cleanup fails.
-- Terminal output defaults to clipboard delivery. Automatic paste requires a later explicit safety decision.
+- Terminal output defaults to clipboard delivery. Automatic paste requires a later explicit safety decision. Taken 2026-09-01: terminals receive automatic paste flattened to one line (R4).
 - A focus change during processing must not send text to an unintended application.
 
 ## Delivery sequence
@@ -105,7 +121,7 @@ principle as the rest of the product: surface evidence, never invent judgement.
 
 ## First implementation slice
 
-The first code slice is deliberately small:
+Delivered; Gate 1 is closed. The first code slice was deliberately small:
 
 - a Python 3.11+ engine package;
 - a `whisper.cpp` command adapter;
@@ -130,11 +146,12 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
 - Accuracy is reported separately from latency using a fixed reference transcript.
 - Clipboard delivery succeeds in the agreed test applications; terminal auto-paste is not part of this gate.
 
-## Current constraints
+## Constraints as of 2026-08-31
 
-- The development Mac now has `whisper.cpp`, Ollama, `qwen3:4b`, Whisper Small, and
-  large-v3-turbo provisioned and verified locally. They remain external dependencies and
-  are not bundled with the source tree.
+- The development Mac then had `whisper.cpp`, Ollama, `qwen3:4b`, Whisper Small, and
+  large-v3-turbo provisioned and verified locally. Since 2026-10-01 it keeps turbo and
+  Parakeet Ultra only; `backlog.md` §F lists what is on disk. Models remain external
+  dependencies and are not bundled with the source tree.
 - The native Phase 2 runner is built and signed locally. It opens a visible control window,
   remains available from the Dock and menu bar, and supports both one large hold button
   and Fn/Globe. Its automated checks pass, the stable macOS permissions are approved,
@@ -152,8 +169,10 @@ The Mac gate uses the owner's M3 Pro, 18 GB computer and a controlled sample set
 
 ## Noted for later — Shortcuts, Xcode, and local intent parsing
 
-Recorded 2026-09-16. Not scheduled, not authorized, and not part of the interface work
-in progress. It is written here so the reasoning is not lost, not because it is next.
+Recorded 2026-09-16. **Status 2026-10-23:** the Xcode project and three App Intents
+exist (README §The Xcode project) and entered version control on 2026-10-02; a Shortcut
+as a delivery target and a model-based intent parser remain unscheduled and
+unauthorized.
 
 **Siri cannot be the transcriber, and the question was the wrong one.** Verified
 2026-09-18 against Apple's documentation: `SpeechAnalyzer` and its `SpeechTranscriber`

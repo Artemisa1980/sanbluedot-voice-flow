@@ -25,7 +25,7 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
     var onCancelRecording: (() -> Void)?
     var onAcceptRejectedCleanup: ((String) -> Void)?
     var onDismissRejectedCleanup: (() -> Void)?
-    var onAddSnippet: ((String, String, String?) -> Void)?
+    var onAddSnippet: ((String, String, String?) -> Bool)?
     var onDeleteSnippet: ((UUID) -> Void)?
 
     private var onRecordPressAction: (() -> Void)?
@@ -326,7 +326,7 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
             self?.onClearHistory?()
         }
         viewModel.onAddSnippet = { [weak self] trigger, expansion, description in
-            self?.onAddSnippet?(trigger, expansion, description)
+            self?.onAddSnippet?(trigger, expansion, description) ?? false
         }
         viewModel.onDeleteSnippet = { [weak self] id in
             self?.onDeleteSnippet?(id)

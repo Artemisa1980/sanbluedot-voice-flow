@@ -190,7 +190,9 @@ final class HotkeyMonitor {
         guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return false }
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         guard keyCode == expectedKey else { return false }
-        return flagsMatch(event.flags, modeShortcut.modifiers)
+        return ShortcutMatch.flagsMatch(
+            event.flags, modeShortcut.modifiers, keyCode: expectedKey
+        )
     }
 
     /// Escape, alone or alongside the trigger the speaker is still holding.
@@ -205,12 +207,8 @@ final class HotkeyMonitor {
     }
 
     private func modifiersMatch(_ flags: CGEventFlags) -> Bool {
-        flagsMatch(flags, shortcut.modifiers)
-    }
-
-    private func flagsMatch(_ flags: CGEventFlags, _ modifiers: Set<ShortcutModifier>) -> Bool {
         // One implementation, in `ShortcutMatch`. Two copies of a matching rule is how
         // the cancellation rule was wrong in a place nothing could read it.
-        ShortcutMatch.flagsMatch(flags, modifiers)
+        ShortcutMatch.flagsMatch(flags, shortcut.modifiers, keyCode: shortcut.keyCode)
     }
 }

@@ -30,11 +30,28 @@ public enum ShortcutMatch {
         return expected
     }
 
+    /// Keys on which macOS sets `maskSecondaryFn` whether or not Fn is held: F1–F20 and
+    /// the arrow and navigation keys. Apple documents this on
+    /// `NSEvent.ModifierFlags.function`.
+    private static let functionFlaggedKeyCodes: Set<UInt16> = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+        105, 107, 113, 106, 64, 79, 80, 90,
+        123, 124, 125, 126, 114, 115, 116, 117, 119, 121,
+    ]
+
+    /// Whether the held modifiers are exactly the chord's. On a key that always carries
+    /// the Function flag, that flag is ignored unless the chord names `fn`, so a
+    /// `command+shift+f8` chord is not refused for a flag nobody pressed.
     public static func flagsMatch(
         _ flags: CGEventFlags,
-        _ modifiers: Set<ShortcutModifier>
+        _ modifiers: Set<ShortcutModifier>,
+        keyCode: UInt16? = nil
     ) -> Bool {
-        flags.intersection(relevant) == expectedFlags(for: modifiers)
+        var held = flags.intersection(relevant)
+        if let keyCode, functionFlaggedKeyCodes.contains(keyCode), !modifiers.contains(.fn) {
+            held.remove(.maskSecondaryFn)
+        }
+        return held == expectedFlags(for: modifiers)
     }
 
     /// Whether this key event should take the recording back.
