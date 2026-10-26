@@ -123,6 +123,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report["accepted"], 0)
         self.assertEqual(len(report["rejected"]), 1)
         self.assertEqual(report["violations"], [])
+        self.assertEqual(verdict(report)[0], "FAIL")
 
     def test_punctuation_that_moves_away_from_the_reference_fails(self) -> None:
         transcribed = [self.sample(1, "Hola, mundo.", "Hola, mundo.")]

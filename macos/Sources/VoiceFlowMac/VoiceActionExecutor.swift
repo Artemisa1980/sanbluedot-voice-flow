@@ -96,6 +96,9 @@ enum VoiceActionExecutor {
                         DispatchQueue.main.async {
                             NSSound.beep()
                             NSLog("VoiceFlow: %@ could not be opened: %@", appName, error.localizedDescription)
+                            // Preserve user speech on the clipboard if async launch fails (R3c safety).
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(appName, forType: .string)
                         }
                     }
                     return .openedApp(appName)

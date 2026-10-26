@@ -454,11 +454,11 @@ the one surface that does not use the sage canvas.
   no new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
-## Floating HUD — Microduck redesign, approved 2026-10-25, not built
+## Floating HUD — Microduck redesign, built 2026-10-25
 
 Approved by the owner from `docs/hud-redesign-02-bubble.html` (capsule) and
 `docs/microduck-mascot-01.html` §2–3 (the articulated duck). The contract above describes
-the shipped HUD until this lands; the build replaces it with this section. Every value
+the shipped HUD until this landed; the build replaces it with this section. Every value
 below is in points and is declared once in `HUDLayout`, as today. Where the preview and
 this text disagree, the preview's final CSS and script win: they are the measured source.
 
@@ -472,25 +472,25 @@ HUD; the duck's chest carries the brand.
 
 | Moment | Duck | Capsule |
 |---|---|---|
-| Key down, no voice yet | hidden | minimal `36 × 16`: coral lamp blinking, three dim dots |
+| Key down, no voice yet | hidden | minimal `40 × 18`: coral lamp blinking, three dim dots |
 | Released with no voice | never appeared | fades out; nothing else shows |
-| A voice is heard — level above `0.2` for `120 ms` | pops up (`520 ms` spring) with two trail dots | full `120 × 30` |
-| Processing, result, action | stays | full `120 × 30` |
-| Error, cancelled | stays, shakes its head | short `120 × 22` |
-| Mode change (nothing said) | hidden | short `120 × 22` |
+| A voice is heard — level above `0.2` | pops up (`360 ms` spring) with two trail dots | full `126 × 35` |
+| Processing, result, action | stays | full `126 × 35` |
+| Error, cancelled | stays, shakes its head | short `120 × 24` |
+| Mode change (nothing said) | hidden | short `120 × 24` |
 | Done | leaves with the capsule | fades out |
 
 ### Capsule
 
 - Radius always half the height. Fill black 85%, `0 6 14` shadow at 55%, `1pt` hairline
-  gradient white 28% → dot blue 40% → white 6%. Horizontal padding `11`.
-- Position in the panel: left edge `55` from the duck's left edge, bottom `49` from the
-  duck's feet. Panel bounds come from the content: about `175 × 82`.
+  gradient white 28% → dot blue 40% → white 6%. Horizontal padding `10`.
+- Position in the panel: left edge `52` from the duck's left edge, bottom `44` from the
+  duck's feet. Panel bounds declared in `HUDLayout`: `196 × 92`.
 - Size changes spring (`360 ms`, overshoot); content fades in over `220 ms`.
-- Full size, three rows `2.5` apart:
+- Full size, three rows `2.2` apart:
   1. Lamp `5`, status word mono heavy `5.1`, target app in an outlined chip (mono `3.6`,
      dot-blue border 55%, fill 10%, text `accentHover`), ESC ✕ at the right while recording.
-  2. Twelve bars `6 × 3.5`, radius `1`, gap `2`: bars 0–6 dot blue, 7–9 gold, 10–11
+  2. Twelve bars `7 × 3.6`, radius `1`, gap `2` (fills the 106pt row evenly): bars 0–6 dot blue, 7–9 gold, 10–11
      `onAir`, off at white 10%. Recording: live level, at least one lit. Processing: a
      five-bar wave moving one bar every `80 ms`. Result or action: all lit.
   3. Mono heavy `3.6`, white 60%: the stage at the left, the engine at the right.
@@ -557,10 +557,10 @@ the head. Reduced Motion snaps to each pose and drops breathing, nods and shakes
 The item is the only VoiceFlow surface always on screen, so it carries the run's state
 whether or not the HUD or the station window is open.
 
-- At rest it shows Meow-Bubble: a speech bubble with pointy cat ears and three sound
-  dots, drawn in code from a `24 × 24` path into an `18 × 18` template image, so macOS
-  tints it for the light bar, the dark bar and the pressed state instead of the drawing
-  choosing a colour. Selected from `docs/menubar-icon-proposals.html` on 2026-09-03.
+- At rest it shows the Microduck mascot: the articulated retro robot duck with TV helmet,
+  eye camera, duck beak, torso, and splayed open feet, drawn in code from a 24 × 24 coordinate
+  space into an 18 × 18 template image (`makeMicroduckIcon`), so macOS tints it automatically
+  for light and dark menu bars and active states. Option B Miniduck selected 2026-10-25.
 - During a run it shows one character instead: `●` recording, `…` processing, `✓`
   delivered, `!` failed. The check returns to the icon after 2.5 seconds, and only if the
   controller is still idle.

@@ -4,8 +4,9 @@ set -euo pipefail
 script_dir=${0:A:h}
 project_root=${script_dir:h}
 package_dir="$project_root/macos"
-# A new output directory per build keeps both the daily app and older previews intact.
+# A single latest output directory keeps both the daily app and disk usage clean.
 mkdir -p "$project_root/dist/previews"
+rm -rf "$project_root/dist/previews"/focus-home.* 2>/dev/null || true
 preview_root=$(mktemp -d "$project_root/dist/previews/focus-home.XXXXXX")
 preview_app="$preview_root/Focus Home Preview.app"
 

@@ -21,7 +21,7 @@ enum ExitStatus: Int32 {
 }
 
 func fail(_ message: String, _ status: ExitStatus) -> Never {
-    FileHandle.standardError.write(Data((message + "\n").utf8))
+    try? FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8))
     exit(status.rawValue)
 }
 
@@ -30,8 +30,8 @@ func emit(_ text: String) {
     guard let data = try? JSONEncoder().encode(["text": text]) else {
         fail("The transcript could not be encoded.", .failed)
     }
-    FileHandle.standardOutput.write(data)
-    FileHandle.standardOutput.write(Data("\n".utf8))
+    try? FileHandle.standardOutput.write(contentsOf: data)
+    try? FileHandle.standardOutput.write(contentsOf: Data("\n".utf8))
 }
 
 @main

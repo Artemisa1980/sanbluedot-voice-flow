@@ -67,7 +67,6 @@ def model_chain(preferred: str) -> tuple[str, ...]:
 # check then stops the chain (D-94).
 DEFAULT_TIMEOUT_SECONDS = 45.0
 
-# That measurement returned HTTP 503 on 6 of 9 calls to 3.7 and 2 of 6 to 3.6.
 # A 503 is Google reporting transient capacity, not a rejected request, and the retry
 # costs one extra call against a failure that would otherwise drop the speaker straight
 # to the unpunctuated transcript. The retry shares the one timeout budget, so recovery
@@ -435,7 +434,7 @@ class GeminiCleaner:
                     ) from exc
                 now = self._monotonic()
                 budget_after_backoff = (
-                    deadline - now - RETRY_BACKOFF_SECONDS
+                    attempt_deadline - now - RETRY_BACKOFF_SECONDS
                 )
                 if (
                     retries_left > 0
@@ -452,7 +451,13 @@ class GeminiCleaner:
                 raise _TransientProvider(exc.code, exc) from exc
             # `IncompleteRead` is an `HTTPException`, not an `OSError`; it ended the chain
             # in a traceback instead of counting as a dropped connection (D-95).
-            except (URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
+            except (
+                URLError,
+                TimeoutError,
+                OSError,
+                http.client.HTTPException,
+                UnicodeDecodeError,
+            ) as exc:
                 if _is_unreachable(exc):
                     # No route to the provider. The chain exists to survive one busy
                     # model, and every model behind this one is just as unreachable, so

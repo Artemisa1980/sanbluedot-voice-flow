@@ -109,12 +109,14 @@ public struct MicroduckView: View {
         self.ledColor = ledColor
     }
 
-    // Geometry box 170 × 200, scaled into 60 × 82 pt
+    // Geometry box 170 × 200, aspect-fit uniformly into 60 × 82 pt to prevent anamorphic distortion
     public var body: some View {
         Canvas { context, size in
-            let scaleX = size.width / 170.0
-            let scaleY = size.height / 200.0
-            context.scaleBy(x: scaleX, y: scaleY)
+            let scale = min(size.width / 170.0, size.height / 200.0)
+            let offsetX = (size.width - 170.0 * scale) / 2.0
+            let offsetY = (size.height - 200.0 * scale) / 2.0
+            context.translateBy(x: offsetX, y: offsetY)
+            context.scaleBy(x: scale, y: scale)
 
             if pose.isSitting {
                 drawSittingDuck(context: context, pose: pose)

@@ -92,7 +92,7 @@ sanblueᵈᵒᵗ voice-flow/
 │   ├── output_guard.py        # Conservative cleanup guard (R4 lexical preservation)
 │   ├── memory.py              # Learned corrections and vocabulary stores
 │   ├── snippets.py            # Voice snippet expansion and macro store
-│   ├── distill.py             # Distillation store for correction pairs (JSONL)
+│   ├── distill.py             # Distillation store for raw/cleaned pairs (local model training)
 │   ├── practice.py            # Pronunciation practice audio and word scoring
 │   ├── credentials.py         # macOS Keychain bridge for API credentials
 │   ├── doctor.py              # System health and environment diagnostics
@@ -126,6 +126,7 @@ sanblueᵈᵒᵗ voice-flow/
 │   │   │   ├── Keychain.swift          # Security framework wrapper
 │   │   │   ├── VoiceStationWindowView.swift # Main window UI and tokens
 │   │   │   ├── FocusHomeView.swift     # Multi-panel station and settings view
+│   │   │   ├── MicroduckView.swift     # Articulated mascot HUD (30 FPS TimelineView, kinematics)
 │   │   │   ├── RetroMicHUDView.swift   # On-screen HUD pill and level meter
 │   │   │   └── FloatingHUDController.swift # Borderless floating HUD window
 │   │   └── VoiceFlowAppleCleaner/      # On-device Apple Intelligence helper

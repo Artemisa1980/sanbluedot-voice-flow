@@ -54,6 +54,9 @@ public final class HUDViewModel: ObservableObject {
     /// If false during recording, only the minimal capsule shows.
     @Published public var voiceHeard: Bool = false
 
+    /// Tracks visibility of the floating HUD to pause the 30 FPS animation when ordered out.
+    @Published public var isVisible: Bool = false
+
     public init() {}
 }
 
@@ -61,6 +64,7 @@ public final class HUDViewModel: ObservableObject {
 /// Articulated mascot and thought bubble capsule beside the duck.
 public struct RetroMicHUDView: View {
     @ObservedObject public var viewModel: HUDViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var modeChangeTime: TimeInterval = ProcessInfo.processInfo.systemUptime
 
     public init(viewModel: HUDViewModel) {
@@ -72,7 +76,9 @@ public struct RetroMicHUDView: View {
 
     private var shouldShowDuck: Bool {
         switch viewModel.mode {
-        case .recording, .processing, .completed, .actionExecuted, .failed, .cancelled:
+        case .recording:
+            return viewModel.voiceHeard
+        case .processing, .completed, .actionExecuted, .failed, .cancelled:
             return true
         case .modeChanged:
             return false
@@ -81,7 +87,12 @@ public struct RetroMicHUDView: View {
 
     private var bubbleSize: (width: CGFloat, height: CGFloat) {
         switch viewModel.mode {
-        case .recording, .processing, .completed, .actionExecuted:
+        case .recording:
+            if !viewModel.voiceHeard {
+                return (HUDLayout.capsuleMinSize.width, HUDLayout.capsuleMinSize.height)
+            }
+            return (HUDLayout.capsuleFullSize.width, HUDLayout.capsuleFullSize.height)
+        case .processing, .completed, .actionExecuted:
             return (HUDLayout.capsuleFullSize.width, HUDLayout.capsuleFullSize.height)
         case .failed, .cancelled, .modeChanged:
             return (HUDLayout.capsuleShortSize.width, HUDLayout.capsuleShortSize.height)
@@ -89,6 +100,20 @@ public struct RetroMicHUDView: View {
     }
 
     private func currentPose(time: TimeInterval, uptime: TimeInterval) -> DuckPose {
+        if reduceMotion {
+            switch viewModel.mode {
+            case .recording:
+                var base: DuckPose = .recordingSitting
+                let lvl = viewModel.audioLevel
+                base.jaw = lvl > 0.20 ? Double(min(1.0, lvl * 1.25)) : 0.0
+                return base
+            case .processing:
+                return .recordingSitting
+            case .completed, .actionExecuted, .failed, .cancelled, .modeChanged:
+                return .standFront
+            }
+        }
+
         let breathingPhase = time * 2.8
         let wigglePhase = time * 3.8
 
@@ -163,7 +188,7 @@ public struct RetroMicHUDView: View {
     }
 
     public var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !viewModel.isVisible)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let uptime = ProcessInfo.processInfo.systemUptime
             let pose = currentPose(time: time, uptime: uptime)
@@ -355,12 +380,12 @@ public struct RetroMicHUDView: View {
                 }
             }
 
-            // Row 2: 12-bar equalizer / processing wave (fills width evenly)
+            // Row 2: 12-bar equalizer / processing wave (fills 106pt column width evenly: 12*7 + 11*2 = 106)
             HStack(spacing: 2.0) {
                 ForEach(0..<12) { i in
                     RoundedRectangle(cornerRadius: 1.0)
                         .fill(barColor(for: i))
-                        .frame(width: 6.0, height: 3.6)
+                        .frame(width: 7.0, height: 3.6)
                 }
             }
 

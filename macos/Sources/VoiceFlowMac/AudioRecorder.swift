@@ -40,6 +40,15 @@ final class AudioRecorder {
     /// The take being written, so a sweep never deletes it.
     var liveTakeURL: URL? { outputURL }
 
+    deinit {
+        if let recorder, recorder.isRecording {
+            recorder.stop()
+        }
+        if let outputURL {
+            try? removeTemporaryAudio(at: outputURL)
+        }
+    }
+
     static func requestAccess(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:

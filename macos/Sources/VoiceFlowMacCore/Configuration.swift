@@ -153,8 +153,6 @@ public enum SpeechEngine: String, CaseIterable, Sendable {
     }
 }
 
-/// The Gemini model the window offers.
-///
 /// The Gemini models the window offers.
 ///
 /// `gemini-3.8-flash` is the preferred Flash model, and `gemini-4-argon` is available

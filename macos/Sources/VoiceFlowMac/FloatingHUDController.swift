@@ -69,6 +69,7 @@ final class FloatingHUDController {
         processingTimer = nil
 
         viewModel.mode = .recording
+        viewModel.voiceHeard = false
         announceState()
         viewModel.cleanerName = cleanerName
         viewModel.speechLabel = speechLabel
@@ -260,6 +261,7 @@ final class FloatingHUDController {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
         panel.orderOut(nil)
+        viewModel.isVisible = false
     }
 
     /// Read the new state aloud: the capsule appears over another app, where nothing
@@ -282,6 +284,7 @@ final class FloatingHUDController {
     /// moment before snapping back. A zero-duration group through the same animator
     /// replaces that animation instead of racing it.
     private func showAtFullOpacity() {
+        viewModel.isVisible = true
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
             panel.animator().alphaValue = 1.0
@@ -299,11 +302,14 @@ final class FloatingHUDController {
             guard let self, self.animationGeneration == currentGen else { return }
             self.panel.orderOut(nil)
             self.panel.alphaValue = 1.0
+            self.viewModel.isVisible = false
         })
     }
 
     private func positionPanel() {
-        guard let screen = NSScreen.main else { return }
+        let mouseLocation = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
+        guard let screen = targetScreen else { return }
         let screenRect = screen.visibleFrame
         // From `HUDLayout`, the same values the panel is created with. Written out here
         // as literals, this method quietly resized the capsule back to the previous

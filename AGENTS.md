@@ -3,11 +3,11 @@
 These instructions apply to the entire `sanblueᵈᵒᵗ voice-flow` project.
 
 - Preserve the identity assigned by the owner. Shared context and another model's files never rename the current model.
-- Read `framework.md` before changing product behavior. Use `proposal.md` for implementation sequence and `README.md` for current commands.
+- Read `framework.md` before changing product behavior. Use `proposal.md` for implementation sequence, `README.md` for current commands, and `docs/WalkthroughHierarchy.md` for the architectural walkthrough and file hierarchy across models.
 - Read `relay-log.md` only when resuming recorded work, then replace closed state with the current handoff.
 - Open work lives in `backlog.md`; its first section says how to work it. A new finding gets a row there in the same work cycle.
 - Keep project files in English and operational Markdown free of conversation history.
-- This repository is a station repo. `README.md` carries the `SANDY.SYSDEV v<version> — retro voice-station` H1, the `## License` section and the plain-markdown footer line defined in `sanbluedot-signature-guide.md` §3d — no masthead table, no `site-footer` div, no emoji. The H1 version copies `CFBundleShortVersionString` and moves with each release.
+- This repository is a station repo. `README.md` carries the `SANDY.SYSDEV v<version> — retro voice-station` H1, the `## License` section and the plain-markdown footer line defined in `../../sanbluedot-signature-guide.md` §3d — no masthead table, no `site-footer` div, no emoji. The H1 version copies `CFBundleShortVersionString` and moves with each release.
 - Keep audio, transcripts, vocabulary, corrections, model weights, credentials, and machine-local configuration out of version control.
 - Do not download models, install dependencies, enable cloud processing, or transmit user data without the owner's explicit approval for that action.
 - A model, helper build or backup bundle that nothing uses any more is deleted, so the Mac does not fill with weight it carries for nothing. `backlog.md` §F lists what is on disk, what uses it, and what is waiting to go. Update it whenever a model arrives or stops being used, and name each deletion to the owner before running it: deleting cannot be undone.

@@ -286,6 +286,8 @@ def verdict(report: dict[str, Any]) -> tuple[str, str]:
     """
     if report["violations"]:
         return "FAIL", "accepted output changed words the guard was expected to block"
+    if report.get("samples", 0) > 0 and report.get("accepted", 0) == 0:
+        return "FAIL", "all cleaner outputs were rejected by the safety guard"
     if not report["before"].reference_total:
         return (
             "INVALID",

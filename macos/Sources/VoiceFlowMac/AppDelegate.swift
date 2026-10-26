@@ -730,19 +730,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "python3", "-c",
                 "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}'); sys.exit(0 if sys.version_info >= (3, 11) else 1)"
             ]
+            var environment = ProcessInfo.processInfo.environment
+            let inheritedPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+            environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(inheritedPath)"
+            process.environment = environment
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = Pipe()
             do {
                 try process.run()
+                let watchdog = DispatchWorkItem { [weak process] in
+                    if let process, process.isRunning {
+                        process.terminate()
+                    }
+                }
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5.0, execute: watchdog)
                 process.waitUntilExit()
+                watchdog.cancel()
                 let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if process.terminationStatus != 0 {
                         self.controlWindow.addLog(
-                            "warning: Python \(output) detected · VoiceFlow engine requires Python 3.11 or newer",
+                            "warning: Python \(output.isEmpty ? "unknown" : output) detected · VoiceFlow engine requires Python 3.11 or newer",
                             isHighlight: true
                         )
                     } else {
@@ -924,7 +935,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// failure states looked like.
     private func showStatusIcon() {
         guard let button = statusItem.button else { return }
-        button.image = Self.makeMeowBubbleIcon()
+        button.image = Self.makeMicroduckIcon()
         button.title = ""
         button.imagePosition = .imageOnly
     }
@@ -936,17 +947,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.imagePosition = .noImage
     }
 
-    /// Meow-Bubble: a speech bubble with pointy cat ears and sound dots.
+    /// Microduck Mascot: the articulated retro robot duck with TV helmet, eye camera,
+    /// duck beak, torso, and splayed open feet ("patitas abiertas").
     /// Vector template image: black fill/stroke with alpha, automatically tinted
     /// by macOS for dark/light menubar and active state.
-    static func makeMeowBubbleIcon() -> NSImage {
+    static func makeMicroduckIcon() -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size, flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
 
             ctx.saveGState()
 
-            // Map 24x24 SVG coordinate space into rect (with Y inverted so (0,0) is top-left like SVG)
+            // Map 24x24 coordinate space into rect (with Y inverted so (0,0) is top-left)
             let scaleX = rect.width / 24.0
             let scaleY = rect.height / 24.0
             ctx.translateBy(x: 0, y: rect.height)
@@ -955,47 +967,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let color = NSColor.black.cgColor
             ctx.setStrokeColor(color)
             ctx.setFillColor(color)
-            ctx.setLineWidth(1.8)
+            ctx.setLineWidth(1.4)
             ctx.setLineCap(.round)
             ctx.setLineJoin(.round)
 
-            // 1. Cat Ears (Solid Polygons)
-            let leftEar = CGMutablePath()
-            leftEar.move(to: CGPoint(x: 6, y: 5))
-            leftEar.addLine(to: CGPoint(x: 4, y: 1))
-            leftEar.addLine(to: CGPoint(x: 9, y: 3.5))
-            leftEar.closeSubpath()
-            ctx.addPath(leftEar)
-            ctx.fillPath()
-
-            let rightEar = CGMutablePath()
-            rightEar.move(to: CGPoint(x: 18, y: 5))
-            rightEar.addLine(to: CGPoint(x: 20, y: 1))
-            rightEar.addLine(to: CGPoint(x: 15, y: 3.5))
-            rightEar.closeSubpath()
-            ctx.addPath(rightEar)
-            ctx.fillPath()
-
-            // 2. Speech Bubble Outline
-            let bubble = CGMutablePath()
-            bubble.move(to: CGPoint(x: 4, y: 11))
-            bubble.addCurve(to: CGPoint(x: 12, y: 4), control1: CGPoint(x: 4, y: 7), control2: CGPoint(x: 7.5, y: 4))
-            bubble.addCurve(to: CGPoint(x: 20, y: 11), control1: CGPoint(x: 16.5, y: 4), control2: CGPoint(x: 20, y: 7))
-            bubble.addCurve(to: CGPoint(x: 12, y: 18), control1: CGPoint(x: 20, y: 15), control2: CGPoint(x: 16.5, y: 18))
-            bubble.addCurve(to: CGPoint(x: 8.7, y: 17.4), control1: CGPoint(x: 10.8, y: 18), control2: CGPoint(x: 9.7, y: 17.8))
-            bubble.addLine(to: CGPoint(x: 4, y: 19))
-            bubble.addLine(to: CGPoint(x: 4.8, y: 15.6))
-            bubble.addCurve(to: CGPoint(x: 4, y: 11), control1: CGPoint(x: 4.3, y: 14.3), control2: CGPoint(x: 4, y: 12.7))
-            bubble.closeSubpath()
-            ctx.addPath(bubble)
+            // 1. Robot Head Shell (rounded TV helmet)
+            let headRect = CGRect(x: 4.5, y: 2.5, width: 15.0, height: 11.0)
+            let headPath = CGPath(roundedRect: headRect, cornerWidth: 3.5, cornerHeight: 3.5, transform: nil)
+            ctx.addPath(headPath)
             ctx.strokePath()
 
-            // 3. Three sound/dictation dots in the center
-            let dotRadius: CGFloat = 0.9
-            for cx in [9.0, 12.0, 15.0] {
-                let dotRect = CGRect(x: cx - dotRadius, y: 11.0 - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
-                ctx.fillEllipse(in: dotRect)
-            }
+            // 2. Side Ear Brackets / Antennas
+            ctx.fill(CGRect(x: 2.8, y: 5.5, width: 1.7, height: 4.5))
+            ctx.fill(CGRect(x: 19.5, y: 5.5, width: 1.7, height: 4.5))
+
+            // 3. Centered Camera Eye
+            let eyeCenter = CGPoint(x: 12.0, y: 7.2)
+            ctx.addArc(center: eyeCenter, radius: 2.7, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+            ctx.strokePath()
+            ctx.addArc(center: eyeCenter, radius: 1.1, startAngle: 0, endAngle: .pi * 2, clockwise: false)
+            ctx.fillPath()
+
+            // 4. Duck Bill (curved friendly beak)
+            let billRect = CGRect(x: 7.0, y: 11.5, width: 10.0, height: 3.2)
+            let billPath = CGPath(roundedRect: billRect, cornerWidth: 1.6, cornerHeight: 1.6, transform: nil)
+            ctx.addPath(billPath)
+            ctx.fillPath()
+
+            // 5. Torso / Pelvis Block
+            let torsoRect = CGRect(x: 8.5, y: 14.2, width: 7.0, height: 3.6)
+            let torsoPath = CGPath(roundedRect: torsoRect, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
+            ctx.addPath(torsoPath)
+            ctx.fillPath()
+
+            // 6. Two Wide-Open Splayed Duck Feet ("patitas abiertas")
+            let leftFoot = CGRect(x: 3.2, y: 17.5, width: 7.0, height: 3.8)
+            ctx.addPath(CGPath(roundedRect: leftFoot, cornerWidth: 1.9, cornerHeight: 1.9, transform: nil))
+            ctx.fillPath()
+
+            let rightFoot = CGRect(x: 13.8, y: 17.5, width: 7.0, height: 3.8)
+            ctx.addPath(CGPath(roundedRect: rightFoot, cornerWidth: 1.9, cornerHeight: 1.9, transform: nil))
+            ctx.fillPath()
 
             ctx.restoreGState()
             return true

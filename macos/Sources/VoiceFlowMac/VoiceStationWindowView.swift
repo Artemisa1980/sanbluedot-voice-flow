@@ -165,21 +165,12 @@ extension EnvironmentValues {
     }
 }
 
-/// Keyboard focus drawn in the station's own colour.
+/// Suppress the system keyboard focus ring so controls rely solely on the station's
+/// own selection styling without a foreign outline (owner decision 2026-10-26).
 private struct FocusOutline: ViewModifier {
-    @FocusState private var isFocused: Bool
-
     func body(content: Content) -> some View {
         content
             .focusEffectDisabled()
-            .focused($isFocused)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(VoiceStationTokens.dotBlue, lineWidth: 2)
-                    .padding(-2)
-                    .opacity(isFocused ? 1 : 0)
-                    .allowsHitTesting(false)
-            )
     }
 }
 
@@ -228,8 +219,7 @@ extension View {
     /// fill and lamp; the macOS ring is a second, foreign selection language on top.
     /// `focusEffectDisabled` is macOS 14, and this app supports 13, so it is guarded.
     @ViewBuilder
-    /// The system ring is replaced, not removed: removing it left keyboard focus
-    /// invisible (D-74). One dot-blue outline, drawn only while the control has focus.
+    /// Suppress the system focus ring so controls use the station's own visual state.
     func voiceFlowNoFocusRing() -> some View {
         modifier(FocusOutline())
     }
@@ -2032,11 +2022,12 @@ private struct HistoryEntryRow: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             Text("[\(record.timeString)]")
                 .font(VoiceStationTokens.mono(size: scale.time, weight: .bold))
                 .monospacedDigit()
                 .foregroundColor(palette.ink)
+                .layoutPriority(1)
 
             pill(modeBadge, fill: VoiceStationTokens.dotBlue)
             if record.fixedText != nil {
@@ -2051,18 +2042,20 @@ private struct HistoryEntryRow: View {
                 .foregroundColor(palette.inkDim)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .minimumScaleFactor(0.85)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("TOTAL")
                     .font(VoiceStationTokens.mono(size: scale.totalLabel, weight: .bold))
-                    .tracking(1.1)
+                    .tracking(1.0)
                     .foregroundColor(palette.inkDim)
                 Text(String(format: "%.1f s", record.latencySeconds))
                     .font(VoiceStationTokens.pixel(scale.total))
                     .foregroundColor(palette.ink)
             }
+            .layoutPriority(2)
             .accessibilityElement(children: .combine)
         }
     }

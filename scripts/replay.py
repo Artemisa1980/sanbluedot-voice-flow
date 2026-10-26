@@ -22,6 +22,7 @@ from phase2_report import DEFAULT_CORPUS, DEFAULT_RESULTS, percentile, word_erro
 
 from sanbluedot_voiceflow.cleaners import (
     CLEANER_NAMES,
+    DEFAULT_APPLE_BINARY,
     DEFAULT_GEMINI_MODEL,
     build_cleaner,
 )
@@ -129,12 +130,14 @@ def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
         if (args.no_memory or args.no_vocab_prompt)
         else build_initial_prompt(load_vocabulary(), args.prompt_budget)
     )
+    cleaner = build_cleaner(
+        args.cleaner,
+        gemini_model=args.gemini_model,
+        apple_binary=getattr(args, "apple_bin", DEFAULT_APPLE_BINARY),
+    )
     if getattr(args, "transcriber", "whisper") == "parakeet":
         # The same helper the application runs; Parakeet reads no vocabulary prompt.
         transcriber = ParakeetTranscriber(model_dir=args.parakeet_models, binary=args.parakeet_bin)
-        cleaner = build_cleaner(
-            args.cleaner, gemini_model=args.gemini_model
-        )
         return DictationPipeline(transcriber=transcriber, cleaner=cleaner, corrections=corrections)
     transcriber = WhisperCppTranscriber(
         model_path=args.whisper_model,
@@ -143,10 +146,6 @@ def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
         initial_prompt=prompt,
         threads=args.threads,
         beam_size=args.beam_size,
-    )
-    cleaner = build_cleaner(
-        args.cleaner,
-        gemini_model=args.gemini_model,
     )
     return DictationPipeline(transcriber=transcriber, cleaner=cleaner, corrections=corrections)
 
@@ -163,6 +162,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--language", default="auto", choices=["auto", "en", "es"])
     parser.add_argument("--cleaner", default="literal", choices=list(CLEANER_NAMES))
     parser.add_argument("--gemini-model", default=DEFAULT_GEMINI_MODEL)
+    parser.add_argument(
+        "--apple-bin",
+        default=DEFAULT_APPLE_BINARY,
+        help="The helper that reaches Apple's on-device model, for --cleaner apple.",
+    )
     parser.add_argument("--no-vocab-prompt", action="store_true")
     parser.add_argument("--prompt-budget", type=int, default=PROMPT_CHAR_BUDGET)
     parser.add_argument("--threads", type=int)

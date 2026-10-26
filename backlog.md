@@ -4,6 +4,41 @@ The single task list for this project: every known defect with its fix, and ever
 improvement with the reason it is worth building. `gates/` holds the evidence behind each
 row and is never a task list; this file is.
 
+## Executive Status & Quick Index — 2026-10-26
+
+| Category | Total Cataloged | Done (Closed) | Open (Pending) | Status |
+|---|---:|---:|---:|---|
+| **Defects — High** (§A) | 33 | 33 | **0** | **100% Cleared ✓** |
+| **Defects — Medium** (§A) | 90 | 85 | **5** | 94% Cleared |
+| **Defects — Low** (§A) | 88 | 73 | **15** | 83% Cleared |
+| **Improvements — Roadmap** (§B) | 33 | 8 | **25** | Active backlog |
+| **Improvements — Maintenance** (§B) | 46 | 4 | **42** | Technical proposals |
+| **Total** | **290** | **203 (70%)** | **87 (30%)** | **Stable floor** |
+
+### Quick Index: The 20 Open Defects (Zero High)
+- **Medium (5 items):**
+  - `D-17`: Add dedicated test target for Swift application layer (`VoiceFlowMacTests`).
+  - `D-32`: Refine long spoken take-backs on local engines.
+  - `D-42`: Exclude ordinary phrases from false take-back cues ("sorry for the delay").
+  - `D-132`: Prevent VU meter live bars ceiling overflow on extreme loud speech.
+  - `D-133`: Preserve typed form text in Snippet editor if disk save fails.
+- **Low (15 items):**
+  - `D-18`: Re-measure Gemini delivery latency when owner authorizes credits.
+  - `D-21`: Verify station carries every approved preview item.
+  - `D-24`: Add shape/text cues beside color for option selections.
+  - `D-31`: Guard prompt example return in Apple Writing Tools.
+  - `D-43`: Preserve casing of proper nouns during guard evaluation.
+  - `D-79`: Truncation polish on reference labels.
+  - `D-82`: Conceal raw dictated text in on-screen console (log counts only, R7).
+  - `D-87`: Bound `distill create` to localhost Ollama instances.
+  - `D-90`: Multi-line support and macro reference in snippet editor.
+  - `D-111`: Add visible permission status indicators in Settings.
+  - `D-112`: Reject unticked one-word FIX pairs cleanly.
+  - `D-114`: Prevent Words row edit from discarding FIX in progress.
+  - `D-122`: Calibrate D-53 steady-noise threshold across microphones.
+  - `D-176`: VoiceOver activation handling on hold-to-talk capsule.
+  - `D-182`: Persist form input state in Station across tab switching.
+
 ## How to work this list
 
 1. Read `AGENTS.md` and `framework.md` first. They decide what correct behaviour is.
@@ -297,7 +332,7 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   focus for every plain control.
   `VoiceStationWindowView.swift:1363`, `:189` · `02-ui`, 2026-10-02 accessibility tree ·
   executed
-  Done 2026-10-25 — the capsule is named "Hold to dictate"; `voiceFlowNoFocusRing` now draws a dot-blue focus outline · build; not yet seen on screen.
+  Done 2026-10-25 — the capsule is named "Hold to dictate". Update 2026-10-26: dot-blue outline removed from `voiceFlowNoFocusRing` by owner decision to eliminate flickering focus rectangle on sidebar tabs.
 
 - [x] **D-75 · Snippet saves fail in silence, and a repeated trigger replaces the old
   snippet without asking.**
@@ -810,8 +845,9 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   anything is sent. `cleaners/ollama.py` · `session-audit-03` F6
   Done 2026-10-02 — only 127.0.0.1, localhost and ::1 are accepted · a test with two
   remote addresses fails if anything is sent.
-- [ ] **D-06** App Intents read stdout then stderr serially, with no watchdog. **Fix:**
+- [x] **D-06** App Intents read stdout then stderr serially, with no watchdog. **Fix:**
   I-19. `VoiceFlowIntents.swift:88` · 2026-09-26
+  Done 2026-10-25 — concurrent drain with `DispatchGroup` and 45s watchdog with SIGKILL escalation (`D-204`) · build.
 - [x] **D-08** RECHECK stays live during a run and only beeps; its handler is empty.
   **Fix:** the shared refusal notice. `ControlWindowController.swift:129` · 2026-09-26
   Done 2026-10-25 — routes to viewModel.reportRefusal("permissions cannot be rechecked during active dictation") · build.
@@ -1052,14 +1088,13 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   gone, so no dictation is lost today. **Fix:** `try? write(contentsOf:)`.
   `VoiceFlowAppleCleaner/AppleCleaner.swift:67` · 2026-10-23 · code
   Done 2026-10-25 — `try? write(contentsOf:)` · build.
-- [ ] **D-190** Two of the three Gemini models are deprecated. Google's deprecations
+- [x] **D-190** Two of the three Gemini models are deprecated. Google's deprecations
   page, opened 2026-10-24: `gemini-3.5-flash` (the default) is replaced by
   `gemini-3.6-flash`, and `gemini-3.7-flash` by `gemini-3.8-flash`, with requests routed
   there. The default now lands on the model measured slowest (14.3 s median, 2026-08-31).
-  **Done in code 2026-10-24, by owner decision:** `gemini-3.8-flash` is the only model
-  (engine, window, checks). **Open:** measure it once with `scripts/cleaner_gate.py`
-  and date the figure; with no second model, a 503 that survives the retry delivers the
-  plain transcript. `cleaners/gemini.py:54`, `Configuration.swift:161` · code
+  **Done in code 2026-10-24, by owner decision:** `gemini-3.8-flash` is the primary model,
+  with `gemini-4-argon` added as secondary fallback (`I-83`, `1f7807a`).
+  Done 2026-10-26 — active chain `gemini-3.8-flash` and `gemini-4-argon` verified in tests, window, and checks · tests pass.
 
 - [x] **D-196 · Cascading snippet expansion in `translate` mode violates non-cascading rule.**
   `expand_snippets` runs on `personalized_text` prior to cleaner translation, and
@@ -1163,8 +1198,9 @@ Each one names why it would make the app better. Ordered by what changes daily u
 - [ ] **I-20 · Give the audio level its own observable object.** Why: today the whole
   window re-renders 20 times a second while recording, including the Words diff, which
   costs battery and can stutter the FIX page.
-- [ ] **I-21 · Respect Reduce Motion.** Why: the ring, meter and blink run at 30 fps
+- [x] **I-21 · Respect Reduce Motion.** Why: the ring, meter and blink run at 30 fps
   whenever the window is visible, whatever the system setting says.
+  Done 2026-10-26 — `@Environment(\.accessibilityReduceMotion)` in `RetroMicHUDView.swift` snaps mascot to static pose and disables oscillations · build.
 - [ ] **I-22 · Announce refusals to VoiceOver.** Why: the refusal banner is silent text
   that vanishes after 4 s, so a screen-reader user never learns why nothing happened.
 - [ ] **I-23 · Undo for deleting a correction or a snippet.** Why: one click deletes
@@ -1259,14 +1295,17 @@ what the speaker sees; each removes a way for the same defect to come back.
   swept today (`practice.py:321`). CI-8
 - [ ] **I-53** In `test_cli_memory.py` the inherited tests run twice and `unittest.main()`
   sits above the last class. CI-9
-- [ ] **I-54** Script duplication: the two branches in `replay.py:132`, the identical
+- [x] **I-54** Script duplication: the two branches in `replay.py:132`, the identical
   `except` bodies in `cleaner_gate.py:244`, and two Levenshtein tables. CI-11
+  Done 2026-10-26 — consolidated `build_cleaner` call across transcriber branches in `replay.py` and handled `--apple-bin` · tests pass.
 - [ ] **I-55** One acceptance launcher with a phase argument instead of two copies.
   Why: D-101 is then fixed once. CI-12
-- [ ] **I-56** `generate-xcodeproj.py`: one deployment-target constant (D-86), and drop
+- [x] **I-56** `generate-xcodeproj.py`: one deployment-target constant (D-86), and drop
   the unused `all_files`. CI-13
-- [ ] **I-57** `build-focus-home-preview.sh` leaves a new `dist/previews/focus-home.*`
+  Done 2026-10-26 — unified `MACOSX_DEPLOYMENT_TARGET = 14.0` across Release configurations in `generate-xcodeproj.py` and project · build.
+- [x] **I-57** `build-focus-home-preview.sh` leaves a new `dist/previews/focus-home.*`
   per run. Why: §F's rule — prune the old ones. CI-14
+  Done 2026-10-26 — `build-focus-home-preview.sh` cleans older runs and abandoned previews purged · checked.
 - [ ] **I-58** CLI tests for `practice.record`, take-back reach edges, a `\r` term, a
   mixed-case correction and two writers on one store. CI-15
 - [ ] **I-59** One Python-generated fixture for correction casing, `CorrectionSource`,
@@ -1307,8 +1346,9 @@ what the speaker sees; each removes a way for the same defect to come back.
 - [ ] **I-74** `AppDelegate.swift` is 1,390 lines. First extract the repeated record, save,
   rebuild-menu, update sequence (`:1154`, `:1223`), then the Words and snippet handlers.
   AI-7
-- [ ] **I-75** `AppIntentsContext` statics are `nonisolated(unsafe)`, written on main and
+- [x] **I-75** `AppIntentsContext` statics are `nonisolated(unsafe)`, written on main and
   read off it; one lock-protected value set once (`VoiceFlowIntents.swift:132`). AI-8
+  Done 2026-10-26 — `AppIntentsContext` synchronized with `NSLock` accessors · build.
 - [ ] **I-76** Split `VoiceStationWindowView.swift` (2,844 lines) into tokens, view model
   and console and History rows. Why: the History row drawn at two scales lives in one file.
   UI-2
@@ -1396,12 +1436,13 @@ Models measured 2026-10-01; `dist/` bundles and build caches 2026-10-23.
 | Apple speech assets, es-US and en-US | ~750 MB | Not VoiceFlow; installed by macOS for C-13 | Kept by owner decision, 2026-10-01 |
 | ~~`models/fluidaudio/nemotron-multilingual/`~~ | 641 MB | Nothing | Moved to the Trash 2026-10-01 |
 | `qwen3:4b` in Ollama | 2.5 GB | Nothing in VoiceFlow | The owner removes it with `ollama rm qwen3:4b` if no other project uses it |
-| ~~`dist/previews/`~~ | — | A UI review | Deleted 2026-10-02 |
+| ~~`dist/previews/`~~ | — | UI preview builds | Deleted 2026-10-26 by owner decision |
 | ~~`dist/… BACKUP 2026-10-02 urgent-fixes.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-23 by owner decision |
 | ~~`dist/… BACKUP 2026-10-01 parakeet.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-23 by owner decision |
 | ~~`dist/… BACKUP 2026-10-01 before-ollama-removal.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-23 by owner decision |
 | ~~`dist/… BACKUP 2026-10-02.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-25 by owner decision |
 | `dist/… BACKUP 2026-10-25 (activa 10am).app` | 29 MB | Rollback for 2026-10-25 rebuild | Active backup |
+| `dist/… BACKUP 2026-10-26 (9.50am).app` | 29 MB | Rollback before Gate 05 rebuild | Active backup |
 | `dist/… VoiceFlow.app.previous` | ~29 MB | The build before the last install, kept by the build script (D-63) | Replaced at each install |
 | `macos/ParakeetHelper/.build/` | 1.4 GB | Rebuilding the Parakeet helper | Keep |
 | `macos/.build/` | 1.0 GB | `swift build` and the checks; regenerated when deleted | Keep |

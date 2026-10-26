@@ -159,8 +159,35 @@ enum IntentFailure: Error, CustomLocalizedStringResourceConvertible {
 /// arrives before launch has finished is refused with that reason rather than crashing.
 @available(macOS 14.0, *)
 enum AppIntentsContext {
-    nonisolated(unsafe) static var configuration: VoiceFlowConfiguration? = nil
-    nonisolated(unsafe) static var engineSourceRoot: URL?
+    private static let lock = NSLock()
+    private static var _configuration: VoiceFlowConfiguration? = nil
+    private static var _engineSourceRoot: URL? = nil
+
+    static var configuration: VoiceFlowConfiguration? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _configuration
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _configuration = newValue
+        }
+    }
+
+    static var engineSourceRoot: URL? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _engineSourceRoot
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _engineSourceRoot = newValue
+        }
+    }
 }
 
 @available(macOS 14.0, *)

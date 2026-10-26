@@ -1,3 +1,4 @@
+import io
 import json
 import socket
 import unittest
@@ -115,7 +116,7 @@ class Clock:
 
 
 def unavailable(status: int = 503) -> HTTPError:
-    return HTTPError("https://example.invalid", status, "Service Unavailable", {}, None)
+    return HTTPError("https://example.invalid", status, "Service Unavailable", {}, io.BytesIO())
 
 
 def build(
@@ -747,3 +748,52 @@ class IncompleteReadTests(unittest.TestCase):
         with self.assertRaises(CleanupError) as raised:
             build(opener).clean("hola")
         self.assertIn(DEFAULT_MODEL, str(raised.exception))
+
+
+class ProductionChainFallbackTests(unittest.TestCase):
+    """Verify production chain fallback from gemini-3.8-flash to gemini-4-argon."""
+
+    def test_503_capacity_error_falls_back_to_gemini_4_argon(self) -> None:
+        opener = SequenceRecorder([
+            unavailable(status=503),
+            unavailable(status=503),
+            reply("Texto limpio desde Argon."),
+        ])
+        cleaner = build(opener, fallback=True)
+        result = cleaner.clean("texto crudo")
+        self.assertEqual(result, "Texto limpio desde Argon.")
+        self.assertEqual(cleaner.answered_with, "gemini-4-argon")
+        self.assertEqual(len(opener.requests), 3)
+        self.assertIn("gemini-3.8-flash", opener.requests[0].full_url)
+        self.assertIn("gemini-3.8-flash", opener.requests[1].full_url)
+        self.assertIn("gemini-4-argon", opener.requests[2].full_url)
+
+    def test_corrupt_utf8_bytes_drop_connection_and_fall_back_to_next_model(self) -> None:
+        class CorruptBytesResponse:
+            def __enter__(self) -> "CorruptBytesResponse":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b"\x80\x81\x82 corrupt bytes"
+
+        class CorruptOpener(Recorder):
+            def __init__(self) -> None:
+                super().__init__()
+                self.calls = 0
+
+            def __call__(self, request: object, timeout: float | None = None) -> object:
+                self.requests.append(request)
+                self.timeouts.append(timeout)
+                self.calls += 1
+                if self.calls == 1:
+                    return CorruptBytesResponse()
+                return FakeResponse(reply("Texto recuperado."))
+
+        opener = CorruptOpener()
+        cleaner = build(opener, fallback=True)
+        result = cleaner.clean("texto crudo")
+        self.assertEqual(result, "Texto recuperado.")
+        self.assertEqual(cleaner.answered_with, "gemini-4-argon")
