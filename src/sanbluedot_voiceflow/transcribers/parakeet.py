@@ -65,6 +65,7 @@ class ParakeetTranscriber:
                 command,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=self.timeout_seconds,
                 check=False,
             )
@@ -82,13 +83,21 @@ class ParakeetTranscriber:
         if status != 0:
             raise TranscriptionError(f"Parakeet failed: {detail or 'unknown error'}")
 
-        # The answer is the last line: anything a library prints before it is not the
-        # transcript.
+        # The answer is the JSON line emitted by the helper; walk backwards to skip
+        # any trailing diagnostic or runtime shutdown lines (D-199).
         lines = [line for line in (completed.stdout or "").splitlines() if line.strip()]
-        try:
-            text = json.loads(lines[-1])["text"]
-        except (IndexError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise TranscriptionError("Parakeet returned an invalid answer.") from exc
+        data: dict[str, object] | None = None
+        for line in reversed(lines):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict) and "text" in parsed:
+                    data = parsed
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if data is None or not isinstance(data.get("text"), str):
+            raise TranscriptionError("Parakeet returned an invalid answer.")
+        text = str(data["text"])
         if not isinstance(text, str) or not text.strip():
             raise TranscriptionError("Parakeet returned an empty transcript.")
         # Parakeet names no language it chose, so the label stays unknown (R2).

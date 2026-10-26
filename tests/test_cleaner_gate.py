@@ -146,3 +146,13 @@ class EvaluationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InnerDotTests(unittest.TestCase):
+    """D-100: a dot inside a token is not punctuation."""
+
+    def test_inner_dots_carry_no_mark(self) -> None:
+        from scripts.cleaner_gate import annotate
+
+        self.assertEqual(annotate("version 3.5 listo"), [("version", ""), ("3", ""), ("5", ""), ("listo", "")])
+        self.assertEqual(annotate("listo.")[-1], ("listo", "."))

@@ -11,7 +11,6 @@ from sanbluedot_voiceflow.cleaners.gemini import (
     DEFAULT_TIMEOUT_SECONDS,
     MODEL_CHAIN,
     MINIMUM_RETRY_BUDGET_SECONDS,
-    PER_MODEL_TIMEOUT_SECONDS,
     GeminiCleaner,
     describe_chain_failure,
     per_model_slice,
@@ -594,7 +593,7 @@ class PerModelBudgetTests(ThreeModelChain):
 
         build(opener, fallback=True).clean("hola")
 
-        self.assertEqual(opener.timeouts, [PER_MODEL_TIMEOUT_SECONDS])
+        self.assertEqual(opener.timeouts, [per_model_slice(DEFAULT_TIMEOUT_SECONDS, len(THREE_MODEL_CHAIN))])
 
     def test_the_last_model_may_use_whatever_is_left(self) -> None:
         opener = SequenceRecorder([reply("Hola.")])
@@ -616,8 +615,21 @@ class PerModelBudgetTests(ThreeModelChain):
 
     def test_the_slice_never_exceeds_the_whole_budget(self) -> None:
         self.assertLessEqual(
-            PER_MODEL_TIMEOUT_SECONDS * len(THREE_MODEL_CHAIN), DEFAULT_TIMEOUT_SECONDS
+            per_model_slice(DEFAULT_TIMEOUT_SECONDS, len(THREE_MODEL_CHAIN)) * len(THREE_MODEL_CHAIN), DEFAULT_TIMEOUT_SECONDS
         )
+
+    def test_exhausted_budget_raises_timeout_without_zero_timeout_opener(self) -> None:
+        """D-194: non-positive timeout raises clean TimeoutError without calling opener with 0.0."""
+        from urllib.request import Request
+        from sanbluedot_voiceflow.cleaners.gemini import _ModelUnfinished, CONTACT_TIMED_OUT
+
+        opener = SequenceRecorder([])
+        cleaner = build(opener)
+        req = Request("http://localhost")
+        with self.assertRaises(_ModelUnfinished) as raised:
+            cleaner._send(req, deadline=cleaner._monotonic() - 1.0)
+        self.assertEqual(raised.exception.reason, CONTACT_TIMED_OUT)
+        self.assertEqual(len(opener.requests), 0)
 
     def test_the_slice_adapts_to_a_longer_chain(self) -> None:
         # `--gemini-model` accepts any identifier, so an unlisted model makes the chain
@@ -708,5 +720,30 @@ class ChainFailureMessageTests(unittest.TestCase):
         self.assertIn("No Gemini model was contacted", message)
 
 
+class LastModelTimeoutTests(unittest.TestCase):
+    """D-70: a timeout at the hard deadline still names the model."""
+
+    def test_the_timed_out_model_is_named(self) -> None:
+        opener = SequenceRecorder([TimeoutError("slow")])
+
+        with self.assertRaises(CleanupError) as raised:
+            build(opener, clock=Clock(step=50.0)).clean("hola")
+
+        self.assertIn(DEFAULT_MODEL, str(raised.exception))
+        self.assertIn("time budget", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class IncompleteReadTests(unittest.TestCase):
+    """D-95: an incomplete read is a dropped connection, not a traceback."""
+
+    def test_an_incomplete_read_is_reported_as_a_cleanup_error(self) -> None:
+        import http.client
+
+        opener = SequenceRecorder([http.client.IncompleteRead(b"")])
+        with self.assertRaises(CleanupError) as raised:
+            build(opener).clean("hola")
+        self.assertIn(DEFAULT_MODEL, str(raised.exception))

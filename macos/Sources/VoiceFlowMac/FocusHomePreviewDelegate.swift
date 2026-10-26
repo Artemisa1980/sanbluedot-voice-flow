@@ -36,6 +36,9 @@ final class FocusHomePreviewDelegate: NSObject, NSApplicationDelegate {
         model.onOpenAccessibility = { [weak self] in self?.reportSimulation("Accessibility settings") }
         model.onOpenInputMonitoring = { [weak self] in self?.reportSimulation("Input Monitoring settings") }
         model.onRetryPermissions = { [weak self] in self?.reportSimulation("Permission check") }
+        model.onRunHealthCheck = { [weak self] in
+            self?.model.healthReport = "[PASS] Python: 3.14.7\n[PASS] whisper.cpp binary: found\n[PASS] Whisper model: ggml\n[PASS] Parakeet model: found\n[PASS] Gemini API key: configured"
+        }
         model.onAddSnippet = { [weak self] trigger, expansion, description in
             guard let self else { return false }
             self.model.snippets.removeAll { $0.trigger.localizedCaseInsensitiveCompare(trigger) == .orderedSame }
@@ -45,6 +48,82 @@ final class FocusHomePreviewDelegate: NSObject, NSApplicationDelegate {
         model.onDeleteSnippet = { [weak self] id in self?.model.snippets.removeAll { $0.id == id } }
         model.onAcceptRejectedCleanup = { [weak self] _ in self?.model.rejectedCleanup = nil }
         model.onDismissRejectedCleanup = { [weak self] in self?.model.rejectedCleanup = nil }
+        model.words = WordsSnapshot(
+            vocabulary: ["UTEL", "VoiceFlow", "Whisper", "Parakeet", "Ollama"],
+            inPrompt: 5,
+            corrections: [
+                WordsCorrection(
+                    heard: "oyamas",
+                    intended: "Ollama",
+                    confirmedAt: "2026-10-25T14:30:00Z",
+                    source: "fix",
+                    everywhere: true
+                ),
+                WordsCorrection(
+                    heard: "i phone",
+                    intended: "iPhone",
+                    confirmedAt: "2026-10-24T18:20:00Z",
+                    source: "window",
+                    everywhere: false
+                )
+            ]
+        )
+        model.onRefreshWords = { [weak self] in
+            self?.reportSimulation("Refresh Words")
+        }
+        model.onLearnCorrection = { [weak self] request in
+            guard let self else { return }
+            var current = self.model.words?.corrections ?? []
+            if let replacing = request.replacing {
+                current.removeAll { $0.heard.lowercased() == replacing.lowercased() }
+            }
+            for pair in request.pairs {
+                current.removeAll { $0.heard.lowercased() == pair.heard.lowercased() }
+                current.append(WordsCorrection(
+                    heard: pair.heard,
+                    intended: pair.intended,
+                    confirmedAt: "2026-10-25T20:00:00Z",
+                    source: request.source.rawValue,
+                    everywhere: request.everywhere
+                ))
+            }
+            let vocab = self.model.words?.vocabulary ?? []
+            let inPrompt = self.model.words?.inPrompt ?? 0
+            self.model.words = WordsSnapshot(vocabulary: vocab, inPrompt: inPrompt, corrections: current)
+            self.model.wordsNotice = "learned: \(request.pairs.map(\.intended).joined(separator: ", "))"
+            self.reportSimulation("Learn correction")
+        }
+        model.onForgetCorrection = { [weak self] heard in
+            guard let self else { return }
+            var current = self.model.words?.corrections ?? []
+            current.removeAll { $0.heard.lowercased() == heard.lowercased() }
+            let vocab = self.model.words?.vocabulary ?? []
+            let inPrompt = self.model.words?.inPrompt ?? 0
+            self.model.words = WordsSnapshot(vocabulary: vocab, inPrompt: inPrompt, corrections: current)
+            self.model.wordsNotice = "deleted: \"\(heard)\""
+            self.reportSimulation("Forget correction")
+        }
+        model.onAddWord = { [weak self] term in
+            guard let self else { return }
+            var vocab = self.model.words?.vocabulary ?? []
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !vocab.contains(trimmed) {
+                vocab.append(trimmed)
+            }
+            let corrections = self.model.words?.corrections ?? []
+            self.model.words = WordsSnapshot(vocabulary: vocab, inPrompt: vocab.count, corrections: corrections)
+            self.model.wordsNotice = "added: \"\(trimmed)\""
+            self.reportSimulation("Add vocabulary word")
+        }
+        model.onRemoveWord = { [weak self] term in
+            guard let self else { return }
+            var vocab = self.model.words?.vocabulary ?? []
+            vocab.removeAll { $0 == term }
+            let corrections = self.model.words?.corrections ?? []
+            self.model.words = WordsSnapshot(vocabulary: vocab, inPrompt: vocab.count, corrections: corrections)
+            self.model.wordsNotice = "removed: \"\(term)\""
+            self.reportSimulation("Remove vocabulary word")
+        }
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 800),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -59,7 +138,7 @@ final class FocusHomePreviewDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
         configureMenu()
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

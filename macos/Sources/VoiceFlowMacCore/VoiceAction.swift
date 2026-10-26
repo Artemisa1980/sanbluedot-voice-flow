@@ -2,7 +2,9 @@ import Foundation
 
 public enum VoiceActionType: Equatable, Sendable {
     case openApp(appName: String)
-    case googleSearch(query: String)
+    /// `browserBundleID` is set only when the sentence named a browser ("abre safari y
+    /// busca …"); `nil` opens the default one.
+    case googleSearch(query: String, browserBundleID: String? = nil)
     case youtubeSearch(query: String)
     case githubSearch(query: String)
     case openURL(url: URL)
@@ -24,6 +26,32 @@ public struct VoiceAction: Equatable, Sendable {
         self.displayDescription = displayDescription
         self.queryOrTarget = queryOrTarget
         self.originalSpeech = originalSpeech
+    }
+}
+
+/// The search pages a spoken search opens.
+///
+/// `URLQueryItem` leaves `+` unescaped, and these sites read it as a space, so "c++"
+/// arrived as "c  " (D-61). The plus is encoded after the query is built.
+public enum SearchURL {
+    public static func google(_ query: String) -> URL? {
+        make("https://www.google.com/search", name: "q", query)
+    }
+
+    public static func youtube(_ query: String) -> URL? {
+        make("https://www.youtube.com/results", name: "search_query", query)
+    }
+
+    public static func github(_ query: String) -> URL? {
+        make("https://github.com/search", name: "q", query)
+    }
+
+    private static func make(_ base: String, name: String, _ query: String) -> URL? {
+        guard var components = URLComponents(string: base) else { return nil }
+        components.queryItems = [URLQueryItem(name: name, value: query)]
+        let encoded = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        components.percentEncodedQuery = encoded
+        return components.url
     }
 }
 
@@ -150,13 +178,28 @@ public enum VoiceActionParser {
         return str.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static let fileExtensions: Set<String> = [
+        "md", "txt", "swift", "py", "json", "pdf", "doc", "docx", "xls", "xlsx", "csv",
+        "png", "jpg", "jpeg", "gif", "sh", "js", "ts", "yml", "yaml", "toml", "zip", "wav",
+    ]
+
     private static func parseURL(from text: String, original: String) -> VoiceAction? {
         let patterns = [
             #"^(?:ir\s+a|navega\s+a|navegar\s+a|abre|abrir|open|go\s+to|navigate\s+to)\s+((?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s]*)?)$"#
         ]
         for pattern in patterns {
             if let target = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
-                let urlString = target.hasPrefix("http://") || target.hasPrefix("https://") ? target : "https://\(target)"
+                let lower = target.lowercased()
+                let hasScheme = lower.hasPrefix("http://") || lower.hasPrefix("https://")
+                // "open README.md" is a file, not a site: a single name ending in a file
+                // extension, with no scheme and no `www.`, is not opened as a URL (D-77).
+                let labels = lower.split(separator: "/").first?.split(separator: ".") ?? []
+                if !hasScheme, !lower.hasPrefix("www."), labels.count == 2,
+                   let ext = labels.last, Self.fileExtensions.contains(String(ext)) {
+                    continue
+                }
+                // The scheme is compared case-insensitively: "HTTPS://x" became "https://HTTPS://x".
+                let urlString = hasScheme ? target : "https://\(target)"
                 if let url = URL(string: urlString) {
                     return VoiceAction(
                         type: .openURL(url: url),
@@ -171,16 +214,18 @@ public enum VoiceActionParser {
     }
 
     private static func parseBrowserSearch(from text: String, original: String) -> VoiceAction? {
+        // Group 1 is the browser the sentence names, group 2 the query.
         let patterns = [
-            #"^(?:abre|abrir|open|launch)\s+(?:safari|chrome|el\s+navegador|the\s+browser)\s+(?:y|and)\s+(?:busca|buscar|search|search\s+for)(?:\s+en\s+google|\s+on\s+google)?\s+(.+)$"#,
-            #"^(?:abre|abrir|open)\s+(?:safari|chrome|el\s+navegador)\s+(?:con\s+la\s+búsqueda\s+de|searching\s+for)\s+(.+)$"#
+            #"^(?:abre|abrir|open|launch)\s+(safari|chrome|el\s+navegador|the\s+browser)\s+(?:y|and)\s+(?:busca|buscar|search\s+for|search)(?:\s+en\s+google|\s+on\s+google)?\s+(.+)$"#,
+            #"^(?:abre|abrir|open)\s+(safari|chrome|el\s+navegador)\s+(?:con\s+la\s+búsqueda\s+de|searching\s+for)\s+(.+)$"#
         ]
         for pattern in patterns {
-            if let query = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
+            if let query = matchRegex(pattern: pattern, in: text, captureGroup: 2) {
                 let trimmed = sanitize(query)
                 if !trimmed.isEmpty {
+                    let named = matchRegex(pattern: pattern, in: text, captureGroup: 1)?.lowercased()
                     return VoiceAction(
-                        type: .googleSearch(query: trimmed),
+                        type: .googleSearch(query: trimmed, browserBundleID: browserBundleID(for: named)),
                         displayDescription: "Google Search \"\(trimmed)\"",
                         queryOrTarget: trimmed,
                         originalSpeech: original
@@ -261,8 +306,8 @@ public enum VoiceActionParser {
 
     private static func parseOpenApp(from text: String, original: String) -> VoiceAction? {
         let patterns = [
-            #"^(?:abre|abrir)\s+(?:la\s+app\s+de\s+|la\s+aplicaci[oó]n\s+de\s+|la\s+app\s+|la\s+aplicaci[oó]n\s+|el\s+|la\s+|los\s+|las\s+)?([A-Za-z0-9\s]+)$"#,
-            #"^(?:open|launch)\s+(?:the\s+app\s+|the\s+application\s+|app\s+|the\s+)?([A-Za-z0-9\s]+)$"#
+            #"^(?:abre|abrir)\s+(?:la\s+app\s+de\s+|la\s+aplicaci[oó]n\s+de\s+|la\s+app\s+|la\s+aplicaci[oó]n\s+|el\s+|la\s+|los\s+|las\s+)?([\p{L}0-9\s]+)$"#,
+            #"^(?:open|launch)\s+(?:the\s+app\s+|the\s+application\s+|app\s+|the\s+)?([\p{L}0-9\s]+)$"#
         ]
         for pattern in patterns {
             if let appCandidate = matchRegex(pattern: pattern, in: text, captureGroup: 1) {
@@ -335,6 +380,16 @@ public enum VoiceActionParser {
         case "configuracion", "configuración", "system settings", "preferencias", "ajustes": return "System Settings"
         default:
             return raw.capitalized
+        }
+    }
+
+    /// The browser a search sentence named. "el navegador" and "the browser" name none,
+    /// so they keep the default browser.
+    private static func browserBundleID(for name: String?) -> String? {
+        switch name {
+        case "safari": return "com.apple.Safari"
+        case "chrome": return "com.google.Chrome"
+        default: return nil
         }
     }
 

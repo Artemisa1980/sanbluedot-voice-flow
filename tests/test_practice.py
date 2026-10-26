@@ -444,3 +444,23 @@ class PracticeStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PendingDeleteSweepTests(unittest.TestCase):
+    """D-117: an interrupted delete is finished or undone by the next sweep."""
+
+    def test_staged_audio_is_restored_or_removed_by_its_session(self) -> None:
+        import tempfile
+        from sanbluedot_voiceflow.practice import sweep_orphan_takes
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            kept = folder / ".001.wav.abc.pending-delete"
+            gone = folder / ".002.wav.def.pending-delete"
+            kept.write_bytes(b"RIFF")
+            gone.write_bytes(b"RIFF")
+
+            sweep_orphan_takes(folder, indexed={1}, minimum_age_seconds=0, now=10**12)
+
+            self.assertTrue((folder / "001.wav").exists())
+            self.assertFalse(gone.exists())

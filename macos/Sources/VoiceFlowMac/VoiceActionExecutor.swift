@@ -40,11 +40,20 @@ enum VoiceActionExecutor {
                 return .failed("Could not open URL: \(url.absoluteString)")
             }
 
-        case .googleSearch(let query):
-            var components = URLComponents(string: "https://www.google.com/search")
-            components?.queryItems = [URLQueryItem(name: "q", value: query)]
-            guard let url = components?.url else {
+        case .googleSearch(let query, let browserBundleID):
+            guard let url = SearchURL.google(query) else {
                 return .failed("Invalid search query: \(query)")
+            }
+            // The browser the sentence named, when it is installed. `open(url)` alone
+            // handed "abre safari y busca …" to the default browser (D-136).
+            if let browserBundleID,
+               let browserURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browserBundleID) {
+                NSWorkspace.shared.open(
+                    [url],
+                    withApplicationAt: browserURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                )
+                return .openedURL(url)
             }
             if NSWorkspace.shared.open(url) {
                 return .openedURL(url)
@@ -53,9 +62,7 @@ enum VoiceActionExecutor {
             }
 
         case .youtubeSearch(let query):
-            var components = URLComponents(string: "https://www.youtube.com/results")
-            components?.queryItems = [URLQueryItem(name: "search_query", value: query)]
-            guard let url = components?.url else {
+            guard let url = SearchURL.youtube(query) else {
                 return .failed("Invalid search query: \(query)")
             }
             if NSWorkspace.shared.open(url) {
@@ -65,9 +72,7 @@ enum VoiceActionExecutor {
             }
 
         case .githubSearch(let query):
-            var components = URLComponents(string: "https://github.com/search")
-            components?.queryItems = [URLQueryItem(name: "q", value: query)]
-            guard let url = components?.url else {
+            guard let url = SearchURL.github(query) else {
                 return .failed("Invalid search query: \(query)")
             }
             if NSWorkspace.shared.open(url) {
@@ -84,7 +89,15 @@ enum VoiceActionExecutor {
                 if FileManager.default.fileExists(atPath: path) {
                     let config = NSWorkspace.OpenConfiguration()
                     config.activates = true
-                    NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
+                    // The launch is asynchronous; a failure is reported when it arrives
+                    // rather than the action being called done regardless (D-10).
+                    NSWorkspace.shared.openApplication(at: url, configuration: config) { _, error in
+                        guard let error else { return }
+                        DispatchQueue.main.async {
+                            NSSound.beep()
+                            NSLog("VoiceFlow: %@ could not be opened: %@", appName, error.localizedDescription)
+                        }
+                    }
                     return .openedApp(appName)
                 }
             }

@@ -4,7 +4,8 @@ import PackageDescription
 
 let package = Package(
     name: "SanbluedotVoiceFlowMac",
-    platforms: [.macOS(.v13)],
+    // 14: the Parakeet helper needs it, and the app offered Parakeet on 13 (D-86).
+    platforms: [.macOS(.v14)],
     products: [
         .executable(name: "VoiceFlowMac", targets: ["VoiceFlowMac"]),
         // Offered to the outside so an Xcode target can link it. The target already

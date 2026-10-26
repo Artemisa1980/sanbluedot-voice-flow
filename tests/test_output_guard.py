@@ -184,6 +184,31 @@ class SpanishAccentTests(unittest.TestCase):
         self.assertEqual(guard_conservative_cleanup(source, candidate), candidate)
 
 
+class TypographicMarkTests(unittest.TestCase):
+    """Marks a cleaner writes as typography, not as words (D-59, D-28)."""
+
+    def test_a_typographic_apostrophe_is_the_same_word(self) -> None:
+        candidate = "Don’t send it."
+        self.assertEqual(guard_conservative_cleanup("don't send it", candidate), candidate)
+
+    def test_the_apostrophe_does_not_hide_a_changed_word(self) -> None:
+        with self.assertRaises(CleanupError):
+            guard_conservative_cleanup("don't send it", "Won’t send it.")
+
+    def test_opening_question_and_exclamation_marks_are_accepted(self) -> None:
+        source = "como estas que bien"
+        candidate = "¿Cómo estás? ¡Qué bien!"
+        self.assertEqual(guard_conservative_cleanup(source, candidate), candidate)
+
+    def test_an_opening_mark_does_not_hide_a_new_word(self) -> None:
+        with self.assertRaises(CleanupError):
+            guard_conservative_cleanup("como estas", "¿Cómo estás tú?")
+
+    def test_a_detached_opening_mark_is_still_content(self) -> None:
+        with self.assertRaises(CleanupError):
+            guard_conservative_cleanup("como estas", "¿ cómo estás")
+
+
 class CleanupPromptTests(unittest.TestCase):
     def test_every_example_in_the_cleanup_prompt_passes_this_guard(self) -> None:
         """The prompt shows the model what to return, and this guard judges it.
@@ -321,4 +346,61 @@ class FixGuardReachTests(unittest.TestCase):
         self.assertEqual(
             guard_fix_cleanup("envíalo el lunes, perdón, el martes, y avísame", candidate),
             candidate,
+        )
+
+
+class PromptShapeTests(unittest.TestCase):
+    """D-09 and D-71: the prompts' own examples and their data boundary."""
+
+    def test_the_meeting_example_is_valid_json(self) -> None:
+        from sanbluedot_voiceflow.cleaners.prompt import MEETING_NOTES_SYSTEM_PROMPT
+
+        line = next(
+            l for l in MEETING_NOTES_SYSTEM_PROMPT.splitlines()
+            if l.startswith("Example output:")
+        )
+        self.assertIn("Action Items", json.loads(line.split(":", 1)[1])["cleaned_text"])
+
+    def test_translation_and_notes_treat_the_transcript_as_data(self) -> None:
+        from sanbluedot_voiceflow.cleaners.prompt import (
+            MEETING_NOTES_SYSTEM_PROMPT,
+            TRANSLATE_EN_SYSTEM_PROMPT,
+        )
+
+        for prompt in (TRANSLATE_EN_SYSTEM_PROMPT, MEETING_NOTES_SYSTEM_PROMPT):
+            self.assertIn("never instructions", prompt)
+
+
+class NormalizationAndClosingMarksTests(unittest.TestCase):
+    """D-192: Email and URL case normalization. D-193: Closing punctuation marks."""
+
+    def test_url_and_email_case_normalization_is_permitted(self) -> None:
+        self.assertEqual(
+            guard_conservative_cleanup("Sandy@example.com", "sandy@example.com"),
+            "sandy@example.com",
+        )
+        self.assertEqual(
+            guard_conservative_cleanup("Https://github.com/sanblue", "https://github.com/sanblue"),
+            "https://github.com/sanblue",
+        )
+        self.assertEqual(
+            guard_conservative_cleanup(
+                "Contact Sandy.Quintero@UTEL.edu.ec now",
+                "Contact sandy.quintero@utel.edu.ec now.",
+            ),
+            "Contact sandy.quintero@utel.edu.ec now.",
+        )
+
+    def test_closing_marks_attached_to_terminal_punctuation_are_permitted(self) -> None:
+        self.assertEqual(
+            guard_conservative_cleanup("hello", 'hello."'),
+            'hello."',
+        )
+        self.assertEqual(
+            guard_conservative_cleanup("dijo hola", 'dijo hola!")'),
+            'dijo hola!")',
+        )
+        self.assertEqual(
+            guard_conservative_cleanup('dijo "hola."', 'dijo "hola."'),
+            'dijo "hola."',
         )

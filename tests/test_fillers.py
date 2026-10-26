@@ -78,3 +78,22 @@ class NoModelCleanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HyphenAndCapitalTests(unittest.TestCase):
+    """D-76, D-92, D-153."""
+
+    def test_a_hyphenated_word_is_not_cut(self) -> None:
+        self.assertEqual(remove_fillers("uh-huh, me parece bien"), "uh-huh, me parece bien")
+        self.assertEqual(remove_fillers("mm-hmm, sí"), "mm-hmm, sí")
+
+    def test_only_the_word_a_filler_opened_is_capitalised(self) -> None:
+        self.assertEqual(
+            remove_fillers("eh, el iPhone. ve a www.example.com"),
+            "El iPhone. ve a www.example.com",
+        )
+
+    def test_inverted_spanish_question_and_exclamation_marks_with_fillers(self) -> None:
+        self.assertEqual(remove_fillers("¿Eh, cómo estás?"), "¿Cómo estás?")
+        self.assertEqual(remove_fillers("¡Um, qué bueno!"), "¡Qué bueno!")
+        self.assertEqual(remove_fillers("¿Eh, mañana salimos?"), "¿Mañana salimos?")

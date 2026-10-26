@@ -43,11 +43,11 @@ public extension CleanerMode {
             ]
         case .gemini:
             return [
-                EngineFact(label: "SPEED", value: "4.19s median, worst success 7.29s."),
+                EngineFact(label: "SPEED", value: "4.19s median across measured runs, worst success 7.29s."),
                 EngineFact(label: "DELIVERS", value: "5 of 6. The sixth is Google capacity, not this project."),
                 EngineFact(
                     label: "WHEN BUSY",
-                    value: "All three models are tried, then the raw transcript arrives at 45s."
+                    value: "Retries once on capacity, then falls back to the chain or raw transcript at 45s."
                 ),
                 EngineFact(
                     label: "PRIVACY",

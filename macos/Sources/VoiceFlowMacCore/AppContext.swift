@@ -63,7 +63,7 @@ public struct AppContext: Equatable {
         "dev.warp.Warp-Stable": ("WARP", .code),
         "co.zeit.hyper": ("HYPER", .code),
         "net.kovidgoyal.kitty": ("KITTY", .code),
-        "io.alacritty": ("ALACRITTY", .code),
+        "org.alacritty": ("ALACRITTY", .code),
         "com.github.wez.wezterm": ("WEZTERM", .code),
         "com.mitchellh.ghostty": ("GHOSTTY", .code),
 
@@ -99,8 +99,8 @@ public struct AppContext: Equatable {
     /// heuristic below has no such name and falls back to the full localized one, which
     /// is where the limit matters: the recording badge is drawn with `fixedSize()`, so it
     /// does not truncate — it pushes the wordmark out of a 226pt row instead. Measured at
-    /// 10pt heavy monospaced, the badge has 153.7pt, or 24 characters; `TRANSFORM • ` is
-    /// 12 of them, which leaves 12 for the name.
+    /// 10pt heavy monospaced, the badge has 153.7pt, or 24 characters; half is kept for the
+    /// badge's own prefix, which leaves 12 for the name.
     public static let shortNameLimit = 12
 
     /// Shorten a full application name to something the capsule can carry.

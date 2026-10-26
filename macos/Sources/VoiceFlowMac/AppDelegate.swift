@@ -55,13 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var distillationMenuItem: NSMenuItem!
     private var retryPermissionsAvailable = true
     private let floatingHUD = FloatingHUDController()
-    private var historyStore: DictationHistoryStore = {
-        if let data = UserDefaults.standard.data(forKey: DictationHistoryStore.defaultsKey),
-           let store = DictationHistoryStore.load(from: data) {
-            return store
-        }
-        return DictationHistoryStore()
-    }()
+    private static let historyLoad = DictationHistoryStore.loadReporting()
+    private var historyStore: DictationHistoryStore = AppDelegate.historyLoad.store
     private static let snippetLoad = VoiceSnippetStore.loadReporting()
     private var snippetStore: VoiceSnippetStore = AppDelegate.snippetLoad.store
     private var historyMenuItem: NSMenuItem!
@@ -69,6 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureApplicationMenu()
+        // A release while the Mac slept was never seen; read the key again on wake.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Delivered on the main queue, so the main actor is already the one running.
+            MainActor.assumeIsolated { self?.hotkeyMonitor?.resyncAfterWake() }
+        }
 
         if CommandLine.arguments.dropFirst().contains("--help") {
             print(VoiceFlowConfiguration.help)
@@ -122,6 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        controller?.discardAudioOnTermination()
+    }
+
     private func configureWindow() {
         controlWindow = ControlWindowController()
         controlWindow.onRetryPermissions = { [weak self] in
@@ -143,7 +151,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.controller?.cancelRecording()
         }
         controlWindow.configureProviders(
-            available: CleanerMode.allCases,
             selected: selectedCleaner
         )
         controlWindow.configureMode(selected: selectedMode)
@@ -202,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pasteboard.setString(record.currentText, forType: .string)
             self?.playCompletionSound()
             NSApplication.shared.hide(nil)
-            AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste in
+            AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste, _ in
                 let action = didAutoPaste ? "re-pasted" : "copied"
                 self?.controlWindow?.addLog("\(action) from history: \"\(record.menuPreview())\"", isHighlight: true)
             }
@@ -214,11 +221,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             // An edit that changed the heard side is a new key: the old pair goes, so
             // the list never holds both the misspelling and its replacement.
+            // Learned first, forgotten after: the runner stops at the first failure, so a
+            // refused learn now keeps the old pair instead of losing it (D-51).
             var commands: [WordsCommand] = []
-            if let old = request.replacing, let first = request.pairs.first,
-               old.lowercased() != first.heard.lowercased() {
-                commands.append(.forget(heard: old))
-            }
             for pair in request.pairs {
                 commands.append(.learn(
                     heard: pair.heard,
@@ -226,6 +231,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     everywhere: request.everywhere && pair.isOneWord,
                     source: request.source
                 ))
+            }
+            if let old = request.replacing, let first = request.pairs.first,
+               old.lowercased() != first.heard.lowercased() {
+                commands.append(.forget(heard: old))
             }
             let learned = request.pairs
                 .map { "\"\($0.heard)\" → \"\($0.intended)\"" }
@@ -271,10 +280,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let failure = AppDelegate.snippetLoad.failure {
             controlWindow.addLog(failure, isHighlight: true)
         }
+        if let failure = AppDelegate.historyLoad.failure {
+            controlWindow.addLog(failure, isHighlight: true)
+        }
         // Every edit re-reads the file under the engine's lock, so a `vf snippet add` made
         // while the app runs survives the next edit here (D-40).
         controlWindow.onAddSnippet = { [weak self] trigger, expansion, description in
             guard let self else { return false }
+            // A repeated trigger replaced the old snippet without asking (D-75).
+            if let current = self.snippetStore.existing(trigger: trigger) {
+                let alert = NSAlert()
+                alert.messageText = "Replace the snippet [\(current.trigger)]?"
+                alert.informativeText = "It expands to: \(current.expansion)"
+                alert.addButton(withTitle: "Replace")
+                alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn else { return false }
+            }
             var added: VoiceSnippet?
             guard let written = VoiceSnippetStore.edit({
                 added = $0.add(trigger: trigger, expansion: expansion, description: description)
@@ -302,6 +323,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if deleted {
                 self.controlWindow.addLog("deleted voice snippet", isHighlight: true)
             }
+        }
+        controlWindow.onRunHealthCheck = { [weak self] in
+            self?.runHealthCheck()
         }
         refreshProvider(selectedCleaner)
         controlWindow.showWindow(nil)
@@ -597,7 +621,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pasteboard.clearContents()
         pasteboard.setString(record.currentText, forType: .string)
         playCompletionSound()
-        AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste in
+        AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste, _ in
             let action = didAutoPaste ? "re-pasted" : "copied"
             self?.controlWindow?.addLog("\(action) from history: \"\(record.menuPreview())\"", isHighlight: true)
         }
@@ -622,17 +646,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// redrawn from what it reports afterwards, never from what the window assumed. A
     /// refusal is shown in the engine's own words: the single-word confirmation, a pair
     /// with a side missing.
+    private let wordsQueue = DispatchQueue(label: "dot.sanblue.voiceflow.words", qos: .userInitiated)
+
     private func runWords(
         _ commands: [WordsCommand],
         success: String?,
         onSuccess: (@MainActor () -> Void)? = nil
     ) {
         guard let configuration else { return }
+        controlWindow.setWordsBusy(true)
         let runner = EngineRunner(
             configuration: configuration,
             engineSourceRoot: engineSourceRoot(for: configuration)
         )
-        DispatchQueue.global(qos: .userInitiated).async {
+        // One serial queue: concurrent Words runs could finish out of order (D-106).
+        // `self` is captured weakly once, here, so the nested closure agrees (D-188).
+        wordsQueue.async { [weak self] in
             var failure: String?
             for command in commands {
                 do {
@@ -646,9 +675,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             let snapshot = try? runner.words(.read)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
                 guard let self else { return }
-                if let snapshot { self.controlWindow.updateWords(snapshot) }
+                self.controlWindow.setWordsBusy(false)
+                if let snapshot {
+                    self.controlWindow.updateWords(snapshot)
+                } else if failure == nil {
+                    // A failed read left the section empty with no message (D-106).
+                    failure = "your words could not be read · try again"
+                }
                 if let failure {
                     NSSound.beep()
                     self.controlWindow.setWordsNotice(failure)
@@ -657,6 +692,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.controlWindow.setWordsNotice(success)
                     self.controlWindow.addLog("words · \(success)", isHighlight: true)
                     onSuccess?()
+                }
+            }
+        }
+    }
+
+    /// On-demand System Health & Status check (I-84, R7: user-initiated, zero background telemetry).
+    private func runHealthCheck() {
+        guard let configuration else { return }
+        controlWindow.setHealthBusy(true)
+        let runner = EngineRunner(
+            configuration: configuration,
+            engineSourceRoot: engineSourceRoot(for: configuration)
+        )
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let rawReport = try? runner.doctor()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.controlWindow.setHealthBusy(false)
+                if let rawReport, !rawReport.isEmpty {
+                    self.controlWindow.setHealthReport(rawReport)
+                    self.controlWindow.addLog("diagnostics · complete", isHighlight: true)
+                } else {
+                    self.controlWindow.setHealthReport("Could not run doctor checks.")
+                    self.controlWindow.addLog("diagnostics · failed", isHighlight: true)
+                }
+            }
+        }
+    }
+
+    /// Validate the host Python version at engine startup (D-168).
+    private func checkPythonRuntime() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [
+                "python3", "-c",
+                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}'); sys.exit(0 if sys.version_info >= (3, 11) else 1)"
+            ]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if process.terminationStatus != 0 {
+                        self.controlWindow.addLog(
+                            "warning: Python \(output) detected · VoiceFlow engine requires Python 3.11 or newer",
+                            isHighlight: true
+                        )
+                    } else {
+                        self.controlWindow.addLog("python runtime verified (v\(output))")
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.controlWindow.addLog(
+                        "warning: python3 executable not found on PATH · engine requires Python 3.11+",
+                        isHighlight: true
+                    )
                 }
             }
         }
@@ -703,8 +801,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveHistory() {
-        if let data = historyStore.encode() {
-            UserDefaults.standard.set(data, forKey: DictationHistoryStore.defaultsKey)
+        if !historyStore.save() {
+            controlWindow.addLog("the history was not saved · history.local.json could not be written", isHighlight: true)
         }
     }
 
@@ -981,6 +1079,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onStatusChange = { [weak self] status in
             self?.updateStatus(status)
         }
+        controller.sweepStrandedTakes()
+        checkPythonRuntime()
 
         self.controller = controller
         controlWindow.setRecordingEnabled(true)
@@ -1011,7 +1111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatus(.idle)
     }
 
+    private var statusIconTask: Task<Void, Never>?
+
     private func updateStatus(_ status: VoiceFlowStatus) {
+        statusIconTask?.cancel()
+        statusIconTask = nil
         switch status {
         case .idle:
             setRetryPermissionsAvailable(true)
@@ -1071,6 +1175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             floatingHUD.showRecording(
                 cleanerName: selectedCleaner.rawValue,
                 mode: selectedMode,
+                speechLabel: RunLabels.speech(selectedSpeechEngine),
+                runsModel: RunLabels.runsModel(
+                    cleaner: selectedCleaner, mode: selectedMode, speech: selectedSpeechEngine
+                ),
                 context: targetContext
             ) { [weak self] in
                 let level = self?.controller?.currentAudioLevel ?? 0.0
@@ -1104,14 +1212,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let model,
             let runMode,
             let result,
-            let spokenSeconds
+            let spokenSeconds,
+            let runCleaner
         ):
             setRetryPermissionsAvailable(true)
             controlWindow.setProviderSelectionEnabled(true)
             showStatusMarker("✓")
             playCompletionSound()
-            Task { @MainActor in
+            // Kept so a newer status cancels it: left running it erased a later `!`
+            // marker 2.5 s after the success it belonged to (D-169).
+            statusIconTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard !Task.isCancelled else { return }
                 if self.controller?.isIdle != false {
                     self.showStatusIcon()
                 }
@@ -1125,7 +1237,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ? String(result.rawText.prefix(90)) + "…"
                 : result.rawText
             controlWindow.addLog(
-                "whisper heard: \"\(heardPreview)\"",
+                // The engine that listened, not always Whisper (D-80).
+                "\(selectedSpeechEngine == .parakeet ? "parakeet" : "whisper") heard: \"\(heardPreview)\"",
                 category: .stt
             )
 
@@ -1155,7 +1268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         rawText: result.rawText,
                         personalizedText: result.personalizedText,
                         finalText: performed,
-                        cleaner: self.selectedCleaner.rawValue,
+                        cleaner: runCleaner.rawValue,
                         mode: "action",
                         model: model,
                         latencySeconds: elapsed,
@@ -1167,6 +1280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.saveHistory()
                     self.rebuildHistoryMenu()
                     self.controlWindow.updateRecentDictations(self.historyStore.records)
+                    self.controlWindow.markDeliveredThisSession()
 
                     let resultMsg = "⚡ action: \(performed)"
                     self.statusMenuItem.title = String(format: "%@ · in %.1f seconds", resultMsg, elapsed)
@@ -1178,6 +1292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 self.controlWindow.addLog("action not executed: \(action.displayDescription) · continuing dictation")
+                // The controller left the clipboard alone for a command; a command that
+                // did not run is dictation again, so its text is copied now (D-50).
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(result.finalText, forType: .string)
             }
 
             // ACTION mode with nothing recognized. Pasting in silence here is what made
@@ -1201,9 +1319,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The paste outcome is only known once the deferred keystroke has run its
             // decisive target check, so every label that depends on it is written from
             // inside the completion rather than guessed beforehand.
-            AutoPaste.paste { [weak self] didAutoPaste in
+            AutoPaste.paste { [weak self] didAutoPaste, flattened in
                 guard let self else { return }
-                let wordCount = deliveredText.split(whereSeparator: \.isWhitespace).count
+                // Spoken words, not delivered ones: a translation, notes or a snippet
+                // expansion changed the count without the speaker saying more (D-26).
+                let wordCount = result.rawText.split(whereSeparator: \.isWhitespace).count
                 let measuredWPM: Int? = spokenSeconds >= 0.5 && wordCount > 0
                     ? Int((Double(wordCount) / spokenSeconds) * 60.0)
                     : nil
@@ -1223,8 +1343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let record = DictationRecord(
                     rawText: result.rawText,
                     personalizedText: result.personalizedText,
-                    finalText: deliveredText,
-                    cleaner: self.selectedCleaner.rawValue,
+                    finalText: flattened ?? deliveredText,
+                    cleaner: runCleaner.rawValue,
                     mode: runMode.rawValue,
                     model: model,
                     latencySeconds: elapsed,
@@ -1237,13 +1357,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.rebuildHistoryMenu()
                 self.controlWindow.updateRecentDictations(self.historyStore.records)
 
-                self.controlWindow.updateTelemetry(
+                self.controlWindow.updateRunTelemetry(
                     sttLatency: result.transcribeSeconds,
-                    llmLatency: self.selectedCleaner == .literal ? nil : result.cleanupSeconds,
-                    wpm: measuredWPM,
-                    targetApp: frontApp,
-                    targetBundleId: frontBundle
+                    llmLatency: runCleaner == .literal ? nil : result.cleanupSeconds,
+                    wpm: measuredWPM
                 )
+                self.controlWindow.updateTelemetry(targetApp: frontApp, targetBundleId: frontBundle)
 
                 let actionVerb = didAutoPaste ? "Pasted" : "Copied"
                 // Name which side refused. "safe fallback" alone described the guard

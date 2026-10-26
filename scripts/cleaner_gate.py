@@ -69,8 +69,10 @@ def annotate(text: str) -> list[tuple[str, str]]:
     annotated: list[tuple[str, str]] = []
     for chunk in unicodedata.normalize("NFKC", text).split():
         stripped = chunk.rstrip(MARKS + '"\')]}»')
+        # Only the marks after the word count: the dot inside `3.5` or `example.com`
+        # was read as punctuation and moved the F1 that decides a verdict (D-100).
         mark = ""
-        for character in reversed(chunk):
+        for character in reversed(chunk[len(stripped):]):
             if character in MARKS:
                 mark = character
                 break

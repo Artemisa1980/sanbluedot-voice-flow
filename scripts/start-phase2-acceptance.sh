@@ -18,7 +18,7 @@ if [[ ! -f "$corpus_path" ]]; then
     exit 1
 fi
 
-if pgrep -f "VoiceFlowMac" >/dev/null; then
+if pgrep -x "VoiceFlowMac" >/dev/null; then
     echo "A VoiceFlow instance is already running. Quit it first: two instances share" >&2
     echo "the results file and overwrite each other's recordings." >&2
     exit 1

@@ -18,6 +18,7 @@
 		1195B92C73A2409F524B3D6D /* FocusHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F6F1A93047B9731D92F9D9 /* FocusHomeView.swift */; };
 		3F0200600334588EA9CF10E4 /* HotkeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9121B5F3E41394ACA6B1AF09 /* HotkeyMonitor.swift */; };
 		639BB26537520BD1DEAF7EF8 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = F306BC0AF44F81EC6FDF5C16 /* Keychain.swift */; };
+		0704E4D50733A7AB39C0B578 /* MicroduckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F84F416B28F9F27482CA4CEF /* MicroduckView.swift */; };
 		2B4C059137EB789CACD051FE /* RetroMicHUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A5E5AD3C4AAB43ED26BCB8 /* RetroMicHUDView.swift */; };
 		B2485643B32808F8F9C1B9D3 /* VoiceActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E69F559C6944989D96B49C6 /* VoiceActionExecutor.swift */; };
 		B70D633DC97BD0CAEEA3672D /* VoiceFlowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9A8710702E5C8ED5E884A2 /* VoiceFlowController.swift */; };
@@ -42,6 +43,7 @@
 		93F6F1A93047B9731D92F9D9 /* FocusHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "FocusHomeView.swift"; path = "Sources/VoiceFlowMac/FocusHomeView.swift"; sourceTree = "<group>"; };
 		9121B5F3E41394ACA6B1AF09 /* HotkeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "HotkeyMonitor.swift"; path = "Sources/VoiceFlowMac/HotkeyMonitor.swift"; sourceTree = "<group>"; };
 		F306BC0AF44F81EC6FDF5C16 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Keychain.swift"; path = "Sources/VoiceFlowMac/Keychain.swift"; sourceTree = "<group>"; };
+		F84F416B28F9F27482CA4CEF /* MicroduckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "MicroduckView.swift"; path = "Sources/VoiceFlowMac/MicroduckView.swift"; sourceTree = "<group>"; };
 		07A5E5AD3C4AAB43ED26BCB8 /* RetroMicHUDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RetroMicHUDView.swift"; path = "Sources/VoiceFlowMac/RetroMicHUDView.swift"; sourceTree = "<group>"; };
 		4E69F559C6944989D96B49C6 /* VoiceActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VoiceActionExecutor.swift"; path = "Sources/VoiceFlowMac/VoiceActionExecutor.swift"; sourceTree = "<group>"; };
 		4D9A8710702E5C8ED5E884A2 /* VoiceFlowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VoiceFlowController.swift"; path = "Sources/VoiceFlowMac/VoiceFlowController.swift"; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 				93F6F1A93047B9731D92F9D9 /* FocusHomeView.swift */,
 				9121B5F3E41394ACA6B1AF09 /* HotkeyMonitor.swift */,
 				F306BC0AF44F81EC6FDF5C16 /* Keychain.swift */,
+				F84F416B28F9F27482CA4CEF /* MicroduckView.swift */,
 				07A5E5AD3C4AAB43ED26BCB8 /* RetroMicHUDView.swift */,
 				4E69F559C6944989D96B49C6 /* VoiceActionExecutor.swift */,
 				4D9A8710702E5C8ED5E884A2 /* VoiceFlowController.swift */,
@@ -226,6 +229,7 @@
 				1195B92C73A2409F524B3D6D /* FocusHomeView.swift in Sources */,
 				3F0200600334588EA9CF10E4 /* HotkeyMonitor.swift in Sources */,
 				639BB26537520BD1DEAF7EF8 /* Keychain.swift in Sources */,
+				0704E4D50733A7AB39C0B578 /* MicroduckView.swift in Sources */,
 				2B4C059137EB789CACD051FE /* RetroMicHUDView.swift in Sources */,
 				B2485643B32808F8F9C1B9D3 /* VoiceActionExecutor.swift in Sources */,
 				B70D633DC97BD0CAEEA3672D /* VoiceFlowController.swift in Sources */,
@@ -248,7 +252,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -283,7 +287,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Resources/Info.plist";
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "dot.sanblue.voiceflow";
 				PRODUCT_NAME = "sanblueᵈᵒᵗ VoiceFlow";
 				// The bundle is named for the brand and the binary is not. `Info.plist`
@@ -305,7 +309,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Resources/Info.plist";
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "dot.sanblue.voiceflow";
 				PRODUCT_NAME = "sanblueᵈᵒᵗ VoiceFlow";
 				// The bundle is named for the brand and the binary is not. `Info.plist`

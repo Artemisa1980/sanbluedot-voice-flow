@@ -100,7 +100,7 @@ public struct EngineInvocation: Equatable, Sendable {
             }
         }
         if let appName, !appName.isEmpty {
-            arguments.append(contentsOf: ["--app-name", appName])
+            arguments.append("--app-name=\(appName)")
         }
         if recordDistillationPair {
             arguments.append("--distill")
@@ -115,6 +115,29 @@ public struct EngineInvocation: Equatable, Sendable {
         return EngineInvocation(
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: arguments,
+            currentDirectoryURL: configuration.projectRoot,
+            environment: environment,
+            standardInput: nil
+        )
+    }
+
+    /// Run `vf doctor --json` to inspect speech models, helpers and keychain credentials.
+    public static func makeDoctorRun(
+        configuration: VoiceFlowConfiguration,
+        engineSourceRoot: URL? = nil
+    ) -> EngineInvocation {
+        let environment = textRunEnvironment(
+            configuration: configuration,
+            engineSourceRoot: engineSourceRoot
+        )
+        return EngineInvocation(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: [
+                "python3",
+                "-m", "sanbluedot_voiceflow",
+                "doctor",
+                "--json",
+            ],
             currentDirectoryURL: configuration.projectRoot,
             environment: environment,
             standardInput: nil

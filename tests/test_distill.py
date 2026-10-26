@@ -30,7 +30,7 @@ class TestDistill(unittest.TestCase):
             cleaned_text="Hello world.",
             mode="translate",
             cleaner="gemini",
-            model="gemini-3.5-flash",
+            model="gemini-3.8-flash",
             timestamp="2026-09-01T12:00:00Z",
         )
         data = pair.to_dict()
@@ -231,3 +231,27 @@ class DistillationExportSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DamagedStoreTests(unittest.TestCase):
+    """D-62: one damaged byte must not block reading or deleting the store."""
+
+    def test_a_damaged_byte_is_skipped_and_clear_still_deletes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = DistillationStore(Path(directory) / "pairs.local.jsonl")
+            store.record(raw_text="hola", cleaned_text="Hello.")
+            with store.path.open("ab") as f:
+                f.write(b"\xff\xfe broken line\n")
+
+            self.assertEqual(len(store.load_all()), 1)
+            store.clear()
+            self.assertFalse(store.path.exists())
+
+
+class ModelfileQuoteTests(unittest.TestCase):
+    """D-151: text ending in a quote cannot merge with the closing triple quote."""
+
+    def test_a_trailing_quote_is_separated(self) -> None:
+        from sanbluedot_voiceflow.distill import _sanitize_modelfile_text
+
+        self.assertFalse(_sanitize_modelfile_text('dijo "hola"').endswith('"'))

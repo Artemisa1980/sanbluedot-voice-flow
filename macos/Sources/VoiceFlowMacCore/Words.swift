@@ -13,15 +13,17 @@ public enum WordsCommand: Equatable, Sendable {
         switch self {
         case .read:
             return ["memory", "--json"]
+        // `--option=value`, so a value that starts with `-` is not read as an option
+        // and the Words action does not fail (D-167).
         case .learn(let heard, let intended, let everywhere, let source):
-            return ["correct", "--heard", heard, "--intended", intended, "--source", source.rawValue]
+            return ["correct", "--heard=\(heard)", "--intended=\(intended)", "--source", source.rawValue]
                 + (everywhere ? ["--allow-global"] : [])
         case .forget(let heard):
-            return ["forget", "--heard", heard]
+            return ["forget", "--heard=\(heard)"]
         case .addWord(let term):
-            return ["vocab", "add", "--term", term]
+            return ["vocab", "add", "--term=\(term)"]
         case .removeWord(let term):
-            return ["vocab", "remove", "--term", term]
+            return ["vocab", "remove", "--term=\(term)"]
         }
     }
 }

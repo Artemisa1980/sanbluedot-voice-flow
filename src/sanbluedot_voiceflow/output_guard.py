@@ -26,6 +26,7 @@ _PROTECTED_PREFIXES = ("http://", "https://", "www.")
 _ACUTE_ACCENT = "\u0301"
 _IGNORABLE_TERMINAL_MARKS = frozenset(".!?")
 _CLOSING_MARKS = frozenset("\"'”’)]}»")
+_OPENING_MARKS = frozenset("¿¡")
 # Keep this deliberately narrow. Words such as "like", "este", or "pues" can be
 # content in ordinary English or Spanish and are therefore not safe to erase.
 #
@@ -43,13 +44,34 @@ def _is_ignorable_presentation_mark(text: str, index: int) -> bool:
     Internal punctuation can be executable syntax even when it looks grammatical:
     semicolons split shell commands and colons declare code. Commas are the one internal
     mark allowed by the product's punctuation-cleanup requirement, and only directly
-    after a token at a whitespace boundary. Periods, questions, and exclamations are
-    allowed only at the end of the whole output. Every other symbol remains content.
+    after a token at a whitespace boundary. Periods, questions and exclamations are
+    allowed as a run directly after a token, closing quotes included, when whitespace or
+    the end of the text follows; `¿` and `¡` only as an opener attached to a word. Every
+    other symbol remains content.
     """
+    # Spanish opens a question or exclamation with `¿` or `¡`. A cleaner that adds
+    # them was refused whole and the speaker got the raw transcript (D-28). Only as an
+    # opener: at the start of a word, attached to it.
+    if text[index] in _OPENING_MARKS:
+        return (
+            (index == 0 or text[index - 1].isspace() or text[index - 1] in _OPENING_MARKS)
+            and index + 1 < len(text)
+            and not text[index + 1].isspace()
+        )
     if index == 0 or text[index - 1].isspace():
         return False
     if text[index] == ",":
         return index + 1 == len(text) or text[index + 1].isspace()
+    if text[index] in _CLOSING_MARKS:
+        prev_index = index - 1
+        while prev_index >= 0 and text[prev_index] in _CLOSING_MARKS:
+            prev_index -= 1
+        if prev_index < 0 or text[prev_index] not in _IGNORABLE_TERMINAL_MARKS:
+            return False
+        next_index = index + 1
+        while next_index < len(text) and text[next_index] in _CLOSING_MARKS:
+            next_index += 1
+        return next_index == len(text) or text[next_index].isspace()
     if text[index] not in _IGNORABLE_TERMINAL_MARKS:
         return False
     # A run of terminal marks is one piece of presentation, not several tokens.
@@ -76,8 +98,12 @@ def _append_protected_gaps(
 
 
 def _fold(token: str) -> str:
-    """The form two words are compared in: lowercase, without the written accent."""
-    decomposed = unicodedata.normalize("NFD", token.casefold())
+    """The form two words are compared in: lowercase, without the written accent.
+
+    The typographic apostrophe is the straight one: `don’t` and `don't` are one word,
+    and a cleaner that wrote the curly form was refused whole (D-59).
+    """
+    decomposed = unicodedata.normalize("NFD", token.casefold().replace("’", "'"))
     return unicodedata.normalize(
         "NFC", "".join(ch for ch in decomposed if ch != _ACUTE_ACCENT)
     )
@@ -92,7 +118,7 @@ def _tokens(text: str) -> list[tuple[str, bool]]:
         token = match.group(0)
         if token.casefold().startswith(_PROTECTED_PREFIXES):
             protected = token.rstrip(".,!?;:)]}")
-            tokens.append((protected, False))
+            tokens.append((protected.casefold(), False))
             # URL matching intentionally consumes trailing punctuation. Feed that tail
             # back through the symbol guard so `https://safe; rm` cannot hide a command
             # separator inside the URL token.
@@ -103,7 +129,7 @@ def _tokens(text: str) -> list[tuple[str, bool]]:
                 match.end(),
             )
         elif "@" in token:
-            tokens.append((token, False))
+            tokens.append((token.casefold(), False))
         else:
             folded = _fold(token)
             # An all-caps token such as UM may be an acronym, not a spoken filler.

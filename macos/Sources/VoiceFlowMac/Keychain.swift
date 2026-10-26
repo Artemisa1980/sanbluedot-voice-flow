@@ -32,8 +32,29 @@ enum Keychain {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    enum Status {
+        case present
+        case absent
+        /// Locked, denied or otherwise unreadable: not the same as no key (D-84).
+        case unavailable
+    }
+
+    /// Whether a key exists, asked by attributes only: fetching the secret itself on the
+    /// main thread could block the window on an access prompt (D-170).
+    static func status(account: String) -> Status {
+        var query = baseQuery(account: account)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        switch SecItemCopyMatching(query as CFDictionary, &item) {
+        case errSecSuccess: return .present
+        case errSecItemNotFound: return .absent
+        default: return .unavailable
+        }
+    }
+
     static func hasKey(account: String) -> Bool {
-        read(account: account) != nil
+        status(account: account) == .present
     }
 
     @discardableResult

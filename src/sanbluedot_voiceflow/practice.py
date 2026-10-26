@@ -33,7 +33,6 @@ from .memory import (
 SCHEMA_VERSION = 1
 
 DEFAULT_DIRECTORY = Path.home() / "Library/Application Support/sanblue.voiceflow/practice"
-DEFAULT_INDEX = DEFAULT_DIRECTORY / "sessions.local.json"
 
 # Enough to separate "six" from "6" in both working languages. A spoken number the
 # engine wrote as a numeral is a formatting choice, not a missed word.
@@ -328,6 +327,24 @@ def sweep_orphan_takes(
         except OSError:
             continue
         removed.append(path)
+    # A delete interrupted between staging the audio and finishing leaves a
+    # `.NNN.wav.<hex>.pending-delete` file nothing swept (D-117). Its session decides:
+    # still indexed, the delete never landed and the audio goes back; no longer indexed,
+    # the delete did land and the staged copy goes.
+    for staged in sorted(directory.glob(".[0-9][0-9][0-9].wav.*.pending-delete")):
+        number = staged.name[1:4]
+        original = directory / f"{number}.wav"
+        try:
+            if int(number) in indexed:
+                if not original.exists():
+                    os.replace(staged, original)
+                continue
+            if moment - staged.stat().st_mtime < minimum_age_seconds:
+                continue
+            staged.unlink()
+        except OSError:
+            continue
+        removed.append(staged)
     return removed
 
 

@@ -61,10 +61,13 @@ func readRequest() -> Request {
 func emit(_ cleaned: String) {
     // Encoded rather than interpolated: the answer is arbitrary text and may carry
     // quotes, newlines or backslashes, any of which would break a hand-built string.
-    guard let data = try? JSONEncoder().encode(["cleaned_text": cleaned]) else {
+    guard var data = try? JSONEncoder().encode(["cleaned_text": cleaned]) else {
         fail("The answer could not be encoded.", .failed)
     }
-    FileHandle.standardOutput.write(data)
+    data.append(contentsOf: [0x0A])
+    // `try? write(contentsOf:)`: the legacy `write(_:)` raised an uncatchable exception
+    // when the engine had already gone (D-189).
+    try? FileHandle.standardOutput.write(contentsOf: data)
 }
 
 #if canImport(FoundationModels)

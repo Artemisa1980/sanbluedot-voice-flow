@@ -144,3 +144,28 @@ class DescribeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProviderNameTests(unittest.TestCase):
+    """D-156: a trailing newline is not a provider name."""
+
+    def test_a_trailing_newline_is_refused(self) -> None:
+        from sanbluedot_voiceflow.credentials import environment_variable
+        from sanbluedot_voiceflow.errors import VoiceFlowError
+
+        with self.assertRaises(VoiceFlowError):
+            environment_variable("gemini\n")
+
+
+class KeychainStatusTests(unittest.TestCase):
+    """D-157: a locked keychain is not "no key stored"."""
+
+    def test_the_three_states_are_told_apart(self) -> None:
+        from sanbluedot_voiceflow.credentials import describe
+
+        def runner_with(code, out=""):
+            return lambda command, **_k: subprocess.CompletedProcess(command, code, stdout=out, stderr="")
+
+        self.assertEqual(describe("gemini", environment={}, runner=runner_with(0, "k")), "configured")
+        self.assertEqual(describe("gemini", environment={}, runner=runner_with(44)), "no key stored")
+        self.assertIn("unavailable", describe("gemini", environment={}, runner=runner_with(51)))

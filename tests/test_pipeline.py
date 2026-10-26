@@ -204,3 +204,94 @@ class FallbackReasonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TranslateSnippetTests(unittest.TestCase):
+    """D-58: in ES➔EN a Spanish trigger was translated before it could expand."""
+
+    class Translator:
+        name = "translator"
+        mode = "translate"
+
+        def __init__(self) -> None:
+            self.received: str | None = None
+
+        def clean(self, text: str, language_hint: str | None = None) -> str:
+            self.received = text
+            # A translation of the words around the expansion, the expansion untouched.
+            return text.replace("te mando", "I am sending you")
+
+    def test_a_spanish_trigger_expands_before_the_translation(self) -> None:
+        from sanbluedot_voiceflow.snippets import Snippet
+
+        translator = self.Translator()
+        pipeline = DictationPipeline(
+            FakeTranscriber("te mando mi firma", "es"),
+            translator,
+            snippets=[Snippet(trigger="mi firma", expansion="Sandy Q.")],
+        )
+
+        result = pipeline.process(Path("unused.wav"))
+
+        self.assertEqual(translator.received, "te mando Sandy Q.")
+        self.assertEqual(result.final_text, "I am sending you Sandy Q.")
+
+    def test_snippets_do_not_expand_twice_in_translate_mode(self) -> None:
+        """D-196: R5b non-cascading snippet expansion in translate mode."""
+        from sanbluedot_voiceflow.snippets import Snippet
+
+        class EchoTranslator:
+            name = "translator"
+            mode = "translate"
+
+            def clean(self, text: str, language_hint: str | None = None) -> str:
+                return f"Translated: {text} and my linkedin"
+
+        pipeline = DictationPipeline(
+            FakeTranscriber("hola mi firma", "es"),
+            EchoTranslator(),
+            snippets=[
+                Snippet(trigger="mi firma", expansion="my signature"),
+                Snippet(trigger="my linkedin", expansion="https://linkedin.com/in/sandy"),
+            ],
+        )
+        result = pipeline.process(Path("unused.wav"))
+        self.assertEqual(result.final_text, "Translated: hola my signature and my linkedin")
+
+
+class TakeBackProviderFailureTests(unittest.TestCase):
+    """D-93: with Parakeet, a provider failure on a take-back still removes fillers."""
+
+    def test_the_filler_rule_runs_when_the_provider_fails(self) -> None:
+        class Failing:
+            name = "gemini"
+            mode = "clean"
+
+            def clean(self, text: str, language_hint: str | None = None, mode: str | None = None) -> str:
+                raise RuntimeError("offline")
+
+        pipeline = DictationPipeline(
+            FakeTranscriber("eh, nos vemos a las cuatro, no, mejor a las cinco", "es"),
+            Failing(),
+            model_only_for_take_back=True,
+        )
+        result = pipeline.process(Path("unused.wav"))
+        self.assertEqual(result.cleaner, "fillers")
+        self.assertNotIn("eh", result.final_text.casefold().split(","))
+
+
+class FallbackLayerTests(unittest.TestCase):
+    """D-41: the fallback reports the unexpanded text as the corrected layer."""
+
+    def test_the_personalized_text_has_no_expansion(self) -> None:
+        from sanbluedot_voiceflow.snippets import Snippet
+
+        pipeline = DictationPipeline(
+            FakeTranscriber("mi firma", "es"),
+            FakeCleaner(error=RuntimeError("offline")),
+            snippets=[Snippet(trigger="mi firma", expansion="Sandy Q.")],
+        )
+        with self.assertRaises(CleanupFailed) as raised:
+            pipeline.process(Path("unused.wav"))
+        self.assertEqual(raised.exception.personalized_text, "mi firma")
+        self.assertEqual(raised.exception.fallback_text, "Sandy Q.")

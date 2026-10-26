@@ -1,41 +1,33 @@
 import CoreFoundation
 
-/// The floating capsule's measurements, declared once.
+/// The floating Microduck HUD layout and measurements (I-82).
 ///
-/// The window was sized in two places that had to agree and did not. `FloatingHUDPanel`
-/// created it at the redesigned `330 × 88`, and `positionPanel()` — called on every path
-/// that shows the capsule — resized it back to the `295 × 74` the previous design used.
-/// The window the speaker saw was therefore always the old one, 17pt narrower than the
-/// three-row content asks for, so the right edge of the capsule was clipped every time.
-///
-/// Both constants were correct on the day they were written, which is why nothing failed:
-/// the redesign changed one and left the other. They live here now so there is one value
-/// to change, and `VoiceFlowMacCoreChecks` fails the build if the window is ever smaller
-/// than the content it has to carry.
+/// Approved by the owner from `docs/hud-redesign-02-bubble.html` (capsule) and
+/// `docs/microduck-mascot-01.html` §2–3 (the articulated duck). Every value is in points.
 public enum HUDLayout {
-    /// The microphone disc at the leading edge.
-    public static let micDisc: CGFloat = 44
-    /// Space between the disc and the three-row column.
-    public static let discToColumn: CGFloat = 14
-    /// The column carrying status, meter and telemetry.
-    public static let contentColumn: CGFloat = 226
-    public static let horizontalPadding: CGFloat = 14
-    public static let verticalPadding: CGFloat = 10
-    /// Meter and telemetry rows; the status row is sized by its own text.
-    public static let rowHeight: CGFloat = 14
-    public static let rowSpacing: CGFloat = 5
+    // Microduck articulated mascot dimensions
+    public static let duckWidth: CGFloat = 60
+    public static let duckHeight: CGFloat = 82
+    public static let duckToBubble: CGFloat = 60
+    public static let duckToBubbleY: CGFloat = 48
+
+    // Bubble capsule sizes (trimmed width by 2 sizes to eliminate empty void)
+    public static let capsuleMinSize = CGSize(width: 40, height: 18)
+    public static let capsuleShortSize = CGSize(width: 120, height: 24)
+    public static let capsuleFullSize = CGSize(width: 126, height: 35)
+
+    // HUD window bounds containing duck and thought-bubble
+    public static let panelWidth: CGFloat = 196
+    public static let panelHeight: CGFloat = 92
+
+    public static var contentWidth: CGFloat { panelWidth }
+    public static var contentHeight: CGFloat { panelHeight }
+
+    // Column and typography metrics inside the bubble
+    public static let bubbleWidth: CGFloat = 126
+    public static let contentColumn: CGFloat = 106 // 126 - 20 (horizontal padding 10*2)
+    public static let horizontalPadding: CGFloat = 10
+    public static let verticalPadding: CGFloat = 3.5
+    public static let rowSpacing: CGFloat = 2.2
     public static let rowCount: CGFloat = 3
-
-    public static let panelWidth: CGFloat = 330
-    public static let panelHeight: CGFloat = 88
-
-    /// What the capsule's content actually occupies.
-    public static var contentWidth: CGFloat {
-        micDisc + discToColumn + contentColumn + horizontalPadding * 2
-    }
-
-    public static var contentHeight: CGFloat {
-        let rows = rowHeight * rowCount + rowSpacing * (rowCount - 1)
-        return max(micDisc, rows) + verticalPadding * 2
-    }
 }

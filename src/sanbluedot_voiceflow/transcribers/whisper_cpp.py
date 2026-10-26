@@ -162,7 +162,9 @@ class WhisperCppTranscriber:
         # permissions say, so it lets an unreadable model through to the subprocess.
         try:
             with self.model_path.open("rb") as handle:
-                handle.read(1)
+                byte = handle.read(1)
+                if not byte:
+                    raise DependencyUnavailable(f"Whisper model is empty: {self.model_path}")
         except OSError as error:
             raise DependencyUnavailable(
                 f"Whisper model is not readable: {self.model_path}"
@@ -202,11 +204,15 @@ class WhisperCppTranscriber:
                     check=True,
                     capture_output=True,
                     text=True,
+                    errors="replace",
                     timeout=self.timeout_seconds,
                     cwd=str(binary_path.parent),
                 )
             except FileNotFoundError as exc:
                 raise DependencyUnavailable(f"Whisper binary not found: {binary_path}") from exc
+            except PermissionError as exc:
+                # Every OS failure is reported; only a missing file was (D-95).
+                raise DependencyUnavailable(f"Whisper binary could not be run: {exc}") from exc
             except subprocess.TimeoutExpired as exc:
                 raise TranscriptionError(
                     "whisper.cpp did not finish within "
@@ -215,6 +221,8 @@ class WhisperCppTranscriber:
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or "unknown error").strip()[-800:]
                 raise TranscriptionError(f"whisper.cpp failed: {detail}") from exc
+            except OSError as exc:
+                raise DependencyUnavailable(f"Whisper binary could not be run: {exc}") from exc
 
             output_file = Path(f"{output_base}.txt")
             if not output_file.is_file():

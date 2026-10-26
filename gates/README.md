@@ -76,3 +76,6 @@ evidence.
 | `full-code-audit-03-swift-ui.local.md` | 2026-10-23 | Whole-app analysis · SwiftUI views against `design-system.md` | COMPLETE · FIT WITH FIXES · 0 HIGH, 13 MEDIUM, 14 LOW |
 | `full-code-audit-03-pipelines-crosscutting.local.md` | 2026-10-23 | Whole-app analysis · build, security, repository hygiene, docs versus code | COMPLETE · FIT WITH FIXES · 0 HIGH, 5 MEDIUM, 3 LOW |
 | `full-code-audit-03-summary.local.md` | 2026-10-23 | Consolidation of the six logs above, every MEDIUM re-checked in code | COMPLETE · FIT WITH FIXES · 29 MEDIUM, 45 LOW, 2 Windows-only, 53 improvements; analysis only, nothing remediated yet |
+| `full-code-audit-04-python.local.md` | 2026-10-25 | Whole-app review · Python pipeline, cleaners, transcribers, CLI, stores, tests | COMPLETE · 1 HIGH, 4 MEDIUM, 7 LOW |
+| `full-code-audit-04-swift.local.md` | 2026-10-25 | Whole-app review · Swift core, app logic, concurrency, helpers, UI views | COMPLETE · 1 CRITICAL, 1 HIGH, 2 MEDIUM, 1 LOW |
+| `full-code-audit-04-summary.local.md` | 2026-10-25 | Consolidation of the two logs above across Python and Swift | COMPLETE · CONDITIONAL PASS · 17 findings assigned D-191 to D-207 |

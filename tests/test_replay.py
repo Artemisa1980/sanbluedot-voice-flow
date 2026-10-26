@@ -115,7 +115,7 @@ class ReplayEvidenceTests(unittest.TestCase):
             threads=None,
             beam_size=None,
             cleaner="literal",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
         )
 
         with patch.object(replay, "load_vocabulary", return_value=["UTEL"]):
@@ -132,7 +132,7 @@ class ReplayEvidenceTests(unittest.TestCase):
             whisper_bin="whisper-cli",
             language="auto",
             cleaner="literal",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
             no_vocab_prompt=False,
             prompt_budget=600,
             threads=None,
@@ -172,7 +172,7 @@ class ReplayEvidenceTests(unittest.TestCase):
             whisper_bin="whisper-cli",
             language="auto",
             cleaner="apple",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
             no_vocab_prompt=False,
             prompt_budget=600,
             threads=None,

@@ -145,3 +145,15 @@ class AppleRegistrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StrayOutputTests(unittest.TestCase):
+    """D-150: a library line before the answer does not break the cleanup."""
+
+    def test_the_last_line_is_the_answer(self) -> None:
+        recorder = Recorder(stdout="some framework notice\n" + answer("Hola.") + "\n")
+        self.assertEqual(build(recorder).clean("hola"), "Hola.")
+
+    def test_trailing_diagnostics_do_not_break_the_cleanup(self) -> None:
+        recorder = Recorder(stdout="init log\n" + answer("Hola.") + "\nMetal API validation disabled.\n")
+        self.assertEqual(build(recorder).clean("hola"), "Hola.")

@@ -21,6 +21,9 @@ class PipelineResult:
     # when the stage did not run, never a placeholder standing in for a measurement.
     transcribe_seconds: float | None = None
     cleanup_seconds: float | None = None
+    # What the cleanup step returned, before snippets and macros were expanded. A
+    # distillation pair is this beside `personalized_text` (D-27).
+    cleaner_output: str | None = None
 
 
 class Transcriber(Protocol):

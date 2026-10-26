@@ -49,6 +49,15 @@ public final class VoiceSnippetStore: @unchecked Sendable {
         self._snippets = snippets
     }
 
+    /// The snippet a trigger already names, matched the way `add` replaces it.
+    public func existing(trigger: String) -> VoiceSnippet? {
+        let cleanTrigger = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTrigger.isEmpty else { return nil }
+        return snippets.first {
+            $0.trigger.localizedCaseInsensitiveCompare(cleanTrigger) == .orderedSame
+        }
+    }
+
     public func add(trigger: String, expansion: String, description: String? = nil) -> VoiceSnippet? {
         let cleanTrigger = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanExpansion = expansion.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,8 +202,7 @@ public final class VoiceSnippetStore: @unchecked Sendable {
                 current = VoiceSnippetStore()
             }
             change(current)
-            guard let data = current.encode(),
-                  (try? data.write(to: fileURL, options: .atomic)) != nil else { return nil }
+            guard let data = current.encode(), writeFlushed(data, to: fileURL) else { return nil }
             return current
         }
     }
@@ -202,7 +210,33 @@ public final class VoiceSnippetStore: @unchecked Sendable {
     public func save(to fileURL: URL = defaultStoreURL) {
         guard let data = encode() else { return }
         Self.withFileLock(fileURL) {
-            try? data.write(to: fileURL, options: .atomic)
+            _ = Self.writeFlushed(data, to: fileURL)
+        }
+    }
+
+    /// Temporary file, flushed to the drive, then renamed over the store. `.atomic`
+    /// renames without a flush, so a power loss right after could leave the store empty
+    /// (D-134); macOS needs `F_FULLFSYNC` for the drive itself to flush.
+    static func writeFlushed(_ data: Data, to fileURL: URL) -> Bool {
+        let directory = fileURL.deletingLastPathComponent()
+        let temporary = directory.appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else { return false }
+            let handle = try FileHandle(forWritingTo: temporary)
+            try handle.write(contentsOf: data)
+            if fcntl(handle.fileDescriptor, F_FULLFSYNC) != 0 { fsync(handle.fileDescriptor) }
+            try handle.close()
+            guard rename(temporary.path, fileURL.path) == 0 else { return false }
+            let folder = open(directory.path, O_RDONLY)
+            if folder >= 0 {
+                if fcntl(folder, F_FULLFSYNC) != 0 { fsync(folder) }
+                close(folder)
+            }
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -217,8 +251,10 @@ public final class VoiceSnippetStore: @unchecked Sendable {
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
                 return (VoiceSnippetStore(), nil)
             }
+            // A read error (permission, I/O) says nothing about the file's content, so
+            // it stays where it is; only a decode failure moves it aside (D-165).
             guard let data = try? Data(contentsOf: fileURL) else {
-                return (VoiceSnippetStore(), quarantine(fileURL, reason: "the file could not be read"))
+                return (VoiceSnippetStore(), "The snippet store could not be read right now; it was left in place.")
             }
             guard let store = decode(from: data) else {
                 return (VoiceSnippetStore(), quarantine(fileURL, reason: "the file is not a valid snippet store"))

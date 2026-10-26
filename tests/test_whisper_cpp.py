@@ -30,7 +30,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             audio = root / "sample.wav"
             binary.touch()
             binary.chmod(0o755)
-            model.touch()
+            model.write_bytes(b"ggml-mock-weights")
             audio.touch()
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -62,6 +62,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / "whisper-cli", root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -86,6 +87,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -115,6 +117,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -144,6 +147,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -173,6 +177,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -199,7 +204,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             audio = root / "sample.wav"
             binary.touch()
             binary.chmod(0o755)
-            model.touch()
+            model.write_bytes(b"ggml-mock-weights")
             audio.touch()
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -225,6 +230,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -257,7 +263,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             audio = root / "sample.wav"
             binary.touch()
             binary.chmod(0o755)
-            model.touch()
+            model.write_bytes(b"ggml-mock-weights")
             audio.touch()
 
             def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -281,6 +287,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -296,6 +303,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -323,6 +331,7 @@ class WhisperCppTranscriberTests(unittest.TestCase):
             binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
             for path in (binary, model, audio):
                 path.touch()
+            model.write_bytes(b"ggml-mock-weights")
             binary.chmod(0o755)
 
             model.chmod(0o000)
@@ -466,7 +475,7 @@ class SilenceGuardTests(unittest.TestCase):
             binary, model = root / BINARY_NAME, root / "model.bin"
             binary.touch()
             binary.chmod(0o755)
-            model.touch()
+            model.write_bytes(b"ggml-mock-weights")
             audio = self.write_wav(root / "quiet.wav", 0)
             called: list[list[str]] = []
 
@@ -478,6 +487,21 @@ class SilenceGuardTests(unittest.TestCase):
                 WhisperCppTranscriber(model, binary=str(binary), runner=runner).transcribe(audio)
 
             self.assertEqual(called, [])
+
+    def test_empty_model_raises_dependency_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            binary, model, audio = root / BINARY_NAME, root / "model.bin", root / "s.wav"
+            binary.touch()
+            binary.chmod(0o755)
+            model.touch()  # 0 bytes
+            audio.write_bytes(b"mock audio")
+
+            transcriber = WhisperCppTranscriber(model, binary=str(binary))
+            with self.assertRaises(DependencyUnavailable) as ctx:
+                transcriber.transcribe(audio)
+
+            self.assertIn("Whisper model is empty", str(ctx.exception))
 
 
 class BinaryResolutionTests(unittest.TestCase):

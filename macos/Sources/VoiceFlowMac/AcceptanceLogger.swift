@@ -99,7 +99,12 @@ final class AcceptanceLogger {
             .appendingPathComponent(folder, isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let name = String(format: "%03d.wav", sequence)
+        // Above the highest file already there, not the log's sequence alone: a folder
+        // that outlived its log made every append throw on `001.wav` (D-172).
+        let existing = ((try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .compactMap { Int(($0 as NSString).deletingPathExtension) }
+        let number = max(sequence, (existing.max() ?? 0) + 1)
+        let name = String(format: "%03d.wav", number)
         let destination = directory.appendingPathComponent(name)
         try fileManager.copyItem(at: source, to: destination)
         return "\(folder)/\(name)"

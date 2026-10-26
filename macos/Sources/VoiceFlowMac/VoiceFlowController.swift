@@ -22,7 +22,10 @@ enum VoiceFlowStatus {
         /// How long the speaker actually held the shortcut and spoke. Speaking rate is
         /// words over this, never words over the processing time, which measures the
         /// machine rather than the speaker.
-        spokenSeconds: TimeInterval
+        spokenSeconds: TimeInterval,
+        /// The cleaner this run used, captured at the press like the mode. Reading the
+        /// live selection mislabeled a run changed during the arming hold (D-171).
+        cleaner: CleanerMode
     )
     /// The speaker took the recording back before it was delivered, or let go of the
     /// trigger before the microphone ever opened.
@@ -113,6 +116,8 @@ final class VoiceFlowController {
     private var state = State.idle
     private var recordingSource: RecordingSource?
     private var armWorkItem: DispatchWorkItem?
+    /// Ends a take that ran past `RecordingHygiene.maximumRecordingSeconds` (D-67).
+    private var capWorkItem: DispatchWorkItem?
     private let holdDelaySeconds: TimeInterval
     private var recordingStartedAt: Date?
     private var recordingCleaner: CleanerMode?
@@ -171,6 +176,7 @@ final class VoiceFlowController {
             // press never pointed at, and it only ever ran when the first read had already
             // decided there was nothing selected.
             state = .recording
+            scheduleRecordingCap()
             onStatusChange?(.recording)
         } catch {
             fail(error)
@@ -200,6 +206,8 @@ final class VoiceFlowController {
         case .recording:
             break
         }
+        capWorkItem?.cancel()
+        capWorkItem = nil
         state = .idle
         recordingSource = nil
         recordingStartedAt = nil
@@ -210,7 +218,13 @@ final class VoiceFlowController {
         // Cleared with the rest of the run's state. Leaving it behind relied on the next
         // press overwriting it, which is an invariant of a different method.
         if let audioURL = try? recorder.stop() {
-            try? removeTemporaryAudio(at: audioURL)
+            do {
+                try removeTemporaryAudio(at: audioURL)
+            } catch {
+                // Not reported as discarded when it was not (D-105).
+                onStatusChange?(.failed("Recording cancelled, but its audio could not be deleted at \(audioURL.path)."))
+                return
+            }
         }
         onStatusChange?(.cancelled(reason: .escaped))
     }
@@ -232,6 +246,8 @@ final class VoiceFlowController {
             return
         }
         guard state == .recording else { return }
+        capWorkItem?.cancel()
+        capWorkItem = nil
 
         let audioURL: URL
         do {
@@ -294,9 +310,16 @@ final class VoiceFlowController {
                 }
                 let audioCleanupError = self.cleanupWarning(for: audioURL)
                 DispatchQueue.main.async {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(result.finalText, forType: .string)
+                    // A spoken command that will run is not copied: it replaced what the
+                    // speaker had on the clipboard with the command itself (D-50).
+                    let runsAction = mode.parsesVoiceActions
+                        && (VoiceActionParser.parse(text: result.finalText)
+                            ?? VoiceActionParser.parse(text: result.rawText)) != nil
+                    if !runsAction {
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(result.finalText, forType: .string)
+                    }
 
                     self.state = .idle
                     self.onStatusChange?(
@@ -309,17 +332,59 @@ final class VoiceFlowController {
                             model: result.model,
                             mode: mode,
                             result: result,
-                            spokenSeconds: spokenSeconds
+                            spokenSeconds: spokenSeconds,
+                            cleaner: cleaner
                         )
                     )
                 }
             } catch {
                 let audioCleanupError = self.cleanupWarning(for: audioURL)
                 DispatchQueue.main.async {
+                    // A take with no speech is a refusal, like a touch too short, not an
+                    // engine failure with a status number (D-52).
+                    if case EngineRunnerError.engineFailed(_, let detail) = error,
+                       detail.contains("no audible speech"), audioCleanupError == nil {
+                        self.resetRun()
+                        self.onStatusChange?(.cancelled(reason: .refused(
+                            "nothing heard · the recording had no speech, so nothing was pasted")))
+                        return
+                    }
                     self.fail(error, additionalMessage: audioCleanupError)
                 }
             }
         }
+    }
+
+    /// Ends the take as if the trigger were released, so what was said is still
+    /// delivered rather than discarded.
+    private func scheduleRecordingCap() {
+        let source = recordingSource ?? .hotkey
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .recording else { return }
+            self.shortcutReleased(from: source)
+        }
+        capWorkItem = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + RecordingHygiene.maximumRecordingSeconds,
+            execute: work
+        )
+    }
+
+    /// Takes stranded by an earlier quit or crash, deleted at launch. The live take, if
+    /// any, is kept.
+    func sweepStrandedTakes() {
+        RecordingHygiene.sweep(
+            in: FileManager.default.temporaryDirectory,
+            keeping: recorder.liveTakeURL
+        )
+    }
+
+    /// On Quit nothing is in use any more: the live take goes too (D-68).
+    func discardAudioOnTermination() {
+        if state == .recording, let audioURL = try? recorder.stop() {
+            try? removeTemporaryAudio(at: audioURL)
+        }
+        RecordingHygiene.sweep(in: FileManager.default.temporaryDirectory)
     }
 
     private func cleanupWarning(for audioURL: URL) -> String? {
@@ -338,9 +403,12 @@ final class VoiceFlowController {
         state == .recording || state == .arming
     }
 
-    private func fail(_ error: Error, additionalMessage: String? = nil) {
+    /// Every per-run value cleared and the controller idle, with nothing reported.
+    private func resetRun() {
         armWorkItem?.cancel()
         armWorkItem = nil
+        capWorkItem?.cancel()
+        capWorkItem = nil
         recordingSource = nil
         recordingStartedAt = nil
         recordingCleaner = nil
@@ -351,6 +419,10 @@ final class VoiceFlowController {
         recordingGeminiModel = nil
         recordingSpeechEngine = nil
         state = .idle
+    }
+
+    private func fail(_ error: Error, additionalMessage: String? = nil) {
+        resetRun()
         let suffix = additionalMessage.map { " \($0)" } ?? ""
         onStatusChange?(.failed(error.localizedDescription + suffix))
     }

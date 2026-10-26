@@ -22,11 +22,12 @@ enum AutoPaste {
         frontmostApplication: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         },
-        completion: @escaping @MainActor (Bool) -> Void
+        completion: @escaping @MainActor (Bool, String?) -> Void
     ) {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        guard AXIsProcessTrustedWithOptions(options) else {
-            completion(false)
+        // Checked without the system prompt: asking on every paste could raise it each
+        // time permission is missing (D-46). The prompt belongs to the explicit request.
+        guard AXIsProcessTrusted() else {
+            completion(false, nil)
             return
         }
 
@@ -34,7 +35,7 @@ enum AutoPaste {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
-            completion(false)
+            completion(false, nil)
             return
         }
 
@@ -49,24 +50,23 @@ enum AutoPaste {
             guard !PasteTarget.requiresClipboardDelivery(
                 bundleIdentifier: targetBundleID
             ) else {
-                completion(false)
+                completion(false, nil)
                 return
             }
 
             // If pasting into a terminal emulator, flatten multi-line text into a single
             // line and trim whitespace to guarantee safe prompt insertion without accidental execution.
+            // The delivered text is handed back, so History records what the terminal
+            // received rather than the multi-line original (D-12).
+            var delivered: String?
             if PasteTarget.isTerminal(bundleIdentifier: targetBundleID) {
                 let pasteboard = NSPasteboard.general
                 if let current = pasteboard.string(forType: .string) {
-                    let singleLine = current
-                        .components(separatedBy: .newlines)
-                        .map { $0.trimmingCharacters(in: .whitespaces) }
-                        .filter { !$0.isEmpty }
-                        .joined(separator: " ")
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let singleLine = PasteTarget.terminalSafe(current)
                     if singleLine != current {
                         pasteboard.clearContents()
                         pasteboard.setString(singleLine, forType: .string)
+                        delivered = singleLine
                     }
                 }
             }
@@ -74,7 +74,7 @@ enum AutoPaste {
             keyDown.post(tap: .cghidEventTap)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.015) {
                 keyUp.post(tap: .cghidEventTap)
-                completion(true)
+                completion(true, delivered)
             }
         }
     }

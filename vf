@@ -1,5 +1,7 @@
 #!/bin/zsh
 # Short entry point for the local engine: ./vf memory | correct | forget | doctor
 set -euo pipefail
+# The caller's folder, so a relative --to or --from lands where it was typed (D-64).
+export VF_CALLER_DIR="$PWD"
 cd "${0:A:h}"
 PYTHONPATH=src exec python3 -m sanbluedot_voiceflow "$@"

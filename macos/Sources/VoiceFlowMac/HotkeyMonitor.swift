@@ -87,6 +87,10 @@ final class HotkeyMonitor {
         keyIsDown = false
     }
 
+    deinit {
+        stop()
+    }
+
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let eventTap {
@@ -166,6 +170,12 @@ final class HotkeyMonitor {
 
     /// Reconcile the remembered hold against the keyboard's real state. Only a stale
     /// "still held" is correctable here; a missed press simply waits for the next one.
+    /// After the Mac wakes: a release that happened while it slept was never seen, so
+    /// the held state is read from the keyboard again (D-67).
+    func resyncAfterWake() {
+        resyncHeldState()
+    }
+
     private func resyncHeldState() {
         guard keyIsDown else { return }
         let flags = CGEventSource.flagsState(.combinedSessionState)

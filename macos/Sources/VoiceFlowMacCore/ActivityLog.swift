@@ -89,13 +89,6 @@ public enum HUDBadge {
 
     /// `gemini-3.8-flash` reads as `3.8` in a capsule this narrow. The full identifier
     /// stays in the station window's activity log.
-    /// Above this many captured characters the size reads as a warning rather than a fact.
-    ///
-    /// A highlighted sentence runs to a few hundred characters and a long paragraph to
-    /// about two thousand. Past that the selection is more likely a file than a passage,
-    /// which is the case worth catching: a `⌘A` nobody meant, or an editor that copied
-    /// more than was on screen. It colours the figure and blocks nothing — the speaker
-
     public static func shortModelName(_ model: String) -> String {
         model
             .replacingOccurrences(of: "gemini-", with: "")

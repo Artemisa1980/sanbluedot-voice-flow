@@ -91,6 +91,7 @@ class AppleCleaner:
                 input=request,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=self.timeout_seconds,
                 check=False,
             )
@@ -111,11 +112,21 @@ class AppleCleaner:
         if status != 0:
             raise CleanupError(detail or "Apple cleanup failed.")
 
-        body = (getattr(completed, "stdout", "") or "").strip()
-        try:
-            cleaned = json.loads(body)["cleaned_text"]
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise CleanupError("Apple cleanup returned an invalid answer.") from exc
-        if not isinstance(cleaned, str) or not cleaned.strip():
+        # The answer is the JSON line emitted by the helper; walk backwards to skip
+        # any trailing diagnostic or runtime shutdown lines (D-199).
+        lines = [line for line in (getattr(completed, "stdout", "") or "").splitlines() if line.strip()]
+        data: dict[str, object] | None = None
+        for line in reversed(lines):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict) and "cleaned_text" in parsed:
+                    data = parsed
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if data is None or not isinstance(data.get("cleaned_text"), str):
+            raise CleanupError("Apple cleanup returned an invalid answer.")
+        cleaned = str(data["cleaned_text"])
+        if not cleaned.strip():
             raise CleanupError("Apple cleanup returned empty text.")
         return cleaned.strip()

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import VoiceFlowMacCore
 
 enum AudioRecorderError: LocalizedError {
     case alreadyRecording
@@ -36,6 +37,9 @@ final class AudioRecorder {
     private var recorder: AVAudioRecorder?
     private var outputURL: URL?
 
+    /// The take being written, so a sweep never deletes it.
+    var liveTakeURL: URL? { outputURL }
+
     static func requestAccess(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
@@ -55,7 +59,7 @@ final class AudioRecorder {
         }
 
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sanbluedot-voiceflow-\(UUID().uuidString).wav")
+            .appendingPathComponent("\(RecordingHygiene.temporaryAudioPrefix)\(UUID().uuidString).wav")
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: 16_000,
@@ -95,6 +99,8 @@ final class AudioRecorder {
         guard let recorder, recorder.isRecording else { return 0.0 }
         recorder.updateMeters()
         let avgPower = recorder.averagePower(forChannel: 0)
+        // A NaN level trapped where the meter converts it to a bar count (D-174).
+        guard avgPower.isFinite else { return 0.0 }
         let minDb: Float = -50.0
         if avgPower < minDb { return 0.0 }
         if avgPower >= 0.0 { return 1.0 }

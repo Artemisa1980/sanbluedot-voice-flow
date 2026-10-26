@@ -133,10 +133,14 @@ private struct EngineTimings: Decodable {
     }
 }
 
-final class EngineRunner {
+/// Holds only immutable configuration, so it is safe to hand to a background queue; the
+/// conformance states what the compiler could not infer (D-188).
+final class EngineRunner: @unchecked Sendable {
     /// Last-resort watchdog. Each engine stage carries its own shorter limit, so this
-    /// only fires when a stage stops honouring its own timeout.
-    static let timeout: TimeInterval = 180
+    /// only fires when a stage stops honouring its own timeout. Above the sum of the
+    /// stage limits — Whisper 120 s plus a take-back fix and a cleanup at up to 60 s
+    /// each — so it can never race a run that is still inside them (D-45).
+    static let timeout: TimeInterval = 260
 
     /// The Apple cleanup helper, beside this executable, or nil when this build has none.
     ///
@@ -217,6 +221,19 @@ final class EngineRunner {
             throw EngineRunnerError.invalidResult
         }
         return snapshot
+    }
+
+    /// Run doctor checks to inspect speech models, helpers and keychain credentials.
+    func doctor() throws -> String {
+        let invocation = EngineInvocation.makeDoctorRun(
+            configuration: configuration,
+            engineSourceRoot: engineSourceRoot
+        )
+        let (status, output, detail) = try execute(invocation)
+        guard status == 0 || !output.isEmpty else {
+            throw EngineRunnerError.engineFailed(status, detail)
+        }
+        return String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Run one engine invocation to completion and read its reply.
@@ -314,7 +331,11 @@ final class EngineRunner {
 
         if drain.wait(timeout: .now() + Self.timeout) == .timedOut {
             process.terminate()
-            _ = drain.wait(timeout: .now() + 5)
+            // SIGKILL after the grace period: waiting on SIGTERM alone could hang
+            // without limit on a child that ignores it (D-104).
+            if drain.wait(timeout: .now() + 5) == .timedOut, process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
             process.waitUntilExit()
             throw EngineRunnerError.timedOut(Self.timeout)
         }

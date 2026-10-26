@@ -81,6 +81,17 @@ class ParakeetTranscriberTests(unittest.TestCase):
                 ParakeetTranscriber(models, str(binary), runner=runner).transcribe(audio)
         self.assertIn("did not finish", str(raised.exception))
 
+    def test_json_parsed_correctly_with_trailing_diagnostic_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            binary, models, audio = self._setup(Path(temp_dir))
+
+            def runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+                stdout = 'Loading CoreML...\n{"text": "Hola mundo"}\nMetal validation disabled.\nXPC connection finished.\n'
+                return subprocess.CompletedProcess(command, 0, stdout, "")
+
+            transcript = ParakeetTranscriber(models, str(binary), runner=runner).transcribe(audio)
+            self.assertEqual(transcript.text, "Hola mundo")
+
 
 class ProcessWithParakeetTests(unittest.TestCase):
     def _args(self, **overrides: object) -> argparse.Namespace:
@@ -94,7 +105,7 @@ class ProcessWithParakeetTests(unittest.TestCase):
             "language": "auto",
             "cleaner": "literal",
             "mode": "clean",
-            "gemini_model": "gemini-3.5-flash",
+            "gemini_model": "gemini-3.8-flash",
             "copy": False,
             "json": False,
             "no_memory": True,

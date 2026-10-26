@@ -44,6 +44,9 @@ cannot be told apart from one that was missed.
 | `product-direction-03-writing-studio.html` | Writing Studio, transcript library and full-text review | Alternative retained for comparison; not selected |
 | `history-redesign-01.html` | History, the list inside the unchanged chassis | Approved and built 2026-09-26; `design-system.md` records the result |
 | `words-section-01.html` | Words, replacing Modes: corrections, vocabulary and modes | Approved and built 2026-09-27; `design-system.md` records the result |
+| `microduck-mascot-01.html` | Floating HUD mascot: three Microduck drawings, five animated states, an articulated rig whose pose follows the voice, colour variants | Rig (§2–3) approved 2026-10-25, one colour; build is `backlog.md` I-82 |
+| `hud-redesign-01-microduck.html` | Floating HUD capsule rebuilt around the Microduck: beside, speech bubble and perch layouts, every state | Superseded 2026-10-25 by `hud-redesign-02-bubble.html` |
+| `hud-redesign-02-bubble.html` | Floating HUD as a small round-ended capsule beside the duck's head, in three sizes; the duck appears only once a voice is heard | Approved 2026-10-25; `design-system.md` records it; build is `backlog.md` I-82 |
 
 Proposals 02–03 share `product-directions.css`; keep it beside those individual previews.
 The [full comparison](product-directions.html) embeds the interfaces, styles and bundled

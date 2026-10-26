@@ -18,7 +18,7 @@ import VoiceFlowMacCore
 /// runs on this Mac. A cloud engine is refused with the reason rather than swapped for a
 /// local one: a shortcut shows nothing that would say the text is leaving, and a silent
 /// swap would run an engine she did not pick.
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 enum IntentEngine {
     /// Where the app keeps the engine the speaker chose. Read directly because an intent
     /// may run with no window open and no delegate alive.
@@ -75,15 +75,42 @@ enum IntentEngine {
         } catch {
             throw IntentFailure.engineUnavailable(error.localizedDescription)
         }
-        // The throwing API: the legacy `write(_:)` raises an Objective-C exception on a
-        // broken pipe, which Swift cannot catch and which ends the app (D-69).
+        // Feed standardInput asynchronously so a large input does not block on pipe buffers.
         if let data = invocation.standardInput?.data(using: .utf8) {
-            try? input.fileHandleForWriting.write(contentsOf: data)
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? input.fileHandleForWriting.write(contentsOf: data)
+                try? input.fileHandleForWriting.close()
+            }
+        } else {
+            try? input.fileHandleForWriting.close()
         }
-        try? input.fileHandleForWriting.close()
 
-        let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = errors.fileHandleForReading.readDataToEndOfFile()
+        // Drain stdout and stderr concurrently with DispatchGroup (D-204) to avoid deadlocks
+        // when stderr exceeds the pipe buffer (64KB).
+        var stdout = Data()
+        var stderr = Data()
+        let drain = DispatchGroup()
+        let drainQueue = DispatchQueue(
+            label: "dot.sanblue.voiceflow.intents-drain",
+            attributes: .concurrent
+        )
+        drainQueue.async(group: drain) {
+            stdout = output.fileHandleForReading.readDataToEndOfFile()
+        }
+        drainQueue.async(group: drain) {
+            stderr = errors.fileHandleForReading.readDataToEndOfFile()
+        }
+
+        // Watchdog with 45s grace and SIGTERM/SIGKILL termination escalation matching EngineRunner (D-204).
+        let timeoutSeconds: TimeInterval = 45.0
+        if drain.wait(timeout: .now() + timeoutSeconds) == .timedOut {
+            process.terminate()
+            if drain.wait(timeout: .now() + 5) == .timedOut, process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
+            process.waitUntilExit()
+            throw IntentFailure.engineFailed("The engine timed out after \(Int(timeoutSeconds)) seconds.")
+        }
         process.waitUntilExit()
 
         // 0 delivered, 2 delivered the deterministic text after a refused cleanup.
@@ -104,7 +131,7 @@ enum IntentEngine {
     }
 }
 
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 enum IntentFailure: Error, CustomLocalizedStringResourceConvertible {
     case noText
     case refused(String)
@@ -130,13 +157,13 @@ enum IntentFailure: Error, CustomLocalizedStringResourceConvertible {
 /// An intent can run while the app is not in front, and it needs the same project root
 /// and engine sources a dictation uses. The delegate sets this once; an intent that
 /// arrives before launch has finished is refused with that reason rather than crashing.
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 enum AppIntentsContext {
     nonisolated(unsafe) static var configuration: VoiceFlowConfiguration? = nil
     nonisolated(unsafe) static var engineSourceRoot: URL?
 }
 
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 struct CleanTextIntent: AppIntent {
     static var title: LocalizedStringResource = "Clean Up Text"
     static var description = IntentDescription(
@@ -152,7 +179,7 @@ struct CleanTextIntent: AppIntent {
     }
 }
 
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 struct TranslateTextIntent: AppIntent {
     static var title: LocalizedStringResource = "Translate to English"
     static var description = IntentDescription(
@@ -168,7 +195,7 @@ struct TranslateTextIntent: AppIntent {
     }
 }
 
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 struct MeetingNotesIntent: AppIntent {
     static var title: LocalizedStringResource = "Turn Into Meeting Notes"
     static var description = IntentDescription(
@@ -187,9 +214,9 @@ struct MeetingNotesIntent: AppIntent {
 /// The phrases Siri accepts without the speaker opening Shortcuts first.
 ///
 /// `${applicationName}` is what Siri needs in order to know which app is meant, so each
-/// phrase carries it. Four is the shape: one obvious phrase per intent, rather than a
+/// phrase carries it. Three is the shape: one obvious phrase per intent, rather than a
 /// list that competes with itself for the same words.
-@available(macOS 13.0, *)
+@available(macOS 14.0, *)
 struct VoiceFlowShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(

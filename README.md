@@ -237,7 +237,8 @@ still working is ignored and logged, because that run already received its mode.
 The menu bar keeps the last ten dictations — raw, personalized and final text, latency,
 provider, and whether the text was pasted or copied — so a thought is not lost when the
 clipboard is overwritten. Each entry can be copied, re-pasted, or cleared; the list
-persists across launches in this app's user defaults and holds ten items at most.
+persists across launches in `history.local.json` beside the other personal stores, holds
+ten items at most, and is included in `vf export`.
 
 ## Distillation pairs
 

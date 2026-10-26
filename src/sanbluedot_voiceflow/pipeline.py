@@ -55,12 +55,20 @@ class DictationPipeline:
         language: str | None,
         transcribe_seconds: float | None,
         cleanup_started: float,
-    ) -> tuple[str, float]:
+    ) -> tuple[str, float, str]:
         """One cleanup in `mode`, through the guard that mode faces, snippets expanded."""
         try:
             if mode == "fix":
                 cleaned = self._cleaner.clean(
                     personalized_text, language_hint=language, mode="fix"
+                )
+            elif mode == "translate":
+                # Triggers are spoken in Spanish, so they expand before the translation:
+                # translated first, "mi firma" became "my signature" and matched nothing
+                # (D-58). The expansion itself then passes through the translation.
+                cleaned = self._cleaner.clean(
+                    expand_snippets(personalized_text, self._snippets, app_name=self._app_name),
+                    language_hint=language,
                 )
             else:
                 cleaned = self._cleaner.clean(personalized_text, language_hint=language)
@@ -83,6 +91,7 @@ class DictationPipeline:
                         f"The {label} guard refused the cleanup: {exc}",
                         raw_text=raw_text,
                         fallback_text=fallback,
+                        personalized_text=personalized_text,
                         language=language,
                         transcribe_seconds=transcribe_seconds,
                         cleanup_seconds=cleanup_seconds,
@@ -94,11 +103,18 @@ class DictationPipeline:
                     f"Cleanup with {self._cleaner.name!r} returned empty text.",
                     raw_text=raw_text,
                     fallback_text=fallback,
+                    personalized_text=personalized_text,
                     language=language,
                     transcribe_seconds=transcribe_seconds,
                     cleanup_seconds=cleanup_seconds,
                 )
-            final_text = expand_snippets(cleaned, self._snippets, app_name=self._app_name)
+            # In translate mode, snippets already expanded on personalized_text before
+            # translation (line 70). Expanding again here would violate R5b non-cascading.
+            final_text = (
+                cleaned
+                if mode == "translate"
+                else expand_snippets(cleaned, self._snippets, app_name=self._app_name)
+            )
         except CleanupFailed:
             # Already carries its raw and fallback text. Re-wrapping it here doubled the
             # message the speaker sees.
@@ -108,11 +124,12 @@ class DictationPipeline:
                 f"Cleanup with {self._cleaner.name!r} failed: {exc}",
                 raw_text=raw_text,
                 fallback_text=fallback,
+                personalized_text=personalized_text,
                 language=language,
                 transcribe_seconds=transcribe_seconds,
                 cleanup_seconds=self._monotonic() - cleanup_started,
             ) from exc
-        return final_text, cleanup_seconds
+        return final_text, cleanup_seconds, cleaned
 
     def _without_model(
         self,
@@ -120,11 +137,11 @@ class DictationPipeline:
         personalized_text: str,
         cleanup_started: float,
         **_: object,
-    ) -> tuple[str, float]:
+    ) -> tuple[str, float, str]:
         """The `clean` a punctuating engine needs: fillers out by rule, snippets expanded."""
         cleaned = remove_fillers(personalized_text)
         final_text = expand_snippets(cleaned, self._snippets, app_name=self._app_name)
-        return final_text, self._monotonic() - cleanup_started
+        return final_text, self._monotonic() - cleanup_started, cleaned
 
     def process_text(
         self,
@@ -181,29 +198,32 @@ class DictationPipeline:
         cleaner_name = self._cleaner.name
         if switch_to_fix:
             try:
-                final_text, cleanup_seconds = self._clean_once(mode="fix", **attempt)
+                final_text, cleanup_seconds, cleaner_output = self._clean_once(mode="fix", **attempt)
             except CleanupFailed as exc:
-                if exc.reason != "guard":
+                # With a punctuating engine the filler rule needs no model, so a provider
+                # failure on a take-back still gets it instead of the raw text (D-93).
+                if exc.reason != "guard" and not no_model:
                     raise
                 # The fix put in a word the speaker did not say. The dictation still gets
                 # the ordinary cleanup rather than dropping straight to the transcript.
                 if no_model:
-                    final_text, cleanup_seconds = self._without_model(**attempt)
+                    final_text, cleanup_seconds, cleaner_output = self._without_model(**attempt)
                     cleaner_name = "fillers"
                 else:
-                    final_text, cleanup_seconds = self._clean_once(mode=mode, **attempt)
+                    final_text, cleanup_seconds, cleaner_output = self._clean_once(mode=mode, **attempt)
         elif no_model:
-            final_text, cleanup_seconds = self._without_model(**attempt)
+            final_text, cleanup_seconds, cleaner_output = self._without_model(**attempt)
             # Named for what ran, so nothing reports a model that was never asked.
             cleaner_name = "fillers"
         else:
-            final_text, cleanup_seconds = self._clean_once(mode=mode, **attempt)
+            final_text, cleanup_seconds, cleaner_output = self._clean_once(mode=mode, **attempt)
 
         if personalized_text and not final_text.strip():
             raise CleanupFailed(
                 f"Cleanup with {self._cleaner.name!r} returned empty text.",
                 raw_text=raw_text,
                 fallback_text=fallback,
+                personalized_text=personalized_text,
                 language=language,
                 transcribe_seconds=transcribe_seconds,
                 cleanup_seconds=cleanup_seconds,
@@ -217,4 +237,5 @@ class DictationPipeline:
             cleaner=cleaner_name,
             transcribe_seconds=transcribe_seconds,
             cleanup_seconds=cleanup_seconds,
+            cleaner_output=cleaner_output,
         )

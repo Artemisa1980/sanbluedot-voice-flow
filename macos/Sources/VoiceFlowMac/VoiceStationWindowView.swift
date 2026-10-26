@@ -26,8 +26,12 @@ public enum VoiceStationTokens {
     // system: `Color.green` is adaptive, so it changed the app's ready state with the
     // viewer's macOS settings. See design-system.md §Status palette.
     public static let ok = Color(red: 0x5F / 255.0, green: 0x70 / 255.0, blue: 0x50 / 255.0) // #5F7050 Sage-deep
+    /// Sage for text on the dark capsule: `ok` measured 2.8–3.7 there, this 7.1 on navy (D-145).
+    public static let okOnDark = Color(red: 0x9C / 255.0, green: 0xB3 / 255.0, blue: 0x86 / 255.0) // #9CB386 Sage-light
     public static let working = Color(red: 0xD9 / 255.0, green: 0x8A / 255.0, blue: 0x2B / 255.0) // #D98A2B Amber-deep
     public static let rec = Color(red: 0xFF / 255.0, green: 0x7B / 255.0, blue: 0x6B / 255.0) // #FF7B6B Coral
+    public static let duckOrange = Color(red: 0xF2 / 255.0, green: 0x6B / 255.0, blue: 0x1D / 255.0) // #F26B1D Duck bill and feet
+    public static let duckOrangeDeep = Color(red: 0xC9 / 255.0, green: 0x56 / 255.0, blue: 0x1A / 255.0) // #C9561A Duck lower jaw
 
     // Console badge palette. These are not brand colours and are not used on the mint
     // canvas: they exist to tell eight log categories apart at 7pt on the dark olive
@@ -96,6 +100,13 @@ public enum ConsoleFilterMode: String, CaseIterable, Sendable {
 
 // MARK: - Activity Log Item
 public struct ActivityLogItem: Identifiable, Equatable {
+    /// One formatter for every log line; one was built per line (D-177).
+    static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
     public let id = UUID()
     public let timestamp: String
     public let category: LogCategory
@@ -111,9 +122,7 @@ public struct ActivityLogItem: Identifiable, Equatable {
         tags: [String] = [],
         isHighlight: Bool = false
     ) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        self.timestamp = formatter.string(from: Date())
+        self.timestamp = ActivityLogItem.clock.string(from: Date())
         self.category = category
         self.message = message
         self.latency = latency
@@ -156,6 +165,24 @@ extension EnvironmentValues {
     }
 }
 
+/// Keyboard focus drawn in the station's own colour.
+private struct FocusOutline: ViewModifier {
+    @FocusState private var isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focusEffectDisabled()
+            .focused($isFocused)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(VoiceStationTokens.dotBlue, lineWidth: 2)
+                    .padding(-2)
+                    .opacity(isFocused ? 1 : 0)
+                    .allowsHitTesting(false)
+            )
+    }
+}
+
 /// A block cursor blinking after the last console entry: the machine is still listening.
 private struct ConsoleCursorView: View {
     /// 1 in the compact console; larger in the window's Diagnostics section.
@@ -168,7 +195,7 @@ private struct ConsoleCursorView: View {
             HStack(spacing: 6) {
                 Text("listening")
                     .font(VoiceStationTokens.mono(size: 8.5 * k))
-                    .foregroundColor(VoiceStationTokens.gold.opacity(0.45))
+                    .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
                 Rectangle()
                     .fill(VoiceStationTokens.appBg)
                     .frame(width: 7 * k, height: 11 * k)
@@ -201,12 +228,10 @@ extension View {
     /// fill and lamp; the macOS ring is a second, foreign selection language on top.
     /// `focusEffectDisabled` is macOS 14, and this app supports 13, so it is guarded.
     @ViewBuilder
+    /// The system ring is replaced, not removed: removing it left keyboard focus
+    /// invisible (D-74). One dot-blue outline, drawn only while the control has focus.
     func voiceFlowNoFocusRing() -> some View {
-        if #available(macOS 14.0, *) {
-            self.focusEffectDisabled()
-        } else {
-            self
-        }
+        modifier(FocusOutline())
     }
 }
 
@@ -218,7 +243,6 @@ public enum RightCardTab: String, CaseIterable, Sendable {
 }
 
 // MARK: - View Model
-@MainActor
 /// The Words section's three tabs.
 public enum WordsTab: String, CaseIterable, Sendable {
     case corrections = "CORRECTIONS"
@@ -245,6 +269,8 @@ public struct WordsLearnRequest: Equatable, Sendable {
     public let dictation: UUID?
 }
 
+// On the view model, where it belongs; it sat on the `WordsTab` enum (D-110).
+@MainActor
 public final class VoiceStationViewModel: ObservableObject {
     @Published public var statusTitle: String = "Ready"
     @Published public var statusDetail: String = "Hold Fn/Globe anywhere, or hold the button below."
@@ -276,6 +302,10 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var selectedGeminiModel: GeminiModel = .preferredDefault
     @Published public var hasKey: Bool = false
     @Published public var isRecording: Bool = false
+    @Published public var stationState: StationState = .ready
+    /// True while a pointer holds the capsule. Only then does leaving the station drop
+    /// the release that ends the recording; a hotkey recording has no such risk (D-113).
+    @Published public var isCapsuleHeld: Bool = false
     @Published public var isRecordingEnabled: Bool = true
     @Published public var isSelectionEnabled: Bool = true
     /// The last refusal, for the surface the speaker is looking at.
@@ -302,6 +332,8 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var targetAppName: String = "Desktop"
     @Published public var targetAppProfile: String = "Direct Auto-Paste"
     @Published public var recentDictations: [DictationRecord] = []
+    /// True only after the first successful dictation or action delivery of this session (D-107).
+    @Published public var hasDeliveredThisSession: Bool = false
     // MARK: Words
     /// The vocabulary and corrections as the engine last reported them; nil until read.
     @Published public var words: WordsSnapshot?
@@ -320,13 +352,19 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var newWord: String = ""
     /// What the last Words action did or why it was refused, in the engine's words.
     @Published public var wordsNotice: String?
+    /// Whether a Words action (learn/forget/add/remove) is in progress (D-91).
+    @Published public var isWordsBusy: Bool = false
+    /// Whether health diagnostics are running (I-84).
+    @Published public var isHealthBusy: Bool = false
+    /// The latest on-demand diagnostic report (I-84).
+    @Published public var healthReport: String? = nil
     /// A page the next view update should open; cleared by the view that honours it.
     @Published public var pageRequest: StationPageRequest?
     @Published public var snippets: [VoiceSnippet] = []
+    // One neutral line: the seed claimed Whisper and the Fn trigger were ready before
+    // anything was checked (D-49). Real readiness lines follow from the delegate.
     @Published public var activityLogs: [ActivityLogItem] = [
-        ActivityLogItem(message: "voice-station initialized · whisper local engine ready.", category: .system, tags: ["ggml-large-v3-turbo"], isHighlight: true),
-        ActivityLogItem(message: "whisper: local engine, no dictation processed yet.", category: .stt, tags: ["local"]),
-        ActivityLogItem(message: "shortcut: Fn/Globe global push-to-talk ready.", category: .system)
+        ActivityLogItem(message: "voice-station starting · checking the engine and the shortcut…", category: .system)
     ]
 
     public var onRecordPress: (() -> Void)?
@@ -347,6 +385,7 @@ public final class VoiceStationViewModel: ObservableObject {
     public var onAddWord: ((String) -> Void)?
     public var onRemoveWord: ((String) -> Void)?
     public var onRefreshWords: (() -> Void)?
+    public var onRunHealthCheck: (() -> Void)?
 
     /// FIX on a History row: open Words with that dictation beside the form, so the
     /// speaker can say which words it misheard and what they meant.
@@ -537,12 +576,7 @@ public struct VoiceStationWindowView: View {
     /// The switch shows the mode, not its description. The long name belongs to the
     /// announcement, not to a tile the eye has to scan four of.
     private func shortTitle(for mode: ProcessingMode) -> String {
-        switch mode {
-        case .clean: return "CLEAN"
-        case .translate: return "ES ➔ EN"
-        case .meeting: return "NOTES"
-        case .actions: return "ACTIONS"
-        }
+        mode.shortTitle
     }
 
     // MARK: - Microphone hero
@@ -587,7 +621,7 @@ public struct VoiceStationWindowView: View {
                     value: viewModel.isRecording
                 )
 
-            Text(viewModel.isRecording ? "ON AIR" : "READY")
+            Text(viewModel.stationState.badgeLabel)
                 .font(VoiceStationTokens.mono(size: 9, weight: .bold))
                 .tracking(1.4)
         }
@@ -863,7 +897,8 @@ public struct VoiceStationWindowView: View {
         switch index {
         case 0...6: return VoiceStationTokens.dotBlue
         case 7...9: return VoiceStationTokens.gold
-        default: return VoiceStationTokens.rec
+        // `onAir`, as `design-system.md` names the meter's last bars (D-109).
+        default: return VoiceStationTokens.onAir
         }
     }
 
@@ -961,7 +996,7 @@ public struct VoiceStationWindowView: View {
                 name: viewModel.targetAppName,
                 fill: VoiceStationTokens.working,
                 inPath: true,
-                hasRun: !viewModel.recentDictations.isEmpty
+                hasRun: viewModel.hasDeliveredThisSession
             )
         }
     }
@@ -1000,7 +1035,7 @@ public struct VoiceStationWindowView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(caption)
                     .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
-                    .foregroundColor(VoiceStationTokens.navy.opacity(0.55))
+                    .foregroundColor(VoiceStationTokens.navy.opacity(0.8))
                     .lineLimit(1)
                 Text(name)
                     .font(VoiceStationTokens.mono(size: 10, weight: .bold))
@@ -1214,7 +1249,7 @@ public struct VoiceStationWindowView: View {
         HStack(spacing: 7) {
             Text(label)
                 .font(VoiceStationTokens.mono(size: 7.5, weight: .bold))
-                .foregroundColor(VoiceStationTokens.navy.opacity(0.55))
+                .foregroundColor(VoiceStationTokens.navy.opacity(0.8))
                 .lineLimit(1)
             options()
         }
@@ -1347,7 +1382,7 @@ public struct VoiceStationWindowView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(fact.label)
                         .font(VoiceStationTokens.mono(size: 7, weight: .bold))
-                        .foregroundColor(VoiceStationTokens.gold.opacity(0.55))
+                        .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
                     Text(fact.value)
                         .font(VoiceStationTokens.mono(size: 9))
                         .foregroundColor(VoiceStationTokens.inputCream)
@@ -1365,7 +1400,7 @@ public struct VoiceStationWindowView: View {
             if let measured = cleaner.factsMeasuredOn {
                 Text("measured \(measured) · nothing re-measures")
                     .font(VoiceStationTokens.mono(size: 7))
-                    .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+                    .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
             }
         }
         .padding(14)
@@ -1397,9 +1432,11 @@ public struct VoiceStationWindowView: View {
                         Button(action: {}) {
                             micCapsule
                         }
+                        // It had no name for VoiceOver (D-74).
+                        .accessibilityLabel("Hold to dictate")
                         .buttonStyle(HoldToRecordButtonStyle(
-                            onPress: { viewModel.onRecordPress?() },
-                            onRelease: { viewModel.onRecordRelease?() }
+                            onPress: { viewModel.isCapsuleHeld = true; viewModel.onRecordPress?() },
+                            onRelease: { viewModel.isCapsuleHeld = false; viewModel.onRecordRelease?() }
                         ))
                         .voiceFlowNoFocusRing()
                         .disabled(!viewModel.isRecordingEnabled)
@@ -1583,7 +1620,7 @@ public struct VoiceStationWindowView: View {
                         // Keyed on the newest entry, not the count: the log is capped at
                         // 50, so after that the count never changes and the console
                         // stopped following new lines (D-56).
-                        .onChange(of: viewModel.activityLogs.last?.id) { _ in
+                        .onChange(of: viewModel.activityLogs.last?.id) { _, _ in
                             if let last = filteredLogs.last {
                                 withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                             }
@@ -1661,32 +1698,6 @@ public struct VoiceStationWindowView: View {
         }
     }
 
-    // MARK: - Helper Views & Functions
-    private var statusBadgeView: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(viewModel.isRecording ? VoiceStationTokens.rec : VoiceStationTokens.ok)
-                .frame(width: 7, height: 7)
-                .shadow(color: viewModel.isRecording ? VoiceStationTokens.rec : VoiceStationTokens.ok, radius: 3)
-            Text(viewModel.isRecording ? "ON AIR" : "READY")
-                .font(VoiceStationTokens.mono(size: 9, weight: .heavy))
-                .foregroundColor(VoiceStationTokens.navy)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(viewModel.isRecording ? VoiceStationTokens.controlBg.opacity(0.4) : VoiceStationTokens.appBg.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(VoiceStationTokens.navy, lineWidth: 1))
-    }
-
-    private func cleanerButtonLabel(for cleaner: CleanerMode) -> String {
-        switch cleaner {
-        case .literal: return "Literal (No AI)"
-        case .apple: return "Apple (Local)"
-        case .gemini: return "Gemini (Cloud)"
-        }
-    }
-
     private var filteredLogs: [ActivityLogItem] {
         switch viewModel.selectedFilter {
         case .all: return viewModel.activityLogs
@@ -1713,7 +1724,7 @@ private struct HoldToRecordButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
             .offset(x: configuration.isPressed ? 1 : 0, y: configuration.isPressed ? 1 : 0)
-            .onChange(of: configuration.isPressed) { isPressed in
+            .onChange(of: configuration.isPressed) { _, isPressed in
                 if isPressed {
                     onPress()
                 } else {
@@ -1794,7 +1805,7 @@ struct PaperChassis<Trailing: View, Content: View>: View {
                     .foregroundColor(VoiceStationTokens.gold)
                 Text("— \(subtitle)")
                     .font(VoiceStationTokens.pixel(9))
-                    .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+                    .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
                 Spacer(minLength: 8)
                 trailing()
             }
@@ -2167,6 +2178,8 @@ private struct HistoryEntryRow: View {
         Text(title)
             .font(VoiceStationTokens.mono(size: scale.pill, weight: .bold))
             .tracking(0.8)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
             .padding(.horizontal, scale.pillPadding.horizontal)
             .padding(.vertical, scale.pillPadding.vertical)
             .background(fill)
@@ -2258,6 +2271,7 @@ private struct VoiceSnippetsTabView: View {
     @State private var newTrigger: String = ""
     @State private var newExpansion: String = ""
     @State private var newDescription: String = ""
+    @State private var snippetToDelete: VoiceSnippet? = nil
 
     private func snippetField(_ placeholder: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
@@ -2381,16 +2395,17 @@ private struct VoiceSnippetsTabView: View {
                                 Spacer()
 
                                 Button(action: {
-                                    viewModel.onDeleteSnippet?(snippet.id)
+                                    snippetToDelete = snippet
                                 }) {
                                     Image(systemName: "trash")
                                         .font(.system(size: metrics.rowTrigger - 0.5))
-                                        .padding(4)
+                                        .frame(minWidth: 24, minHeight: 24)
                                         .background(VoiceStationTokens.danger.opacity(0.8))
                                         .foregroundColor(.white)
                                         .clipShape(RoundedRectangle(cornerRadius: 3))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Delete snippet [\(snippet.trigger)]")
                             }
                             .padding(metrics.rowPad)
                             .background(palette.sunkenRow)
@@ -2407,120 +2422,24 @@ private struct VoiceSnippetsTabView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-// MARK: - Mini VU Meter View
-private struct MiniVUMeterView: View {
-    let isRecording: Bool
-    let audioLevel: Double
-
-    private let barCount = 12
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("AUDIO INPUT VU")
-                    .font(VoiceStationTokens.mono(size: 8, weight: .bold))
-                    .foregroundColor(VoiceStationTokens.navy)
-
-                Spacer()
-
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(isRecording ? VoiceStationTokens.danger : VoiceStationTokens.textMuted.opacity(0.4))
-                        .frame(width: 5, height: 5)
-                    Text(isRecording ? "LIVE SIGNAL" : "STANDBY")
-                        .font(VoiceStationTokens.mono(size: 7, weight: .bold))
-                        .foregroundColor(isRecording ? VoiceStationTokens.danger : VoiceStationTokens.textMuted)
-                }
+        .confirmationDialog(
+            "Delete snippet?",
+            isPresented: Binding(
+                get: { snippetToDelete != nil },
+                set: { if !$0 { snippetToDelete = nil } }
+            ),
+            presenting: snippetToDelete
+        ) { target in
+            Button("Delete [\(target.trigger)]", role: .destructive) {
+                viewModel.onDeleteSnippet?(target.id)
+                snippetToDelete = nil
             }
-
-            HStack(spacing: 2.5) {
-                ForEach(0..<barCount, id: \.self) { index in
-                    let activeThreshold = Double(index + 1) / Double(barCount)
-                    let isActive = isRecording && (index == 0 ? audioLevel > 0.02 : audioLevel >= activeThreshold)
-
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(isActive ? barColor(for: index) : Color.black.opacity(0.12))
-                        .frame(height: 8)
-                        .frame(maxWidth: .infinity)
-                }
+            Button("Cancel", role: .cancel) {
+                snippetToDelete = nil
             }
-            .padding(4)
-            .background(VoiceStationTokens.inputCream)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(VoiceStationTokens.navy, lineWidth: 1))
+        } message: { target in
+            Text("Delete snippet [\(target.trigger)]? This cannot be undone.")
         }
-    }
-
-    private func barColor(for index: Int) -> Color {
-        if index < 7 {
-            return VoiceStationTokens.dotBlue
-        } else if index < 10 {
-            return VoiceStationTokens.gold
-        } else {
-            return VoiceStationTokens.onAir
-        }
-    }
-}
-
-// MARK: - App Target Monitor View
-private struct AppTargetMonitorView: View {
-    let targetAppName: String
-    let targetAppProfile: String
-
-    var body: some View {
-        let isClipboardOnly = targetAppProfile.hasPrefix("Clipboard")
-        let isTerminal = targetAppProfile.hasPrefix("Terminal")
-
-        return HStack(spacing: 12) {
-            // A colour tile stands in for the destination application, as in the
-            // approved preview: the strip is read at a glance, not parsed.
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(
-                    isClipboardOnly
-                        ? VoiceStationTokens.gold
-                        : (isTerminal ? VoiceStationTokens.working : VoiceStationTokens.dotBlue)
-                )
-                .frame(width: 30, height: 30)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(VoiceStationTokens.navy, lineWidth: 2)
-                )
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(targetAppName)
-                    .font(VoiceStationTokens.mono(size: 12, weight: .bold))
-                    .foregroundColor(VoiceStationTokens.navy)
-                    .lineLimit(1)
-                Text(targetAppProfile)
-                    .font(VoiceStationTokens.mono(size: 9))
-                    .foregroundColor(VoiceStationTokens.textMuted)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Text(isClipboardOnly ? "CLIPBOARD" : (isTerminal ? "TERMINAL" : "AUTO-PASTE"))
-                .font(VoiceStationTokens.mono(size: 9, weight: .bold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isClipboardOnly ? VoiceStationTokens.gold : (isTerminal ? VoiceStationTokens.working : VoiceStationTokens.dotBlue))
-                .foregroundColor(VoiceStationTokens.navy)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(VoiceStationTokens.navy, lineWidth: 2))
-                .retroExtrusion(radius: 999, offset: 2)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(VoiceStationTokens.inputCream)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(VoiceStationTokens.navy, lineWidth: 2)
-        )
-        .retroExtrusion(radius: 10, offset: 3)
     }
 }
 
@@ -2548,7 +2467,7 @@ private struct TelemetryHeaderView: View {
         // window was hidden. `repeatForever` does not stop on its own, so it is started
         // and stopped from the same visibility flag the four TimelineViews already read.
         .onAppear { setPulse(viewModel.isWindowVisible) }
-        .onChange(of: viewModel.isWindowVisible) { visible in
+        .onChange(of: viewModel.isWindowVisible) { _, visible in
             setPulse(visible)
         }
     }
@@ -2579,7 +2498,7 @@ private struct TelemetryHeaderView: View {
             Spacer(minLength: 0)
         }
         .font(VoiceStationTokens.mono(size: 7 * k, weight: .regular))
-        .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+        .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
     }
 
     /// Name the order the engine will actually walk, not a generic promise.
@@ -2595,9 +2514,10 @@ private struct TelemetryHeaderView: View {
             // Pulsing Live Beacon
             HStack(spacing: 4) {
                 Circle()
-                    .fill(isPulsing ? VoiceStationTokens.danger : VoiceStationTokens.danger.opacity(0.4))
+                    // Neutral: a permanently pulsing red read as a fault (D-179).
+                    .fill(isPulsing ? VoiceStationTokens.dotBlue : VoiceStationTokens.dotBlue.opacity(0.4))
                     .frame(width: 6, height: 6)
-                    .shadow(color: VoiceStationTokens.danger, radius: isPulsing ? 3 : 0)
+                    .shadow(color: VoiceStationTokens.dotBlue, radius: isPulsing ? 3 : 0)
 
                 Text("TELEMETRY")
                     .font(VoiceStationTokens.mono(size: 8.5 * k, weight: .bold))
@@ -2638,7 +2558,7 @@ private struct TelemetryHeaderView: View {
         HStack(spacing: 7) {
             Text("MODEL")
                 .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
-                .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
+                .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
 
             ForEach(GeminiModel.allCases, id: \.self) { model in
                 consoleChip(
@@ -2661,7 +2581,7 @@ private struct TelemetryHeaderView: View {
 
             Text("KEY")
                 .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
-                .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
+                .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
 
             consoleChip(
                 title: viewModel.hasKey ? "Stored" : "Set key…",
@@ -2728,7 +2648,7 @@ private struct TelemetryHeaderView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(VoiceStationTokens.mono(size: 7 * k, weight: .bold))
-                .foregroundColor(VoiceStationTokens.gold.opacity(0.6))
+                .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
                 .lineLimit(1)
 
             Text(value ?? "—")
@@ -2845,7 +2765,7 @@ private struct LogEntryRowView: View {
             // Timestamp
             Text("[\(log.timestamp)]")
                 .font(VoiceStationTokens.mono(size: 8.5 * k, weight: .regular))
-                .foregroundColor(VoiceStationTokens.gold.opacity(0.5))
+                .foregroundColor(VoiceStationTokens.gold.opacity(0.75))
                 .frame(width: 54 * k, alignment: .leading)
 
             // Category Badge
@@ -2888,8 +2808,9 @@ private struct LogEntryRowView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Hover Action: Copy Log Entry
-            if isHovered {
+            // Hover Action: Copy Log Entry. Always laid out and faded with opacity: shown
+            // only on hover it took width and re-wrapped the row under the pointer (D-144).
+            do {
                 Button(action: {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
@@ -2903,6 +2824,11 @@ private struct LogEntryRowView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 2))
                 }
                 .buttonStyle(.plain)
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+                // Kept in the accessibility tree while hidden, so VoiceOver can reach
+                // it without a pointer (D-116).
+                .accessibilityLabel("Copy this log line")
             }
         }
         .padding(.vertical, 2)

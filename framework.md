@@ -104,7 +104,7 @@ which does that job wherever the speaker types, and a second, worse copy of it i
 feature. The engine, the selection reader and the capsule's character count went with it.
 
 The product no longer reads the screen. Nothing in it captures text the speaker did not
-say. The removal is reversible and the condition is recorded in `phase-5-proposal.md`
+say. The removal is reversible and the condition is recorded in `docs/proposals/phase-5-proposal.md`
 §11b: the owner is measuring Writing Tools against the work transform used to do, and
 transform returns only if that measurement finds a gap.
 
@@ -296,6 +296,8 @@ explicitly and never inferred from the choice of provider.
 - Secrets never enter source files, Markdown, logs, test fixtures, or personal-memory files.
 - Diagnostic logs exclude audio and dictated content by default.
 - Local user data supports deletion and export.
+- Accepted limit: the vocabulary prompt reaches `whisper-cli` in argv, visible to `ps`
+  on this Mac while it runs, because `--prompt` is the binary's only way to take it.
 
 ### R8 — Pronunciation practice
 

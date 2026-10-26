@@ -203,3 +203,16 @@ class DoctorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MacHelperCheckTests(unittest.TestCase):
+    """D-44: doctor names the Mac helpers, not only Whisper."""
+
+    def test_the_helpers_are_listed(self) -> None:
+        from sanbluedot_voiceflow.doctor import run_checks
+
+        names = [check.name for check in run_checks(
+            whisper_binary="whisper-cli", whisper_model=None, mac_helpers=True
+        )]
+        for expected in ("Apple cleanup helper", "Parakeet helper", "pbcopy", "Parakeet model", "Gemini API key"):
+            self.assertIn(expected, names)

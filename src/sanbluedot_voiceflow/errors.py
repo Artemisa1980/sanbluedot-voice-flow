@@ -27,8 +27,13 @@ class CleanupFailed(CleanupError):
         cleanup_seconds: float | None = None,
         reason: str = "provider",
         rejected_text: str | None = None,
+        personalized_text: str | None = None,
     ) -> None:
         super().__init__(message)
+        # Corrections applied, snippets not expanded. The fallback text carries the
+        # expansion, and reporting it as the CORRECTED layer showed an expansion as a
+        # correction (D-41).
+        self.personalized_text = personalized_text
         # Which side refused: "guard" when the conservative output guard rejected a
         # cleanup the provider did return, "provider" when the provider itself failed.
         # The two look identical to the speaker otherwise, and they call for opposite

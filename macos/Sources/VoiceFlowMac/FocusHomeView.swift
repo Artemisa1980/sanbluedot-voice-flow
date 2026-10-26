@@ -49,7 +49,6 @@ struct FocusHomeView: View {
                 // above every page put the same question on six screens, and pushed each
                 // section's chassis down to make room for a card that belongs with the
                 // controls that answer it.
-                if let refusal = viewModel.refusalNotice { refusalBanner(refusal) }
                 switch page {
                 case .home:
                     stationDeck
@@ -67,17 +66,24 @@ struct FocusHomeView: View {
             }
             .padding(22)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Drawn over the page, not above it: in the stack it pushed every section
+            // down for the 4 s it was shown (D-141).
+            .overlay(alignment: .top) {
+                if let refusal = viewModel.refusalNotice {
+                    refusalBanner(refusal).padding(.horizontal, 22).padding(.top, 8)
+                }
+            }
         }
         .foregroundColor(T.navy)
         .background(T.appBg)
         // FIX on a History row, on either surface, opens Words with that dictation.
-        .onChange(of: viewModel.pageRequest) { request in
+        .onChange(of: viewModel.pageRequest) { _, request in
             guard request != nil else { return }
             viewModel.pageRequest = nil
             navigate(to: .words)
         }
         // The existing console's shortcuts and tabs share one route with the sidebar.
-        .onChange(of: viewModel.activeRightTab) { tab in
+        .onChange(of: viewModel.activeRightTab) { _, tab in
             guard page == .history || page == .snippets || page == .diagnostics else { return }
             switch tab {
             case .activityLog: page = .diagnostics
@@ -148,18 +154,25 @@ struct FocusHomeView: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 9) {
-                Label(viewModel.selectedCleaner.isCloud ? "CLOUD TEXT ON" : "LOCAL BY DEFAULT",
+                // Without a key nothing is sent, so the card does not claim it is (D-78).
+                let cloudReady = viewModel.selectedCleaner.isCloud && viewModel.hasKey
+                Label(cloudReady ? "CLOUD TEXT ON"
+                      : viewModel.selectedCleaner.isCloud ? "CLOUD KEY MISSING" : "LOCAL BY DEFAULT",
                       systemImage: viewModel.selectedCleaner.isCloud ? "cloud" : "lock.shield")
                     .font(T.mono(size: 10, weight: .bold))
                     .foregroundColor(T.navy)
-                Text(viewModel.selectedCleaner.isCloud
+                Text(cloudReady
                      ? "Audio stays on this Mac. Text is sent to Gemini when you dictate."
-                     : "Audio stays on this Mac. Cloud text cleanup is off.")
+                     : viewModel.selectedCleaner.isCloud
+                        ? "Audio stays on this Mac. No Gemini key is stored, so nothing is sent."
+                        : "Audio stays on this Mac. Cloud text cleanup is off.")
                     .font(T.mono(size: 10))
                     .foregroundColor(T.navy)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
+            .background(T.rec)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(T.navy.opacity(0.45)))
         }
         .padding(.horizontal, 14)
@@ -234,7 +247,11 @@ struct FocusHomeView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 14) {
                         wordsTabs
-                        if geo.size.width >= 820 {
+                        // The width here is the paper's, not the window's: at the 1,100pt
+                        // default it measures 1,100 − 184 sidebar − 44 page − 36 chassis −
+                        // 28 paper = 808, so 820 stacked the side column at the size the
+                        // window opens at (D-140). 760 keeps the main column ≥ 464.
+                        if geo.size.width >= 760 {
                             HStack(alignment: .top, spacing: 16) {
                                 wordsMain.frame(maxWidth: .infinity, alignment: .leading)
                                 wordsSide.frame(width: 280)
@@ -313,6 +330,7 @@ struct FocusHomeView: View {
             HStack(spacing: 8) {
                 wordsLabel("SEARCH")
                 TextField("heard or written", text: $viewModel.wordsSearch)
+                    .accessibilityLabel("Search corrections")
                     .textFieldStyle(.plain)
                     .font(T.mono(size: 11))
                     .padding(.horizontal, 9)
@@ -393,6 +411,7 @@ struct FocusHomeView: View {
             VStack(alignment: .leading, spacing: 5) {
                 wordsLabel("WHAT IT HEARD · CLICK AND CORRECT IT")
                 TextField("", text: $viewModel.teachSentence, axis: .vertical)
+                    .accessibilityLabel("What it heard")
                     .textFieldStyle(.plain)
                     .font(T.mono(size: 12))
                     .lineLimit(1...8)
@@ -436,8 +455,8 @@ struct FocusHomeView: View {
                         )
                     )
                 }
-                .disabled(pairs.isEmpty)
-                .opacity(pairs.isEmpty ? 0.5 : 1)
+                .disabled(pairs.isEmpty || viewModel.isWordsBusy)
+                .opacity((pairs.isEmpty || viewModel.isWordsBusy) ? 0.5 : 1)
             }
         }
     }
@@ -475,8 +494,8 @@ struct FocusHomeView: View {
                     )
                 )
             }
-            .disabled(!ready)
-            .opacity(ready ? 1 : 0.5)
+            .disabled(!ready || viewModel.isWordsBusy)
+            .opacity((ready && !viewModel.isWordsBusy) ? 1 : 0.5)
         }
     }
 
@@ -484,6 +503,8 @@ struct FocusHomeView: View {
         VStack(alignment: .leading, spacing: 5) {
             wordsLabel(label)
             TextField(placeholder, text: text)
+                // VoiceOver read the example, "e.g. Oyama", as the field's name (D-143).
+                .accessibilityLabel(label.capitalized)
                 .textFieldStyle(.plain)
                 .font(T.mono(size: 12))
                 .padding(.horizontal, 10)
@@ -547,6 +568,8 @@ struct FocusHomeView: View {
                 viewModel.wordsNotice = nil
             }
             wordsButton("DELETE") { viewModel.onForgetCorrection?(pair.heard) }
+                .disabled(viewModel.isWordsBusy)
+                .opacity(viewModel.isWordsBusy ? 0.5 : 1)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -560,6 +583,7 @@ struct FocusHomeView: View {
                 wordsLabel("ADD A WORD")
                 HStack(spacing: 10) {
                     TextField("e.g. PowerShell, Gim", text: $viewModel.newWord)
+                        .accessibilityLabel("Add a word")
                         .textFieldStyle(.plain)
                         .font(T.mono(size: 12))
                         .padding(.horizontal, 10)
@@ -568,8 +592,8 @@ struct FocusHomeView: View {
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(T.consoleBg.opacity(0.6), lineWidth: 1.5))
                     let word = viewModel.newWord.trimmingCharacters(in: .whitespacesAndNewlines)
                     wordsButton("+ ADD", primary: true) { viewModel.onAddWord?(word) }
-                        .disabled(word.isEmpty)
-                        .opacity(word.isEmpty ? 0.5 : 1)
+                        .disabled(word.isEmpty || viewModel.isWordsBusy)
+                        .opacity((word.isEmpty || viewModel.isWordsBusy) ? 0.5 : 1)
                 }
             }
             .padding(14)
@@ -587,7 +611,8 @@ struct FocusHomeView: View {
             if let snapshot = viewModel.words {
                 vocabularyBudget(snapshot)
                 VStack(spacing: 0) {
-                    ForEach(Array(snapshot.vocabulary.enumerated()), id: \.offset) { index, term in
+                    // Identified by the term, so a removal does not reuse another row's identity (D-181).
+                    ForEach(Array(snapshot.vocabulary.enumerated()), id: \.element) { index, term in
                         let read = index < snapshot.inPrompt
                         HStack(spacing: 10) {
                             Text(term)
@@ -596,6 +621,8 @@ struct FocusHomeView: View {
                             Spacer(minLength: 8)
                             wordsTag(read ? "READ" : "UNREAD", fill: read ? T.dotBlue : T.panelBg)
                             wordsButton("DELETE") { viewModel.onRemoveWord?(term) }
+                                .disabled(viewModel.isWordsBusy)
+                                .opacity(viewModel.isWordsBusy ? 0.5 : 1)
                             wordsButton("TO CORRECTION") {
                                 viewModel.teachHeard = ""
                                 viewModel.teachIntended = term
@@ -859,13 +886,13 @@ struct FocusHomeView: View {
                     HStack(spacing: 10) {
                         ForEach(GeminiModel.allCases, id: \.self) { model in
                             enginePill(
-                                title: "Gemini \(model.shortName) Flash",
+                                title: model == .flash38 ? "Gemini 3.8 Flash" : "Gemini 4 Argon",
                                 detail: model.measuredNote,
                                 isOn: viewModel.selectedGeminiModel == model
                             ) {
                                 guard viewModel.isSelectionEnabled else {
                                     viewModel.reportRefusal(
-                                        "this run keeps Gemini \(viewModel.selectedGeminiModel.shortName) Flash · the model changes once it is delivered")
+                                        "this run keeps Gemini \(viewModel.selectedGeminiModel.shortName) · the model changes once it is delivered")
                                     return
                                 }
                                 viewModel.selectedGeminiModel = model
@@ -919,6 +946,36 @@ struct FocusHomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 permissionActions
             }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SYSTEM HEALTH & STATUS").font(T.mono(size: 11, weight: .bold))
+                Text("Inspect speech models, local cleaners, and keychain credentials on demand.")
+                    .font(T.mono(size: 10))
+                    .foregroundColor(T.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    paperChip(
+                        title: viewModel.isHealthBusy ? "Running checks…" : "Run System Check",
+                        detail: viewModel.healthReport == nil ? "Whisper, Parakeet, Apple & Gemini" : nil,
+                        isOn: viewModel.isHealthBusy
+                    ) {
+                        guard viewModel.isSelectionEnabled && !viewModel.isHealthBusy else { return }
+                        viewModel.onRunHealthCheck?()
+                    }
+                }
+                if let report = viewModel.healthReport {
+                    Text(report)
+                        .font(T.mono(size: 10))
+                        .foregroundColor(T.navy)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(T.inputCream)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(T.consoleBg.opacity(0.35), lineWidth: 1)
+                        )
+                }
+            }
         }
     }
 
@@ -939,7 +996,7 @@ struct FocusHomeView: View {
             )
             disclosureBlock(
                 "Recent dictations",
-                "The last ten stay in this app's preferences on this Mac, so they survive a restart. Clear them from History at any time.",
+                "The last ten stay in history.local.json on this Mac, beside your other stores, so they survive a restart and travel with vf export. Clear them from History at any time.",
                 chip: "Last 10"
             )
         }
@@ -1072,11 +1129,28 @@ struct FocusHomeView: View {
 
     private var permissionActions: some View {
         HStack(spacing: 8) {
-            action("INPUT MONITORING", fill: T.inputCream) { viewModel.onOpenInputMonitoring?() }
-            action("ACCESSIBILITY", fill: T.inputCream) { viewModel.onOpenAccessibility?() }
-            action("RECHECK") { viewModel.onRetryPermissions?() }
+            action("INPUT MONITORING", fill: T.inputCream) {
+                guard viewModel.isSelectionEnabled else {
+                    viewModel.reportRefusal("permission settings cannot open during active dictation")
+                    return
+                }
+                viewModel.onOpenInputMonitoring?()
+            }
+            action("ACCESSIBILITY", fill: T.inputCream) {
+                guard viewModel.isSelectionEnabled else {
+                    viewModel.reportRefusal("permission settings cannot open during active dictation")
+                    return
+                }
+                viewModel.onOpenAccessibility?()
+            }
+            action("RECHECK") {
+                guard viewModel.isSelectionEnabled else {
+                    viewModel.reportRefusal("permissions cannot be rechecked during active dictation")
+                    return
+                }
+                viewModel.onRetryPermissions?()
+            }
         }
-        .disabled(!viewModel.isSelectionEnabled)
     }
 
     private func navigate(to destination: Page) {
@@ -1085,7 +1159,7 @@ struct FocusHomeView: View {
         // what delivers the release, and a release nobody delivers records forever.
         // Every other move — between pages, back to the station, during the cleanup
         // that follows the release — is safe, and used to be frozen with it.
-        if viewModel.isRecording, page == .home, destination != .home {
+        if viewModel.isRecording, viewModel.isCapsuleHeld, page == .home, destination != .home {
             viewModel.reportRefusal(
                 "still on the station: the capsule you are holding is the control that ends this dictation")
             return
@@ -1153,12 +1227,7 @@ struct FocusHomeView: View {
     }
 
     private func modeTitle(_ mode: ProcessingMode) -> String {
-        switch mode {
-        case .clean: return "DICTATE"
-        case .translate: return "ES → EN"
-        case .meeting: return "NOTES"
-        case .actions: return "ACTIONS"
-        }
+        mode.shortTitle
     }
 
     private func modeDescription(_ mode: ProcessingMode) -> String {

@@ -155,11 +155,13 @@ public enum SpeechEngine: String, CaseIterable, Sendable {
 
 /// The Gemini model the window offers.
 ///
-/// One model, by owner decision on 2026-10-24: Google deprecated 3.5 and 3.7 on
-/// 2026-10-08 and routes them to 3.6 and 3.8. `gemini-3.8-flash` is the newest Flash and
-/// has not been measured here yet.
+/// The Gemini models the window offers.
+///
+/// `gemini-3.8-flash` is the preferred Flash model, and `gemini-4-argon` is available
+/// for deeper cleanup and reasoning.
 public enum GeminiModel: String, CaseIterable, Sendable {
     case flash38 = "gemini-3.8-flash"
+    case argon4 = "gemini-4-argon"
 
     public static let preferredDefault = GeminiModel.flash38
 
@@ -167,12 +169,13 @@ public enum GeminiModel: String, CaseIterable, Sendable {
     /// `cleaners/gemini.py`, which is the authority; this copy exists only so the window
     /// can show the real order. `VoiceFlowMacCoreChecks` asserts the two stay the same
     /// size and content.
-    public static let fallbackOrder: [GeminiModel] = [.flash38]
+    public static let fallbackOrder: [GeminiModel] = [.flash38, .argon4]
 
     /// Short label for the picker. The full identifier is the `rawValue`.
     public var shortName: String {
         switch self {
         case .flash38: return "3.8"
+        case .argon4: return "Argon"
         }
     }
 
@@ -185,7 +188,7 @@ public enum GeminiModel: String, CaseIterable, Sendable {
     /// window never presents a guess as a measurement.
     public var measuredNote: String {
         switch self {
-        case .flash38: return "not measured yet"
+        case .flash38, .argon4: return "not measured yet"
         }
     }
 }
@@ -217,6 +220,16 @@ public enum ProcessingMode: String, CaseIterable, Sendable {
         case .translate: return "ES➔EN"
         case .meeting: return "NOTES"
         case .actions: return "ACTION"
+        }
+    }
+
+    /// The canonical short name shown on mode selector tiles in the station and Words (D-183).
+    public var shortTitle: String {
+        switch self {
+        case .clean: return "CLEAN"
+        case .translate: return "ES ➔ EN"
+        case .meeting: return "NOTES"
+        case .actions: return "ACTIONS"
         }
     }
 

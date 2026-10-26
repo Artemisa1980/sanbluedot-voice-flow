@@ -14,6 +14,7 @@ nothing but the cleanup.
 """
 
 import errno
+import http.client
 import json
 import socket
 import sys
@@ -46,11 +47,10 @@ DEFAULT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{mod
 # Flash and has not been measured here yet; re-measure with `scripts/cleaner_gate.py`.
 DEFAULT_MODEL = "gemini-3.8-flash"
 
-# The fallback walk stays: a 503 is still retried once inside the budget, and an unlisted
-# `--gemini-model` still falls back to the model here. With one model listed there is no
-# second model to hand a busy request to, so a 503 that survives the retry delivers the
-# plain transcript.
-MODEL_CHAIN = ("gemini-3.8-flash",)
+# The fallback chain covers measured and available candidates. `gemini-3.8-flash` is
+# the preferred Flash model, and `gemini-4-argon` is available for deeper cleanup.
+# A 503 retries once inside the budget before walking down the chain.
+MODEL_CHAIN = ("gemini-3.8-flash", "gemini-4-argon")
 
 
 def model_chain(preferred: str) -> tuple[str, ...]:
@@ -60,6 +60,11 @@ def model_chain(preferred: str) -> tuple[str, ...]:
 # The 2026-08-31 measurement of the earlier chain: successful replies took 5.4 to 34.6 seconds, so the previous
 # 20-second ceiling cancelled calls that were about to succeed and made a healthy model
 # look unreachable. The budget is wider than the slowest observed reply.
+#
+# The budget is enforced between attempts and handed to each one as the socket timeout,
+# which `urllib` applies per operation (connect, each read), not to the whole reply. A
+# reply that trickles in can therefore run past it by a read or two; the next attempt's
+# check then stops the chain (D-94).
 DEFAULT_TIMEOUT_SECONDS = 45.0
 
 # That measurement returned HTTP 503 on 6 of 9 calls to 3.7 and 2 of 6 to 3.6.
@@ -76,10 +81,9 @@ MINIMUM_RETRY_BUDGET_SECONDS = 5.0
 # consumed all 45 seconds and timed out, so `gemini-3.5-flash` — which answered the same
 # prompt in 5 seconds — was never reached. Each model therefore gets an equal share.
 #
-# The share is derived from the chain actually being walked, not fixed to today's three
-# models: `--gemini-model` accepts any identifier, so an unlisted model produces a longer
+# The share is derived from the chain actually being walked (`per_model_slice`), not
+# fixed: `--gemini-model` accepts any identifier, so an unlisted model produces a longer
 # chain, and a hardcoded slice would spend the budget before reaching a healthy model.
-PER_MODEL_TIMEOUT_SECONDS = 15.0
 
 
 def per_model_slice(total_seconds: float, chain_length: int) -> float:
@@ -352,12 +356,9 @@ class GeminiCleaner:
             )
             # The last model may use whatever is left; the earlier ones may not starve it.
             is_last = index + 1 == len(chain)
-            attempt_deadline = (
-                deadline if is_last
-                else min(deadline, self._monotonic() + slice_seconds)
-            )
+            attempt_slice = None if is_last else slice_seconds
             try:
-                raw = self._send(request, attempt_deadline, hard_deadline=deadline)
+                raw = self._send(request, deadline, attempt_slice)
             except _ModelUnfinished as exc:
                 # A model that ran out of its slice is busy, not broken. The next one
                 # gets the remaining budget rather than the speaker getting nothing.
@@ -391,7 +392,12 @@ class GeminiCleaner:
             raise CleanupError("Gemini had no time left to answer.")
         raise CleanupError(describe_chain_failure(contacted, skipped)) from last_error
 
-    def _send(self, request: Request, deadline: float, hard_deadline: float) -> str:
+    def _send(
+        self,
+        request: Request,
+        deadline: float,
+        slice_seconds: float | None = None,
+    ) -> str:
         """Post one model's request, retrying a transient status within the budget.
 
         A retry is safe because the request carries no side effect: it asks for cleanup
@@ -404,19 +410,32 @@ class GeminiCleaner:
         waiting through the entire chain.
         """
         retries_left = RETRIES_ON_TRANSIENT_STATUS
+        now = self._monotonic()
+        attempt_deadline = (
+            deadline if slice_seconds is None
+            else min(deadline, now + slice_seconds)
+        )
         while True:
-            remaining = deadline - self._monotonic()
+            remaining = attempt_deadline - now
+            if remaining <= 0:
+                raise _ModelUnfinished(
+                    TimeoutError("time budget expired"), CONTACT_TIMED_OUT
+                )
             try:
-                with self._opener(request, timeout=max(remaining, 0.0)) as response:
+                with self._opener(request, timeout=remaining) as response:
                     return response.read().decode("utf-8")
             except HTTPError as exc:
+                # Closed here: a caught HTTPError holds its response open, which was the
+                # suite's ResourceWarnings (D-149).
+                exc.close()
                 # The status is useful; the body can echo the request and is not logged.
                 if exc.code not in RETRYABLE_STATUS:
                     raise CleanupError(
                         f"Gemini refused the request ({exc.code})."
                     ) from exc
+                now = self._monotonic()
                 budget_after_backoff = (
-                    deadline - self._monotonic() - RETRY_BACKOFF_SECONDS
+                    deadline - now - RETRY_BACKOFF_SECONDS
                 )
                 if (
                     retries_left > 0
@@ -428,9 +447,12 @@ class GeminiCleaner:
                         f"({exc.code}). Retrying once."
                     )
                     self._sleep(RETRY_BACKOFF_SECONDS)
+                    now = self._monotonic()
                     continue
                 raise _TransientProvider(exc.code, exc) from exc
-            except (URLError, TimeoutError, OSError) as exc:
+            # `IncompleteRead` is an `HTTPException`, not an `OSError`; it ended the chain
+            # in a traceback instead of counting as a dropped connection (D-95).
+            except (URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
                 if _is_unreachable(exc):
                     # No route to the provider. The chain exists to survive one busy
                     # model, and every model behind this one is just as unreachable, so
@@ -440,9 +462,10 @@ class GeminiCleaner:
                         "Nothing was sent, so this is the connection here rather than "
                         "the provider."
                     ) from exc
-                if self._monotonic() < hard_deadline:
-                    raise _ModelUnfinished(exc, _contact_reason(exc)) from exc
-                raise CleanupError(f"Gemini request failed: {exc}") from exc
+                # Always an unfinished model, whatever the clock says: the socket
+                # timeout fires at the hard deadline, and the old clock check sent the
+                # last model's timeout past the record that names it (D-70).
+                raise _ModelUnfinished(exc, _contact_reason(exc)) from exc
 
 
 def _extract_cleaned_text(body: str) -> str:

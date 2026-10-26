@@ -1,4 +1,5 @@
 import argparse
+import os
 import json
 import sys
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Sequence
 
 from .cleaners import (
     CLEANER_NAMES,
+    CLOUD_CLEANER_NAMES,
     DEFAULT_APPLE_BINARY,
     DEFAULT_GEMINI_MODEL,
     build_cleaner,
@@ -25,7 +27,6 @@ from .distill import (
     DistillationStore,
     build_modelfile,
     create_ollama_model,
-    write_modelfile,
 )
 from .doctor import PROJECT_MODELS, bundled_binary, bundled_model, run_checks
 from .errors import CleanupFailed, VoiceFlowError
@@ -35,6 +36,7 @@ from .memory import (
     CorrectionStore,
     add_vocabulary_term,
     build_initial_prompt,
+    prompt_terms,
     correction_needs_global_confirmation,
     export_memory,
     load_vocabulary,
@@ -78,6 +80,18 @@ REWRITING_MODES = ("translate", "meeting")
 FIX_MODE = "fix"
 
 
+def _caller_path(value: str) -> Path:
+    """A file the speaker named, relative to where they typed the command.
+
+    `./vf` runs from the project folder so the models resolve, which made a relative
+    `--to backup.json` land inside the repository, outside `.gitignore` (D-64). The
+    launcher passes the caller's directory; a direct `python -m` run has none to pass.
+    """
+    path = Path(value).expanduser()
+    caller = os.environ.get("VF_CALLER_DIR")
+    return path if path.is_absolute() or not caller else Path(caller) / path
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="voiceflow")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -107,9 +121,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # so a bare `doctor` checks it only on Windows.
     doctor.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     doctor.add_argument("--ollama-model", default="qwen3:4b" if sys.platform == "win32" else None)
+    doctor.add_argument("--json", action="store_true", help="Emit report in JSON format.")
 
     process = subparsers.add_parser("process", help="Transcribe one local audio file.")
-    process.add_argument("audio", type=Path)
+    process.add_argument("audio", type=_caller_path)
     process.add_argument(
         "--transcriber",
         choices=["whisper", "parakeet"],
@@ -117,7 +132,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="whisper (whisper.cpp, reads the vocabulary) or parakeet (Parakeet Ultra).",
     )
     process.add_argument("--whisper-bin", default="whisper-cli")
-    process.add_argument("--whisper-model", type=Path)
+    process.add_argument(
+        "--whisper-model",
+        type=Path,
+        default=DEFAULT_WHISPER_MODEL,
+        help="Path to the ggml whisper model file (defaults to models/ggml-large-v3-turbo.bin).",
+    )
     process.add_argument("--parakeet-bin", default=DEFAULT_PARAKEET_BINARY)
     process.add_argument("--parakeet-models", type=Path, default=DEFAULT_PARAKEET_MODEL_DIR)
     process.add_argument("--language", default="auto", choices=["auto", "en", "es"])
@@ -228,14 +248,14 @@ def _build_parser() -> argparse.ArgumentParser:
     export = subparsers.add_parser(
         "export", help="Write vocabulary, corrections and practice history to one file."
     )
-    export.add_argument("--to", type=Path, required=True, help="Destination JSON file.")
+    export.add_argument("--to", type=_caller_path, required=True, help="Destination JSON file.")
 
     practice = subparsers.add_parser(
         "practice",
         help="Read a known text aloud and see which words the engine did not recover.",
     )
     practice.add_argument("--text", help="The reference text to read.")
-    practice.add_argument("--text-file", type=Path, help="Read the reference from a file.")
+    practice.add_argument("--text-file", type=_caller_path, help="Read the reference from a file.")
     practice.add_argument("--whisper-model", type=Path, help="Override the speech model.")
     practice.add_argument("--whisper-bin", default="whisper-cli")
     practice.add_argument("--language", default="auto", choices=["auto", "en", "es"])
@@ -261,7 +281,7 @@ def _build_parser() -> argparse.ArgumentParser:
     distill_modelfile = distill_sub.add_parser("modelfile", help="Generate an Ollama Modelfile.")
     distill_modelfile.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     distill_modelfile.add_argument("--mode", choices=["clean", "translate", "meeting", "all"], default="all")
-    distill_modelfile.add_argument("--out", type=Path, help="Save to file instead of printing.")
+    distill_modelfile.add_argument("--out", type=_caller_path, help="Save to file instead of printing.")
 
     distill_create = distill_sub.add_parser("create", help="Create the distilled model in local Ollama daemon.")
     distill_create.add_argument("--name", default=DEFAULT_DISTILLED_MODEL_NAME)
@@ -270,7 +290,7 @@ def _build_parser() -> argparse.ArgumentParser:
     distill_create.add_argument("--ollama-url", default="http://127.0.0.1:11434")
 
     distill_export = distill_sub.add_parser("export", help="Export distillation pairs to JSONL.")
-    distill_export.add_argument("--to", type=Path, required=True)
+    distill_export.add_argument("--to", type=_caller_path, required=True)
     distill_export.add_argument("--mode", choices=["clean", "translate", "meeting"])
 
     distill_clear = distill_sub.add_parser(
@@ -300,10 +320,10 @@ def _build_parser() -> argparse.ArgumentParser:
     snippet_delete.add_argument("--trigger", required=True, help="Trigger phrase to remove.")
 
     snippet_export = snippet_sub.add_parser("export", help="Export snippets to JSON.")
-    snippet_export.add_argument("--to", type=Path, required=True)
+    snippet_export.add_argument("--to", type=_caller_path, required=True)
 
     snippet_import = snippet_sub.add_parser("import", help="Import snippets from JSON.")
-    snippet_import.add_argument("--from", dest="from_path", type=Path, required=True)
+    snippet_import.add_argument("--from", dest="from_path", type=_caller_path, required=True)
     return parser
 
 
@@ -338,7 +358,15 @@ def _doctor(args: argparse.Namespace) -> int:
         whisper_model=args.whisper_model,
         ollama_url=args.ollama_url,
         ollama_model=args.ollama_model,
+        mac_helpers=sys.platform == "darwin",
     )
+    if getattr(args, "json", False):
+        payload = {
+            "ok": all(check.ok for check in checks),
+            "checks": [{"name": c.name, "ok": c.ok, "detail": c.detail} for c in checks],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0 if payload["ok"] else 1
     for check in checks:
         marker = "PASS" if check.ok else "MISSING"
         print(f"[{marker}] {check.name}: {check.detail}")
@@ -347,8 +375,7 @@ def _doctor(args: argparse.Namespace) -> int:
 
 def _memory(args: argparse.Namespace) -> int:
     terms = load_vocabulary()
-    prompt = build_initial_prompt(terms)
-    in_prompt = len(prompt.split(", ")) if prompt else 0
+    in_prompt = len(prompt_terms(terms))
 
     if getattr(args, "json", False):
         # What the Words section draws. `in_prompt` is how many terms, from the top, the
@@ -410,7 +437,13 @@ def _correct(args: argparse.Namespace) -> int:
 
 
 def _forget(args: argparse.Namespace) -> int:
-    if not CorrectionStore().remove(args.heard):
+    # A disk error is reported like `vf correct` reports one, not as a traceback (D-98).
+    try:
+        removed = CorrectionStore().remove(args.heard)
+    except OSError as exc:
+        print(f"The correction could not be deleted: {exc}", file=sys.stderr)
+        return 1
+    if not removed:
         print(f"No confirmed correction for {args.heard!r}.", file=sys.stderr)
         return 1
     print(f"Deleted: {args.heard!r}")
@@ -444,6 +477,8 @@ def _export(args: argparse.Namespace) -> int:
     # and an export that carries them without saying so is not a choice they made.
     for section, count in counts.items():
         print(f"  {section.replace('_', ' ')}: {count}")
+    # Name where the pairs live, so the speaker knows what to delete as well (D-99).
+    print(f"  distillation pairs are stored in {DistillationStore().path}")
     return 0
 
 
@@ -471,6 +506,10 @@ def _practice(args: argparse.Namespace) -> int:
                   f"{item['audio_file']}")
         return 0
 
+    # Both given used to prefer the file in silence (D-163).
+    if args.text and args.text_file:
+        print("Give the text with --text or --text-file, not both.", file=sys.stderr)
+        return 1
     reference = args.text
     if args.text_file:
         try:
@@ -486,12 +525,17 @@ def _practice(args: argparse.Namespace) -> int:
     # more. Those are recordings of the speaker that nothing can list or delete. The
     # store does the reading and the sweeping under one lock, and leaves alone anything
     # young enough to still be recording: sweeping those destroyed a live take.
-    stranded = store.sweep_orphans()
+    # A full disk or a permission error is reported, not a traceback (D-162).
+    try:
+        stranded = store.sweep_orphans()
+        audio = store.next_audio_path()
+    except OSError as exc:
+        print(f"The practice folder could not be prepared: {exc}", file=sys.stderr)
+        return 1
     for path in stranded:
         print(f"Removed a stranded recording from an interrupted run: {path.name}")
 
     print(f"\nRead this aloud:\n\n  {reference}\n")
-    audio = store.next_audio_path()
     try:
         record(audio)
         transcriber = WhisperCppTranscriber(
@@ -508,6 +552,10 @@ def _practice(args: argparse.Namespace) -> int:
         audio.unlink(missing_ok=True)
         print(str(exc), file=sys.stderr)
         return 1
+    except BaseException:
+        # Ctrl-C included: the take is deleted before the interruption goes on (D-65).
+        audio.unlink(missing_ok=True)
+        raise
 
     if recovered_words(reference, heard) == 0:
         audio.unlink(missing_ok=True)
@@ -631,7 +679,7 @@ def _process(args: argparse.Namespace) -> int:
                 json.dumps(
                     {
                         "raw_text": exc.raw_text,
-                        "personalized_text": exc.fallback_text,
+                        "personalized_text": exc.personalized_text or exc.fallback_text,
                         "final_text": exc.fallback_text,
                         "language": exc.language,
                         "cleaner": args.cleaner,
@@ -651,8 +699,8 @@ def _process(args: argparse.Namespace) -> int:
             try:
                 copy_text(exc.fallback_text)
             except VoiceFlowError as output_error:
+                # The fallback text was printed; a failed copy must not discard it (D-88).
                 print(str(output_error), file=sys.stderr)
-                return 1
         return 2
     except VoiceFlowError as exc:
         print(str(exc), file=sys.stderr)
@@ -663,7 +711,7 @@ def _process(args: argparse.Namespace) -> int:
     # speaker chose a provider for one dictation, not a permanent archive of every
     # sentence. A failure to write is reported rather than swallowed, because a store
     # the speaker believes is filling and is not would make the dataset a lie.
-    if getattr(args, "distill", False) and result.cleaner != "gemini":
+    if getattr(args, "distill", False) and result.cleaner not in CLOUD_CLEANER_NAMES:
         # A pair is the cloud rewrite kept beside the engine transcript. A local cleaner
         # has no cloud side, so this run had nothing to store — and a speaker who asked
         # for the pair and is told nothing believes a store is filling that is not.
@@ -675,8 +723,10 @@ def _process(args: argparse.Namespace) -> int:
     elif getattr(args, "distill", False):
         try:
             DistillationStore().record(
-                raw_text=result.raw_text,
-                cleaned_text=result.final_text,
+                # The cleaner's own input and output: corrections applied, snippets
+                # and macros not yet expanded (D-27).
+                raw_text=result.personalized_text,
+                cleaned_text=result.cleaner_output or result.final_text,
                 mode=getattr(args, "mode", "clean"),
                 cleaner=result.cleaner,
                 model=getattr(cleaner, "answered_with", None),
@@ -713,8 +763,8 @@ def _process(args: argparse.Namespace) -> int:
         try:
             copy_text(result.final_text)
         except VoiceFlowError as exc:
+            # The text was printed; exiting 1 made the app discard a finished dictation (D-88).
             print(str(exc), file=sys.stderr)
-            return 1
     return 0
 
 
@@ -771,7 +821,7 @@ def _clean(args: argparse.Namespace) -> int:
                 json.dumps(
                     {
                         "raw_text": exc.raw_text,
-                        "personalized_text": exc.fallback_text,
+                        "personalized_text": exc.personalized_text or exc.fallback_text,
                         "final_text": exc.fallback_text,
                         "language": exc.language,
                         "cleaner": args.cleaner,
@@ -947,8 +997,11 @@ def _snippet(args: argparse.Namespace) -> int:
             return 0
 
         if action == "import":
-            count = store.import_json(args.from_path)
-            print(f"Imported {count} voice snippet(s) from: {args.from_path}")
+            report = store.import_json(args.from_path)
+            print(
+                f"Imported from {args.from_path}: {report.added} added, "
+                f"{report.replaced} replaced, {report.skipped} skipped."
+            )
             return 0
 
     except (VoiceFlowError, OSError) as exc:

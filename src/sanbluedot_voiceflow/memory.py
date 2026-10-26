@@ -18,23 +18,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def write_json_atomically(path: Path, payload: object) -> None:
-    """Write through a temporary file in the same directory, then rename.
+def write_text_atomically(path: Path, text: str) -> None:
+    """Write through a temporary file in the same directory, flushed to disk, then rename.
 
     `write_text` truncates first, so an interruption leaves a half-written file. That
     file then fails to parse on every later read, and a corrupted correction store
-    blocks dictation entirely. `os.replace` is atomic on the same filesystem.
+    blocks dictation entirely. `os.replace` is atomic on the same filesystem, but only
+    for what reached the disk: without a flush a power loss right after the rename could
+    leave the store empty (D-134). macOS needs `F_FULLFSYNC` for the drive to flush.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            _flush_to_disk(handle.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            _flush_to_disk(directory)
+        finally:
+            os.close(directory)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _flush_to_disk(descriptor: int) -> None:
+    try:
+        import fcntl
+
+        fcntl.fcntl(descriptor, fcntl.F_FULLFSYNC)
+    except (ImportError, AttributeError, OSError):
+        os.fsync(descriptor)
+
+
+def write_json_atomically(path: Path, payload: object) -> None:
+    """The JSON stores' writer: one atomic, flushed write."""
+    write_text_atomically(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
 @contextmanager
@@ -67,17 +88,80 @@ def exclusive_file_lock(path: Path) -> Iterator[None]:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def quarantine_file(path: Path, kind: str, error: object) -> None:
-    """Preserve one unusable personal file under a dated name and report it."""
+def _identity(path: Path) -> tuple[int, int, int] | None:
+    try:
+        status = path.stat()
+    except OSError:
+        return None
+    return (status.st_ino, status.st_mtime_ns, status.st_size)
+
+
+def quarantine_file(
+    path: Path,
+    kind: str,
+    error: object,
+    read_identity: tuple[int, int, int] | None = None,
+) -> None:
+    """Preserve one unusable personal file under a dated name and report it.
+
+    `read_identity` is the file as it was when the read failed. If another process has
+    rewritten it since, the bad copy is already gone and the good one is left in place:
+    a slow reader used to move aside a store another process had just written (D-135).
+    The store lock is not taken here, because callers already hold it and `flock`
+    blocks against itself.
+    """
+    if read_identity is not None and _identity(path) != read_identity:
+        print(
+            f"{kind} could not be read ({error}), but it changed since; the new copy "
+            "is kept and this run continues without the old one.",
+            file=sys.stderr,
+        )
+        return
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     quarantine = path.with_name(f"{path.name}.corrupt-{stamp}")
     try:
         os.replace(path, quarantine)
-    except OSError:
-        quarantine = path
+    except OSError as move_error:
+        # The move failed, so the file is where it was; saying "moved to" its own
+        # name was a report of something that did not happen (D-154).
+        print(
+            f"{kind} could not be read ({error}), and it could not be moved aside "
+            f"({move_error}); it was left in place and this run continues without it.",
+            file=sys.stderr,
+        )
+        return
     print(
         f"{kind} could not be read ({error}). It was moved to {quarantine.name} and "
         "this run continues without it.",
+        file=sys.stderr,
+    )
+
+
+def preserve_skipped(path: Path, kind: str, skipped: int) -> None:
+    """Keep one copy of a store some of whose entries could not be read.
+
+    Unreadable entries were skipped in silence and then vanished at the next write
+    (D-97, D-30). The copy is named by the file's content, so it is written once per
+    version of the file rather than on every read, and the speaker is told once.
+    """
+    if skipped <= 0:
+        return
+    import hashlib
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return
+    copy = path.with_name(f"{path.name}.skipped-{hashlib.sha1(data).hexdigest()[:10]}")
+    if copy.exists():
+        return
+    try:
+        copy.write_bytes(data)
+    except OSError:
+        return
+    print(
+        f"{kind} has {skipped} unreadable entr{'y' if skipped == 1 else 'ies'}; they are "
+        f"skipped, and the file as it was is kept as {copy.name}.",
         file=sys.stderr,
     )
 
@@ -90,13 +174,14 @@ def read_json_or_quarantine(path: Path, kind: str) -> dict[str, object] | None:
     """
     if not path.is_file():
         return None
+    identity = _identity(path)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("the top-level JSON value is not an object")
         return payload
     except (json.JSONDecodeError, UnicodeDecodeError, OSError, ValueError) as exc:
-        quarantine_file(path, kind, exc)
+        quarantine_file(path, kind, exc, read_identity=identity)
         return None
 
 
@@ -152,13 +237,22 @@ def add_vocabulary_term(term: str, path: Path = DEFAULT_VOCABULARY) -> bool:
     last: past the budget it is stored and unread, which the Words section says.
     """
     term = term.strip()
-    if not term or "\n" in term:
+    # Every line break `splitlines` honours, not only `\n`: a `\r` or `\x0b` stored one
+    # term as two (D-155). A leading `#` is a comment to the reader, so the term was
+    # reported added and never loaded (D-89).
+    if not term or len(term.splitlines()) != 1:
         raise ValueError("A vocabulary term is one line of text.")
+    if term.startswith("#"):
+        raise ValueError("A vocabulary term cannot start with #, which marks a comment.")
     with exclusive_file_lock(path):
         existing = load_vocabulary(path)
         if term.casefold() in {item.casefold() for item in existing}:
             return False
-        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        except (UnicodeDecodeError, OSError) as exc:
+            quarantine_file(path, "The vocabulary store", exc)
+            lines = []
         _write_lines_atomically(path, lines + [term])
     return True
 
@@ -169,7 +263,11 @@ def remove_vocabulary_term(term: str, path: Path = DEFAULT_VOCABULARY) -> bool:
     if not wanted or not path.is_file():
         return False
     with exclusive_file_lock(path):
-        lines = path.read_text(encoding="utf-8").splitlines()
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (UnicodeDecodeError, OSError) as exc:
+            quarantine_file(path, "The vocabulary store", exc)
+            return False
         kept = [line for line in lines if line.strip().casefold() != wanted]
         if len(kept) == len(lines):
             return False
@@ -178,13 +276,21 @@ def remove_vocabulary_term(term: str, path: Path = DEFAULT_VOCABULARY) -> bool:
 
 
 def _write_lines_atomically(path: Path, lines: Sequence[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        temporary.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    write_text_atomically(path, "".join(f"{line}\n" for line in lines))
+
+
+def prompt_terms(terms: Sequence[str], char_budget: int = PROMPT_CHAR_BUDGET) -> list[str]:
+    """The leading terms the prompt carries. Counted here, not by splitting the prompt
+    on ", ", which read a term containing ", " as two (D-96)."""
+    selected: list[str] = []
+    used = 0
+    for term in terms:
+        cost = len(term) + (2 if selected else 0)
+        if used + cost > char_budget:
+            break
+        selected.append(term)
+        used += cost
+    return selected
 
 
 def build_initial_prompt(
@@ -199,17 +305,9 @@ def build_initial_prompt(
     prompt was byte-identical with the feature on and off. The two tests that covered it
     used two-term fixtures, which is why the budget never bound them. Reviving it means
     prepending rather than appending, which changes what the engine hears and must be
-    measured on the fixed corpus with punctuation first — `phase-5-proposal.md`, 8.
+    measured on the fixed corpus with punctuation first — `docs/proposals/phase-5-proposal.md`, 8.
     """
-    selected: list[str] = []
-    used = 0
-    for term in terms:
-        cost = len(term) + (2 if selected else 0)
-        if used + cost > char_budget:
-            break
-        selected.append(term)
-        used += cost
-    return ", ".join(selected)
+    return ", ".join(prompt_terms(terms, char_budget))
 
 
 def export_memory(
@@ -262,6 +360,16 @@ def export_memory(
         for pair in DistillationStore(directory / "distill_pairs.local.jsonl").load_all()
     ]
 
+    # The window's last ten dictations, written by the app. They lived in user defaults
+    # and never reached this file (D-11); an unreadable copy exports as empty.
+    history_path = directory / "history.local.json"
+    try:
+        history = json.loads(history_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        history = []
+    if not isinstance(history, list):
+        history = []
+
     write_json_atomically(
         destination,
         {
@@ -272,6 +380,7 @@ def export_memory(
             "practice_sessions": practice_sessions,
             "snippets": snippets,
             "distillation_pairs": distillation_pairs,
+            "dictation_history": history,
         },
     )
     counts = {
@@ -280,6 +389,7 @@ def export_memory(
         "practice_sessions": len(practice_sessions),
         "snippets": len(snippets),
         "distillation_pairs": len(distillation_pairs),
+        "dictation_history": len(history),
     }
     return destination, counts
 
@@ -305,7 +415,8 @@ def _bounded_pattern(heard: str) -> re.Pattern[str]:
     so a pair can never rewrite a fragment inside a longer word. The boundary is
     dropped at an edge that is not a word character, where `\\b` would never match.
     """
-    escaped = re.escape(heard)
+    # Words joined by any whitespace, so a double space or a tab still matches (D-161).
+    escaped = r"\s+".join(re.escape(word) for word in heard.split())
     prefix = r"\b" if heard[:1].isalnum() or heard[:1] == "_" else ""
     suffix = r"\b" if heard[-1:].isalnum() or heard[-1:] == "_" else ""
     return re.compile(f"{prefix}{escaped}{suffix}", re.IGNORECASE)
@@ -337,7 +448,7 @@ def apply_corrections(text: str, corrections: Sequence[Correction]) -> str:
         return text
 
     ordered = sorted(usable, key=lambda item: len(item.heard), reverse=True)
-    by_key = {item.heard.casefold(): item.intended for item in ordered}
+    by_key = {" ".join(item.heard.split()).casefold(): item.intended for item in ordered}
     combined = re.compile(
         "|".join(_bounded_pattern(item.heard).pattern for item in ordered),
         re.IGNORECASE,
@@ -385,14 +496,18 @@ class CorrectionStore:
             )
             return []
         corrections = []
+        skipped = 0
         for entry in entries:
             # An entry missing either side would rewrite text unpredictably; skip it.
             if not isinstance(entry, dict):
+                skipped += 1
                 continue
             heard, intended = entry.get("heard"), entry.get("intended")
             if not isinstance(heard, str) or not isinstance(intended, str):
+                skipped += 1
                 continue
             if not heard.strip() or not intended.strip():
+                skipped += 1
                 continue
             source = entry.get("source", "")
             corrections.append(
@@ -403,11 +518,12 @@ class CorrectionStore:
                     source=source if source in CORRECTION_SOURCES else "",
                 )
             )
+        preserve_skipped(self.path, "The correction store", skipped)
         return corrections
 
     def add(self, heard: str, intended: str, source: str = "") -> Correction:
         """Store one pair the user confirmed. Re-adding a pair replaces it."""
-        heard = heard.strip()
+        heard = " ".join(heard.split())
         intended = intended.strip()
         if not heard or not intended:
             raise ValueError("A correction needs both the heard and the intended text.")

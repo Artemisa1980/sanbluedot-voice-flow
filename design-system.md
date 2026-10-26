@@ -226,7 +226,7 @@ the owner's site uses, without its outer frame: the window is already the frame,
 frame inside a frame inside a frame spends the height the station needs.
 
 - Title strip: dark olive, `14pt` horizontal and `11pt` vertical padding, `NAME.SYS` in
-  the pixel face at `9pt` gold, the subtitle in the same face at 50% gold, and a trailing
+  the pixel face at `9pt` gold, the subtitle in the same face at 75% gold (50% measured 3.4:1, under the 4.5 floor), and a trailing
   slot for a count or an action.
 - The strip continues down both sides at `18pt` and across the foot as a band of the same
   olive. The screen inside has an `8pt` radius and `14pt` of padding.
@@ -454,6 +454,104 @@ the one surface that does not use the sage canvas.
   no new colour enters the palette.
 - Wordmark at `10px` gold with the `dot` at `7px` in `#7CB3E8`.
 
+## Floating HUD — Microduck redesign, approved 2026-10-25, not built
+
+Approved by the owner from `docs/hud-redesign-02-bubble.html` (capsule) and
+`docs/microduck-mascot-01.html` §2–3 (the articulated duck). The contract above describes
+the shipped HUD until this lands; the build replaces it with this section. Every value
+below is in points and is declared once in `HUDLayout`, as today. Where the preview and
+this text disagree, the preview's final CSS and script win: they are the measured source.
+
+### What it is
+
+A small dark capsule with fully round ends, and the Microduck standing to its left with
+its head beside the capsule's left end. The microphone disc and the wordmark leave the
+HUD; the duck's chest carries the brand.
+
+### When each part shows
+
+| Moment | Duck | Capsule |
+|---|---|---|
+| Key down, no voice yet | hidden | minimal `36 × 16`: coral lamp blinking, three dim dots |
+| Released with no voice | never appeared | fades out; nothing else shows |
+| A voice is heard — level above `0.2` for `120 ms` | pops up (`520 ms` spring) with two trail dots | full `120 × 30` |
+| Processing, result, action | stays | full `120 × 30` |
+| Error, cancelled | stays, shakes its head | short `120 × 22` |
+| Mode change (nothing said) | hidden | short `120 × 22` |
+| Done | leaves with the capsule | fades out |
+
+### Capsule
+
+- Radius always half the height. Fill black 85%, `0 6 14` shadow at 55%, `1pt` hairline
+  gradient white 28% → dot blue 40% → white 6%. Horizontal padding `11`.
+- Position in the panel: left edge `55` from the duck's left edge, bottom `49` from the
+  duck's feet. Panel bounds come from the content: about `175 × 82`.
+- Size changes spring (`360 ms`, overshoot); content fades in over `220 ms`.
+- Full size, three rows `2.5` apart:
+  1. Lamp `5`, status word mono heavy `5.1`, target app in an outlined chip (mono `3.6`,
+     dot-blue border 55%, fill 10%, text `accentHover`), ESC ✕ at the right while recording.
+  2. Twelve bars `6 × 3.5`, radius `1`, gap `2`: bars 0–6 dot blue, 7–9 gold, 10–11
+     `onAir`, off at white 10%. Recording: live level, at least one lit. Processing: a
+     five-bar wave moving one bar every `80 ms`. Result or action: all lit.
+  3. Mono heavy `3.6`, white 60%: the stage at the left, the engine at the right.
+- State texts — badge texts keep `HUDBadge`'s vocabulary; the target is the 12-character
+  application short name:
+
+| State | Lamp | Row 1 | Row 3 left | Row 3 right |
+|---|---|---|---|---|
+| Recording | `onAir`, blinking | `ON AIR` in `onAir`, target chip, `ESC ✕` | `⚡ LIVE` gold | `• <speech engine> · LOCAL` |
+| Processing | dot blue | `PROCESSING` in `inputCream`, target chip | `CLEANING` dot blue (`TRANSLATING`, `STRUCTURING`, `PARSING ACTION` by mode) | `• <cleaner> · LOCAL/CLOUD` |
+| Pasted / copied | `okOnDark` | `PASTED` or `COPIED` in `okOnDark`, target chip | `⚡ <wpm> WPM` gold `· <latency>s` dot blue | `• <answered model> · LOCAL/CLOUD` |
+| Action | gold | `ACTION` gold, target chip | `⚡ DONE` gold | the action's description |
+| Error (short) | `onAir`, steady | `ERROR` in `onAir` | — | `NOTHING PASTED` |
+| Cancelled (short) | `rec`, steady | `CANCELLED` in `rec` | — | `ESC` |
+| Mode (short) | none | `MODE` white 55% + mode badge in its accent | — | one `10 × 3.5` segment per mode, the selected one lit gold (coral for ACTION) |
+
+`PLAIN` and `NO CMD` keep their meaning from today's badge; place them as a second chip
+in row 1. R9 still holds: a figure that was not measured is not shown.
+
+**Accepted risk.** The `3.6` text is half today's smallest HUD text (`7`). The owner chose
+this size; check it at 1× on the real display before closing the work.
+
+### Duck
+
+- Drawn in code, not as an image: the articulated rig of `docs/microduck-mascot-01.html`
+  (`duckRig`, `vectorHead`, `POSES`, `applyPose`). Size in the HUD `60 × 82`, from the
+  rig's view box `28 18 130 176`.
+- Joints: hip, knee and ankle on each leg (thigh and shin `16`, feet stay flat), the body,
+  three neck links `10` apart, the head. The lower foot sets the hip height, so it always
+  stands on its baseline.
+- Head drawn twice: **front** at rest, eye centred; **side** while recording, the long
+  shell turned toward the capsule. The switch is a `280 ms` narrow-and-fade between the
+  two. The bill is a thin plate flush under the shell; the lower jaw drops with the voice
+  level (`0.28 × level × 16`).
+- Chest: `SB` mono heavy in navy with a raised `dot` in `#7CB3E8`.
+- Colours: shell `inputCream`, shading `panelHeader`, lens and slot `navy`, servo parts
+  `micHighlight` with a `panelHeader` edge, eye ring and soles `gold`, lens glint `dotBlue`,
+  face LED by state (`rec` recording, `dotBlue` processing, `okOnDark` delivered, `onAir`
+  error). **Two new tokens, approved with this design:** `duckOrange #F26B1D` for the
+  bill, the side brackets and the feet; `duckOrangeDeep #C9561A` for the lower jaw. Add
+  them to `VoiceStationTokens` and the approved palette above.
+- One duck in one colour. The colour-per-mode variants in the mascot preview were not
+  chosen.
+
+### How the duck moves
+
+Pose targets are angle sets (`POSES` in the preview); the drawn pose eases toward the
+target with `1 − e^(−6·dt)` each frame, so nothing cuts.
+
+| Input, while recording | Pose |
+|---|---|
+| Talking | `lean` — neck bent toward the capsule; the jaw follows every syllable |
+| Level above `0.65` for `250 ms` | `stretch` — neck up, bill wide (jaw × 1.25) |
+| Level below `0.12` for `600 ms` | `lookUp` — head cocked up, waiting |
+| Talking for more than `8 s` | `sit` — knees folded, neck in an S; loud and pause still move the neck |
+| Always while recording | breathing: body ±1.2°, neck ±2.5° |
+
+After release: `front` pose. Processing adds the look-around (`ponder` head turn and lens
+`scan`); a result or an action nods twice with a small hop; an error or a cancel shakes
+the head. Reduced Motion snaps to each pose and drops breathing, nods and shakes.
+
 ## Menu bar item
 
 The item is the only VoiceFlow surface always on screen, so it carries the run's state
@@ -548,10 +646,12 @@ makes the decision for them.
 
 The right card in `VoiceStationWindowView` contains a 3-tab switchable console:
 
-- **Tabs:** `TELEMETRY LOG`, `HISTORY TRAY`, and `SNIPPETS`. The owner chose
-  `TELEMETRY LOG` over `ACTIVITY LOG` on 2026-09-18. The tabs carry no counts: the
-  sidebar rows already do, and a number in both places is the same fact named twice.
-- **Active Tab Pill:** Gold background `#EFC15E` with Navy text `#16213E`, radius `4px`, monospace bold `9px`.
+- **Tabs:** `TELEMETRY LOG`, `HISTORY TRAY`, and `SNIPPETS` (canonical enum names in
+  `RightCardTab`). On the compact right card header, the buttons display the concise labels
+  `LOG`, `HISTORY <n>`, and `SNIPPETS <n>` (ratified in D-142). When tabs are hidden
+  because the sidebar names the view, the static header pill displays `LOG`,
+  `HISTORY <n>`, or `SNIPPETS <n>`.
+- **Active Tab Pill:** Gold background `#EFC15E` with Navy text `#16213E`, radius `4px`/`5px` with subtle retro extrusion, monospace bold `8.5px`.
 - **Inactive Tab Pill:** Clear background, Gold copy at 70% opacity.
 - **Console Screen:** Dark olive ground `consoleBg` `#262319`, gold hairline border at 40% opacity, radius `6px`.
 - **Snippet Items:** Inset cards with dark overlay at 25% opacity, gold hairline border, monospace `9px`/`10px` typography in `inputCream` `#FFF9E9`.

@@ -23,7 +23,9 @@ def copy_text(
         raise OutputError(f"Clipboard output is not supported on {current_system}.")
 
     try:
-        runner(command, input=text, text=True, check=True, capture_output=True)
-    except (FileNotFoundError, UnicodeError, subprocess.CalledProcessError) as exc:
+        # Bounded, and every OS failure is reported: `pbcopy` had no timeout and a
+        # `PermissionError` escaped as a traceback (D-158).
+        runner(command, input=text, text=True, check=True, capture_output=True, timeout=10)
+    except (OSError, UnicodeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise OutputError(f"Clipboard command failed on {current_system}.") from exc
 

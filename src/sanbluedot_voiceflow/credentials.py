@@ -27,7 +27,8 @@ _PROVIDER = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
 def _checked(provider: str) -> str:
     """Reject a provider name that could reach the keychain as an option or flag."""
-    if not _PROVIDER.match(provider):
+    # `fullmatch`: `$` also matches before a trailing newline, so "gemini\n" passed (D-156).
+    if not _PROVIDER.fullmatch(provider):
         raise VoiceFlowError(f"Unsupported provider name: {provider!r}")
     return provider
 
@@ -56,6 +57,16 @@ def read_api_key(
     if source.get(DISABLE_KEYCHAIN_FALLBACK_VARIABLE, "").strip() == "1":
         return None
 
+    return _keychain_lookup(provider, runner)[1]
+
+
+# `security` exits 44 when the item does not exist; any other failure is the keychain
+# itself (locked, denied, timed out), which is not the same as no key (D-157).
+_ITEM_NOT_FOUND = 44
+
+
+def _keychain_lookup(provider: str, runner: Runner) -> tuple[str, str | None]:
+    """("configured", key), ("absent", None) or ("unavailable", None)."""
     try:
         completed = runner(
             [
@@ -73,11 +84,14 @@ def read_api_key(
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return None
-    if getattr(completed, "returncode", 1) != 0:
-        return None
+        return "unavailable", None
+    status = getattr(completed, "returncode", 1)
+    if status == _ITEM_NOT_FOUND:
+        return "absent", None
+    if status != 0:
+        return "unavailable", None
     key = (getattr(completed, "stdout", "") or "").strip()
-    return key or None
+    return ("configured", key) if key else ("absent", None)
 
 
 def store_api_key_interactively(
@@ -153,5 +167,13 @@ def describe(
     runner: Runner = subprocess.run,
 ) -> str:
     """Say whether a key is configured, without revealing any part of it."""
-    key = read_api_key(provider, environment=environment, runner=runner)
-    return "configured" if key else "no key stored"
+    provider = _checked(provider)
+    source = os.environ if environment is None else environment
+    if source.get(environment_variable(provider), "").strip():
+        return "configured"
+    if source.get(DISABLE_KEYCHAIN_FALLBACK_VARIABLE, "").strip() == "1":
+        return "no key stored"
+    status, _ = _keychain_lookup(provider, runner)
+    if status == "unavailable":
+        return "keychain unavailable (locked, denied or timed out)"
+    return "configured" if status == "configured" else "no key stored"

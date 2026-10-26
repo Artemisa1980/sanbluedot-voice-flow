@@ -29,7 +29,6 @@ __all__ = [
 # rewrites, and Apple's on-device model and Gemini cover the Mac. The engine keeps it
 # for the Windows adapter, which has no on-device model (owner decision, 2026-10-02).
 CLEANER_NAMES = ("literal", "apple", "ollama", "gemini")
-CLEANER_MODES = ("clean", "translate", "meeting")
 # Named separately so a caller can warn, gate, or refuse before anything leaves the
 # device, without hard-coding which providers happen to be remote today.
 CLOUD_CLEANER_NAMES = ("gemini",)

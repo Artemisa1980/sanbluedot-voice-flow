@@ -23,7 +23,7 @@
     <key>CFBundleVersion</key>
     <string>20</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>VoiceFlow records only while you hold the configured shortcut so it can transcribe your speech locally.</string>
     <key>NSPrincipalClass</key>

@@ -31,3 +31,19 @@ class ClipboardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClipboardFailureTests(unittest.TestCase):
+    """D-158: a permission error or a hang is a reported failure, not a traceback."""
+
+    def test_os_errors_and_timeouts_are_reported(self) -> None:
+        import subprocess
+        from sanbluedot_voiceflow.clipboard import copy_text
+        from sanbluedot_voiceflow.errors import OutputError
+
+        for error in (PermissionError("denied"), subprocess.TimeoutExpired("pbcopy", 10)):
+            def runner(*_a, **kwargs):
+                self.assertEqual(kwargs.get("timeout"), 10)
+                raise error
+            with self.subTest(error=type(error).__name__), self.assertRaises(OutputError):
+                copy_text("hola", system="Darwin", runner=runner)

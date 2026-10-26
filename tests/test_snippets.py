@@ -170,8 +170,8 @@ class TestSnippets(unittest.TestCase):
 
         new_store_path = Path(self.temp_dir.name) / "new_snippets.json"
         new_store = SnippetStore(path=new_store_path)
-        imported_count = new_store.import_json(export_path)
-        self.assertEqual(imported_count, 2)
+        report = new_store.import_json(export_path)
+        self.assertEqual((report.added, report.replaced, report.skipped), (2, 0, 0))
         self.assertEqual(len(new_store.load()), 2)
 
     def test_store_quarantine_corrupt_or_unsupported_schema(self) -> None:
@@ -270,3 +270,41 @@ class TestSnippetCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SnippetEdgeTests(unittest.TestCase):
+    """D-159, D-160, D-161."""
+
+    def test_each_uuid_is_fresh(self) -> None:
+        from sanbluedot_voiceflow.snippets import evaluate_macro_expansion
+
+        first, second = evaluate_macro_expansion("{uuid} {uuid}").split()
+        self.assertNotEqual(first, second)
+
+    def test_a_trigger_with_odd_whitespace_still_fires(self) -> None:
+        from sanbluedot_voiceflow.snippets import Snippet, expand_snippets
+
+        snippets = [Snippet(trigger="mi  firma", expansion="Sandy")]
+        self.assertEqual(expand_snippets("te mando mi\tfirma", snippets), "te mando Sandy")
+
+    def test_import_reports_and_refuses_an_unknown_version(self) -> None:
+        import json as _json
+        import tempfile as _tempfile
+        from sanbluedot_voiceflow.errors import VoiceFlowError
+        from sanbluedot_voiceflow.snippets import SnippetStore
+
+        with _tempfile.TemporaryDirectory() as directory:
+            store = SnippetStore(Path(directory) / "s.json")
+            store.add("uno", "1")
+            source = Path(directory) / "in.json"
+            source.write_text(_json.dumps({"schema_version": 1, "snippets": [
+                {"trigger": "uno", "expansion": "one"},
+                {"trigger": "dos", "expansion": "2"},
+                {"trigger": "", "expansion": "bad"},
+            ]}), encoding="utf-8")
+            report = store.import_json(source)
+            self.assertEqual((report.added, report.replaced, report.skipped), (1, 1, 1))
+
+            source.write_text(_json.dumps({"schema_version": 9, "snippets": []}), encoding="utf-8")
+            with self.assertRaises(VoiceFlowError):
+                store.import_json(source)

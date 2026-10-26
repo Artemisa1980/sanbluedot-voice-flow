@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sanblueᵈᵒᵗ VoiceFlow — Microduck mascot proposals 01</title>
+<style>
+  @font-face {
+    font-family: "Press Start 2P";
+    src: url("../macos/Resources/Fonts/PressStart2P-Regular.ttf") format("truetype");
+  }
+
+  :root {
+    /* Approved tokens, same names as VoiceStationTokens. */
+    --appBg: #A9D3C0;
+    --panelBg: #F8ECCF;
+    --panelHeader: #98AAB2;
+    --gold: #EFC15E;
+    --navy: #16213E;
+    --dotBlue: #7CB3E8;
+    --accentHover: #93C4F0;
+    --textMuted: #405147;
+    --inputCream: #FFF9E9;
+    --consoleBg: #262319;
+    --ok: #5F7050;
+    --okOnDark: #9CB386;
+    --working: #D98A2B;
+    --rec: #FF7B6B;
+    --onAir: #FF453B;
+    --micHighlight: #2C3A63;
+    --logSnippet: #A78BFA;
+
+    /* NEW — proposals only, not in design-system.md yet. */
+    --duckOrange: #F26B1D;
+    --duckOrangeDeep: #C9561A;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--appBg);
+    color: var(--navy);
+    font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  header {
+    background: var(--navy);
+    border-bottom: 2px solid var(--gold);
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header h1 {
+    margin: 0;
+    font: 12px "Press Start 2P", monospace;
+    color: var(--panelBg);
+    letter-spacing: 0.6px;
+  }
+  .badge {
+    font: 8px "Press Start 2P", monospace;
+    background: var(--gold);
+    color: var(--navy);
+    padding: 5px 7px;
+    border-radius: 5px;
+  }
+  .wordmark { margin-left: auto; font-weight: 700; color: var(--gold); }
+  .wordmark sup { color: var(--dotBlue); font-size: 8px; font-weight: 900; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 28px 60px; }
+
+  .lede {
+    background: var(--panelBg);
+    border: 2px solid var(--navy);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 3px 3px 0 var(--navy);
+  }
+  .lede p { margin: 4px 0; }
+  .new { background: var(--duckOrange); color: var(--navy); padding: 1px 5px; border-radius: 4px; font-weight: 700; }
+
+  h2 {
+    font: 10px "Press Start 2P", monospace;
+    margin: 34px 0 12px;
+    letter-spacing: 0.4px;
+  }
+
+  /* Control deck */
+  .deck {
+    position: sticky; top: 0; z-index: 5;
+    margin-top: 18px;
+    background: var(--consoleBg);
+    border: 3px solid var(--navy);
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--navy);
+    padding: 12px 14px;
+    display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+    color: var(--panelBg);
+  }
+  .deck .label { color: var(--gold); font-size: 10px; letter-spacing: 1px; }
+  .deck button {
+    font: 700 11px ui-monospace, Menlo, monospace;
+    color: var(--navy);
+    background: var(--panelBg);
+    border: 2px solid var(--navy);
+    border-radius: 7px;
+    padding: 6px 10px;
+    cursor: pointer;
+    box-shadow: 2px 2px 0 #000;
+  }
+  .deck button.on { background: var(--gold); box-shadow: 3px 3px 0 #7A544B; }
+  .deck .sep { width: 1px; height: 24px; background: rgba(239,193,94,0.3); }
+  .meter { display: flex; gap: 3px; }
+  .meter i { width: 7px; height: 12px; border-radius: 1.5px; background: rgba(255,255,255,0.1); }
+  .meter i.lit { background: var(--dotBlue); }
+  .meter i.lit.g { background: var(--gold); }
+  .meter i.lit.r { background: var(--onAir); }
+
+  /* Option cards */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card {
+    background: var(--panelBg);
+    border: 3px solid var(--navy);
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--navy);
+    overflow: hidden;
+  }
+  .card .strip {
+    background: var(--consoleBg);
+    color: var(--gold);
+    font: 9px "Press Start 2P", monospace;
+    padding: 11px 14px;
+    display: flex; justify-content: space-between;
+  }
+  .card .strip span:last-child { opacity: 0.75; }
+  .stage {
+    height: 250px;
+    display: grid; place-items: center;
+    position: relative;
+  }
+  .card .notes { padding: 12px 14px 14px; border-top: 2px solid var(--navy); }
+  .card .notes p { margin: 3px 0; }
+  .card .notes b { color: var(--navy); }
+
+  /* Wallpapers: the HUD floats over anything. */
+  .wall-dark  .stage { background: radial-gradient(circle at 30% 20%, #2a3350, #0b0f1c 70%); }
+  .wall-light .stage { background: linear-gradient(135deg, #f4f1ea, #dfe7ee); }
+  .wall-busy  .stage {
+    background:
+      radial-gradient(circle at 20% 30%, #ff9a5a 0 14%, transparent 15%),
+      radial-gradient(circle at 75% 65%, #5ab0ff 0 18%, transparent 19%),
+      repeating-linear-gradient(45deg, #3c4a3a 0 12px, #6e7f5c 12px 24px);
+  }
+
+  /* Behaviour sheet */
+  .sheet { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .cell {
+    background: var(--inputCream);
+    border: 2px solid var(--navy);
+    border-radius: 10px;
+    box-shadow: 3px 3px 0 var(--navy);
+    overflow: hidden;
+  }
+  .cell .stage { height: 170px; }
+  .cell h3 { margin: 0; padding: 8px 10px 2px; font-size: 11px; letter-spacing: 1px; }
+  .cell p { margin: 0; padding: 0 10px 10px; font-size: 11px; color: var(--textMuted); }
+
+  /* Variants */
+  .variants { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .variants .cell .stage { height: 190px; }
+
+  /* Real size */
+  .realsize {
+    border: 3px solid var(--navy);
+    border-radius: 14px;
+    box-shadow: 5px 5px 0 var(--navy);
+    padding: 30px;
+    display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-end;
+  }
+  .pair { display: flex; align-items: flex-end; gap: 6px; }
+  .pair .duck { width: 72px; height: 96px; }
+  .capsule {
+    width: 330px; height: 88px;
+    border-radius: 18px;
+    background: rgba(0,0,0,0.85);
+    border: 1px solid rgba(124,179,232,0.35);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+    color: rgba(255,255,255,0.35);
+    display: grid; place-items: center;
+    font-size: 10px; letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .pair-label { color: var(--panelBg); font-size: 10px; margin-top: 6px; }
+
+  /* Palette */
+  table { border-collapse: collapse; background: var(--panelBg); border: 2px solid var(--navy); }
+  th, td { border: 1px solid rgba(38,35,25,0.45); padding: 6px 10px; text-align: left; }
+  th { background: var(--consoleBg); color: var(--gold); font-weight: 700; }
+  .sw { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--navy); border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+
+  .questions {
+    background: var(--navy); color: var(--panelBg);
+    border-radius: 14px; padding: 16px 20px;
+    border: 3px solid var(--navy); box-shadow: 5px 5px 0 #000;
+  }
+  .questions li { margin: 6px 0; }
+  .questions b { color: var(--gold); }
+
+  footer {
+    background: var(--navy); border-top: 2px solid var(--gold);
+    text-align: center; padding: 12px; font-weight: 700; font-size: 10px; color: #AAB1C1;
+  }
+  footer .s { color: var(--gold); }
+  footer sup { color: var(--dotBlue); font-size: 7px; }
+
+  /* =========================================================
+     The duck. Every part is a group so it can move on its own.
+     Colours come from CSS variables so a variant is one line.
+     ========================================================= */
+  .duck {
+    --shell: var(--inputCream);
+    --shade: var(--panelHeader);
+    --bill: var(--duckOrange);
+    --billDeep: var(--duckOrangeDeep);
+    --eye: var(--gold);
+    --sole: var(--gold);
+    --frame: var(--navy);
+    --joint: var(--micHighlight);
+    --metal: var(--panelHeader);
+    --led: var(--rec);
+    --jaw: 0;
+    width: 150px; height: 190px;
+    overflow: visible;
+  }
+  .duck g, .duck circle, .duck rect, .duck path { transform-box: fill-box; }
+  /* Servo parts: navy vanishes on a dark wallpaper, so they take the lit navy and a metal edge. */
+  .duck .fr { fill: var(--joint); stroke: var(--metal); stroke-width: 1; stroke-opacity: .6; }
+  .duck .torso { transform-origin: 50% 100%; }
+  .duck .head  { transform-origin: 45% 83%; }
+  /* Two views of the head. Front at rest; while recording it turns toward the capsule:
+     the front view narrows and fades as the side view widens in, which reads as a turn. */
+  .duck .hv-front, .duck .hv-side { transform-origin: 50% 100%; transition: opacity 200ms ease, transform 280ms cubic-bezier(.3,1.4,.5,1); }
+  .duck .hv-side { opacity: 0; transform: scaleX(.5); }
+  .duck[data-state="listen"] .hv-front { opacity: 0; transform: scaleX(.5); }
+  .duck[data-state="listen"] .hv-side  { opacity: 1; transform: none; }
+  .duck .jaw   { transform: translateY(calc(var(--jaw) * 0.28px)); transition: transform 70ms linear; }
+  .duck .lens  { transform-origin: 50% 50%; animation: blink 4.2s infinite; }
+  .duck .whole { transform-origin: 50% 100%; }
+
+  /* Pixel option: same body language, stepped like a sprite. */
+  .duck.pixel .head  { transform-origin: 50% 100%; }
+  .duck.pixel .jaw   { transform: translateY(calc(var(--jawPx) * 1px)); transition: none; }
+  .duck.pixel * { animation-timing-function: steps(3, end) !important; }
+
+  /* ENTER — pops up beside the capsule when the key goes down. */
+  .duck.entering .whole { animation: popIn 520ms cubic-bezier(.2,1.6,.4,1) both; }
+
+  /* LISTEN — head tilted toward the speaker, body breathing, bill follows the voice. */
+  .duck[data-state="listen"] .head  { animation: tilt 1.8s ease-in-out infinite; }
+  .duck[data-state="listen"] .torso { animation: breathe 0.9s ease-in-out infinite; }
+  .duck[data-state="listen"] .led   { fill: var(--rec); animation: pulse 0.9s infinite; }
+
+  /* WAIT — thinking: looks up, then to the side; the eye scans. */
+  .duck[data-state="wait"] .head  { animation: ponder 2.6s ease-in-out infinite; }
+  .duck[data-state="wait"] .torso { animation: sway 2.6s ease-in-out infinite; }
+  .duck[data-state="wait"] .lens  { animation: scan 1.3s ease-in-out infinite; }
+  .duck[data-state="wait"] .led   { fill: var(--dotBlue); animation: pulse 0.6s infinite; }
+
+  /* YES — two nods and a small hop. Delivered or action done. */
+  .duck[data-state="yes"] .head  { animation: nod 1.6s ease-in-out infinite; }
+  .duck[data-state="yes"] .whole { animation: hop 1.6s ease-in-out infinite; }
+  .duck[data-state="yes"] .led   { fill: var(--okOnDark); }
+
+  /* NO — shakes the head; error or cancelled. */
+  .duck[data-state="no"] .head  { animation: shake 1.6s ease-in-out infinite; }
+  .duck[data-state="no"] .torso { animation: slump 1.6s ease-in-out infinite; }
+  .duck[data-state="no"] .led   { fill: var(--onAir); }
+
+  @keyframes popIn  { 0% { transform: translateY(40px) scale(.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  @keyframes tilt   { 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(3deg) translateY(1px); } }
+  @keyframes breathe{ 0%,100% { transform: translateY(0); } 50% { transform: translateY(1.5px) scaleY(.985); } }
+  @keyframes ponder { 0%,100% { transform: rotate(-10deg) translateY(-1px); } 40% { transform: rotate(-10deg) translateY(-1px); } 55%,85% { transform: rotate(7deg); } }
+  @keyframes sway   { 0%,100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+  @keyframes scan   { 0%,100% { transform: translateX(-1.5px); } 50% { transform: translateX(1.5px); } }
+  @keyframes nod    { 0%,60%,100% { transform: rotate(0); } 12%,36% { transform: rotate(15deg); } 24%,48% { transform: rotate(-2deg); } }
+  @keyframes hop    { 0%,100% { transform: none; } 50% { transform: none; } 56% { transform: translateY(-5px); } 66% { transform: none; } }
+  @keyframes shake  { 0%,55%,100% { transform: none; }
+                      8%  { transform: translateX(-3px) rotate(-5deg) scaleX(.92); }
+                      16% { transform: translateX(3px)  rotate(5deg)  scaleX(.92); }
+                      24% { transform: translateX(-3px) rotate(-5deg) scaleX(.92); }
+                      32% { transform: translateX(3px)  rotate(5deg)  scaleX(.92); }
+                      40% { transform: rotate(8deg) translateY(2px); } }
+  @keyframes slump  { 0%,100% { transform: none; } 45% { transform: translateY(2px) scaleY(.97); } }
+  @keyframes pulse  { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  @keyframes blink  { 0%,94%,100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+
+
+  /* Articulated rig: joints are positioned by script in their parent's own space, so they
+     must not inherit the fill-box origin the CSS-animated parts use. */
+  /* Chest lockup: SB in navy on the cream shell, the dot always #7CB3E8 and raised. */
+  .duck .chest { font: 800 9px ui-monospace, "SF Mono", Menlo, monospace; fill: var(--navy); letter-spacing: -.2px; }
+  .duck .chest .dot { font-size: 5.6px; font-weight: 900; fill: var(--dotBlue); }
+  .duck.rig [data-j] { transform-box: view-box; transform-origin: 0 0; }
+  .duck[data-view="side"] .hv-front { opacity: 0; transform: scaleX(.5); }
+  .duck[data-view="side"] .hv-side  { opacity: 1; transform: none; }
+
+  .poses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .poses .cell .stage { height: 175px; }
+  .poses .duck { width: 136px; height: 160px; }
+
+  .live { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; align-items: start; }
+  .livestage { border: 3px solid var(--navy); border-radius: 14px; box-shadow: 5px 5px 0 var(--navy); overflow: hidden; }
+  .livestage .stage { height: 380px; }
+  .livestage .duck { width: 290px; height: 340px; }
+  .readout {
+    background: var(--consoleBg); color: var(--panelBg);
+    border: 3px solid var(--navy); border-radius: 14px; box-shadow: 5px 5px 0 var(--navy);
+    padding: 14px 16px;
+  }
+  .readout .row { display: flex; gap: 10px; align-items: center; margin: 4px 0 10px; }
+  .readout .k { color: var(--gold); font-size: 10px; letter-spacing: 1px; width: 52px; }
+  .readout .now { font: 10px "Press Start 2P", monospace; color: var(--gold); }
+  .readout .why { color: var(--inputCream); font-weight: 700; }
+  .readout table { width: 100%; margin-top: 6px; font-size: 11px; background: transparent; border-color: rgba(239,193,94,0.4); }
+  .readout td { border-color: rgba(239,193,94,0.25); color: var(--panelBg); }
+  .readout td:first-child { color: var(--gold); white-space: nowrap; }
+  .readout tr.hit td { background: rgba(239,193,94,0.16); }
+  .mini { margin-top: 14px; padding: 14px; border-radius: 10px; background: radial-gradient(circle at 30% 20%, #2a3350, #0b0f1c 70%); }
+  .mini .pair .duck { width: 82px; height: 96px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .duck *, .duck .whole { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MICRODUCK.SYS</h1>
+  <span class="badge">PROPOSAL 01</span>
+  <span class="wordmark">sanblue<sup>dot</sup></span>
+</header>
+
+<main>
+  <section class="lede">
+    <p><b>What this is:</b> the mascot alone, before the HUD is redesigned around it. Three ways to draw the same Microduck, all built from the reference robot: dome head, camera eye with a gold ring, an orange bill that opens, a servo neck, a cream body and orange feet.</p>
+    <p><b>How it behaves:</b> it stands outside the capsule. It pops up when the key goes down, faces you at rest, turns its head toward the capsule while recording, waits while processing, nods yes on delivery and shakes no on an error or a cancel.</p>
+    <p><b>How it moves:</b> one articulated body — hips, knees, ankles, a three-link neck and the head — so it can stand, step, crouch, sit and look up. While you dictate, the pose follows your voice (section 3).</p>
+    <p>Every colour is an approved token except the two marked <span class="new">NEW</span>. Use the deck below to drive every duck at once; LISTEN simulates a voice, and the bill follows it.</p>
+  </section>
+
+  <div class="deck">
+    <span class="label">STATE</span>
+    <button data-set="enter">ENTER</button>
+    <button data-set="listen" class="on">LISTEN</button>
+    <button data-set="wait">WAIT</button>
+    <button data-set="yes">YES</button>
+    <button data-set="no">NO</button>
+    <button data-cycle>AUTO CYCLE</button>
+    <span class="sep"></span>
+    <span class="label">VOICE</span>
+    <span class="meter" id="meter"></span>
+    <span class="sep"></span>
+    <span class="label">WALLPAPER</span>
+    <button data-wall="dark" class="on">DARK</button>
+    <button data-wall="light">LIGHT</button>
+    <button data-wall="busy">BUSY</button>
+  </div>
+
+  <h2>1 · THREE WAYS TO DRAW IT</h2>
+  <div class="grid wall-dark" id="options">
+    <div class="card">
+      <div class="strip"><span>A · NEWTON</span><span>STANDING · VECTOR</span></div>
+      <div class="stage"><svg class="duck" data-kind="a" viewBox="0 0 130 170"></svg></div>
+      <div class="notes">
+        <p><b>Closest to the photos.</b> Standing pose, facing you, the camera eye in the middle of the face. Smooth shapes, soft shading on the dome.</p>
+        <p>Reads well at full size; the servo bolts and the eye slot start to blur below about 70pt.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="strip"><span>B · PIXEL</span><span>STANDING · SPRITE</span></div>
+      <div class="stage"><svg class="duck pixel" data-kind="b" viewBox="0 0 130 150" shape-rendering="crispEdges"></svg></div>
+      <div class="notes">
+        <p><b>Retro dev-station.</b> The same duck as a 22-pixel-wide sprite. Motion moves in steps, like an old game character.</p>
+        <p>Matches Press Start 2P and the VU bars; stays sharp at any size because every pixel is a block.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="strip"><span>C · SITTER</span><span>SITTING · VECTOR</span></div>
+      <div class="stage"><svg class="duck" data-kind="c" viewBox="0 0 130 170"></svg></div>
+      <div class="notes">
+        <p><b>The compact pose</b> from the sitting photo: bigger head, knees folded in front, the back panel resting on the floor.</p>
+        <p>Shortest of the three, so it fits the capsule's 88pt height without towering over it.</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>2 · ONE BODY, MANY POSES</h2>
+  <div class="poses wall-dark rigwall">
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="front" viewBox="0 0 170 200"></svg></div>
+      <h3>READY</h3><p>Facing you. The resting pose, and where it returns after every dictation.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="stand" viewBox="0 0 170 200"></svg></div>
+      <h3>STAND</h3><p>Upright, head turned to the capsule the moment the key goes down.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="lean" viewBox="0 0 170 200"></svg></div>
+      <h3>LEAN</h3><p>The neck bends toward the capsule: the normal listening pose.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="stretch" viewBox="0 0 170 200"></svg></div>
+      <h3>STRETCH</h3><p>Neck tall, bill wide open: your voice got louder.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="lookUp" viewBox="0 0 170 200"></svg></div>
+      <h3>LOOK UP</h3><p>Neck curved forward, head up and cocked: you paused.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="step" viewBox="0 0 170 200"></svg></div>
+      <h3>STEP</h3><p>One leg forward, like the grey duck in the photo.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="crouch" viewBox="0 0 170 200"></svg></div>
+      <h3>CROUCH</h3><p>Knees bent, ready to spring back up.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck rig" data-kind="rig" data-pose="sit" viewBox="0 0 170 200"></svg></div>
+      <h3>SIT</h3><p>Knees folded, neck in an S: a long dictation, it settles in to listen.</p></div>
+  </div>
+
+  <h2>3 · LIVE · THE POSE FOLLOWS YOUR VOICE</h2>
+  <div class="live">
+    <div class="livestage wall-dark rigwall"><div class="stage"><svg class="duck rig" data-kind="rig" data-live viewBox="0 0 170 200"></svg></div></div>
+    <div>
+      <div class="readout">
+        <div class="row"><span class="k">NOW</span><span class="now" id="rigNow">READY</span></div>
+        <div class="row"><span class="k">VOICE</span><span class="meter" id="rigMeter"></span></div>
+        <div class="row"><span class="k">WHY</span><span class="why" id="rigWhy">—</span></div>
+        <table>
+          <tr data-rule="talk"><td>Talking</td><td>Leans toward the capsule; the bill follows every syllable.</td></tr>
+          <tr data-rule="loud"><td>Louder</td><td>Stretches the neck up and opens the bill wide.</td></tr>
+          <tr data-rule="pause"><td>A pause</td><td>Cocks its head and looks up, waiting for the next word.</td></tr>
+          <tr data-rule="long"><td>8 s and on</td><td>Sits down and keeps listening; loud and pause still move the neck.</td></tr>
+          <tr data-rule="wait"><td>Key released</td><td>Stands, faces you and looks around while it works.</td></tr>
+          <tr data-rule="yes"><td>Delivered</td><td>Nods yes.</td></tr>
+        </table>
+      </div>
+      <div class="mini">
+        <div class="pair"><svg class="duck rig" data-kind="rig" data-live viewBox="0 0 170 200"></svg><div class="capsule">CAPSULE · DESIGNED NEXT</div></div>
+        <div class="pair-label">The same take at real size, beside today's 330 × 88 capsule</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>4 · BEHAVIOUR SHEET · OPTION A</h2>
+  <div class="sheet wall-dark">
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" data-lock="enter" viewBox="0 0 130 170"></svg></div>
+      <h3>ENTER</h3><p>Key down. Pops up beside the capsule with a small overshoot.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" data-lock="listen" viewBox="0 0 130 170"></svg></div>
+      <h3>LISTEN</h3><p>Recording. Turns its head toward the capsule, body breathing, bill moves with your voice, coral LED.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" data-lock="wait" viewBox="0 0 130 170"></svg></div>
+      <h3>WAIT</h3><p>Processing. Looks up, then aside; the eye scans; dot-blue LED.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" data-lock="yes" viewBox="0 0 130 170"></svg></div>
+      <h3>YES</h3><p>Pasted, copied or action done. Two nods and a hop; sage LED.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" data-lock="no" viewBox="0 0 130 170"></svg></div>
+      <h3>NO</h3><p>Error or cancelled. Shakes the head and slumps a little; red LED.</p></div>
+  </div>
+
+  <h2>5 · COLOUR VARIANTS · OPTIONAL, ONE PER MODE</h2>
+  <div class="variants wall-dark">
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" viewBox="0 0 130 170"></svg></div>
+      <h3>STATION · CLEAN</h3><p>Cream shell, orange bill. The default duck.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" viewBox="0 0 130 170"
+      style="--shell: var(--accentHover); --shade: var(--dotBlue);"></svg></div>
+      <h3>SKY · TRANSLATE</h3><p>Accent-hover shell, dot-blue shading, orange bill.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" viewBox="0 0 130 170"
+      style="--shell: var(--panelHeader); --shade: var(--textMuted); --bill: var(--gold); --billDeep: var(--working); --eye: var(--logSnippet); --sole: var(--logSnippet);"></svg></div>
+      <h3>SLATE · MEETING</h3><p>Dusty-blue shell, gold bill, violet eye ring and soles.</p></div>
+    <div class="cell"><div class="stage"><svg class="duck" data-kind="a" viewBox="0 0 130 170"
+      style="--shell: var(--logSnippet); --shade: #7a63c9; --bill: var(--rec); --billDeep: var(--onAir); --eye: var(--accentHover); --sole: var(--gold);"></svg></div>
+      <h3>LILAC · ACTION</h3><p>Violet shell; coral bill, because ACTION is the mode that acts on the Mac.</p></div>
+  </div>
+
+  <h2>6 · REAL SIZE BESIDE TODAY'S 330 × 88 CAPSULE</h2>
+  <div class="realsize wall-dark" style="background: radial-gradient(circle at 30% 20%, #2a3350, #0b0f1c 70%);">
+    <div>
+      <div class="pair"><svg class="duck" data-kind="a" viewBox="0 0 130 170"></svg><div class="capsule">CAPSULE · DESIGNED NEXT</div></div>
+      <div class="pair-label">A · NEWTON at 96pt</div>
+    </div>
+    <div>
+      <div class="pair"><svg class="duck pixel" data-kind="b" viewBox="0 0 130 150" shape-rendering="crispEdges"></svg><div class="capsule">CAPSULE · DESIGNED NEXT</div></div>
+      <div class="pair-label">B · PIXEL at 96pt</div>
+    </div>
+    <div>
+      <div class="pair"><svg class="duck" data-kind="c" viewBox="0 0 130 170"></svg><div class="capsule">CAPSULE · DESIGNED NEXT</div></div>
+      <div class="pair-label">C · SITTER at 96pt</div>
+    </div>
+  </div>
+
+  <h2>7 · COLOURS THE DUCK USES</h2>
+  <table>
+    <tr><th>Part</th><th>Token</th><th>Value</th><th>Status</th></tr>
+    <tr><td>Shell (head, body)</td><td><span class="sw" style="background:#FFF9E9"></span>inputCream</td><td>#FFF9E9</td><td>approved</td></tr>
+    <tr><td>Dome shading, bolts</td><td><span class="sw" style="background:#98AAB2"></span>panelHeader</td><td>#98AAB2</td><td>approved</td></tr>
+    <tr><td>Lens, eye slot</td><td><span class="sw" style="background:#16213E"></span>navy</td><td>#16213E</td><td>approved</td></tr>
+    <tr><td>Neck, hips, legs</td><td><span class="sw" style="background:#2C3A63"></span>micHighlight + panelHeader edge</td><td>#2C3A63</td><td>approved · replaces the robot's black, visible on dark wallpaper</td></tr>
+    <tr><td>Eye ring, soles</td><td><span class="sw" style="background:#EFC15E"></span>gold</td><td>#EFC15E</td><td>approved</td></tr>
+    <tr><td>Lens glint</td><td><span class="sw" style="background:#7CB3E8"></span>dotBlue</td><td>#7CB3E8</td><td>approved · the brand dot lives in the eye</td></tr>
+    <tr><td>Bill, feet</td><td><span class="sw" style="background:#F26B1D"></span>duckOrange</td><td>#F26B1D</td><td><span class="new">NEW</span></td></tr>
+    <tr><td>Lower jaw</td><td><span class="sw" style="background:#C9561A"></span>duckOrangeDeep</td><td>#C9561A</td><td><span class="new">NEW</span></td></tr>
+    <tr><td>LED by state</td><td>rec · dotBlue · okOnDark · onAir</td><td>—</td><td>approved status palette</td></tr>
+  </table>
+
+  <h2>8 · TO DECIDE BEFORE THE HUD</h2>
+  <ol class="questions">
+    <li><b>Drawing:</b> A Newton, B Pixel, C Sitter, or a mix (for example C's proportions drawn as B's sprite).</li>
+    <li><b>Orange:</b> approve <code>duckOrange</code> and <code>duckOrangeDeep</code>, or draw the bill in the existing gold and amber.</li>
+    <li><b>Variants:</b> one duck always, or a colour per mode as in section 3.</li>
+    <li><b>Gestures:</b> anything to add or remove from ENTER · LISTEN · WAIT · YES · NO.</li>
+  </ol>
+</main>
+
+<footer><span class="s">sanblue</span><sup>dot</sup> — retro dev-station</footer>
+
+<script>
+/* ---------- Drawings ---------- */
+
+// Head shared by A and C, drawn twice. FRONT is the resting view: a compact shell around a
+// recessed face, the camera eye in the middle. SIDE is the head turned toward the capsule
+// while recording: the long loaf of the photos, eye at the front end, hinge plate at the
+// back. Both carry a thin bill flush under the shell.
+function vectorHead() {
+  return `
+  <g class="head">
+    <g class="hv-front">
+      <path d="M32 58 L32 36 C32 26 40 20 50 20 L74 20 C84 20 92 26 92 36 L92 58 Z" fill="var(--shell)"/>
+      <rect x="37" y="25" width="50" height="29" rx="11" fill="var(--shade)" opacity=".32"/>
+      <path d="M44 23 C50 21.5 58 21 66 21.3" stroke="#fff" stroke-width="2" fill="none" opacity=".7" stroke-linecap="round"/>
+      <rect x="29.5" y="46" width="3.5" height="10" rx="1.75" fill="var(--bill)"/>
+      <rect x="91" y="46" width="3.5" height="10" rx="1.75" fill="var(--bill)"/>
+      <circle cx="62" cy="39" r="11" fill="var(--eye)"/>
+      <g class="lens">
+        <circle cx="62" cy="39" r="7" fill="var(--frame)"/>
+        <circle cx="62" cy="39" r="3.7" fill="var(--micHighlight)"/>
+        <circle cx="59.5" cy="36.5" r="1.7" fill="var(--dotBlue)"/>
+      </g>
+      <rect x="77" y="37.8" width="5" height="2.4" rx="1.2" fill="var(--frame)"/>
+      <circle class="led" cx="46.5" cy="47" r="1.5" fill="var(--led)"/>
+      <rect x="35" y="59" width="54" height="5" rx="2" fill="var(--frame)"/>
+      <path d="M31.5 56 L92.5 56 L92.5 59.5 Q92.5 62 90 62 L34 62 Q31.5 62 31.5 59.5 Z" fill="var(--bill)"/>
+      <g class="jaw"><path d="M34 62 L90 62 L88.5 65 Q88 66 86.5 66 L37.5 66 Q36 66 35.5 65 Z" fill="var(--billDeep)"/></g>
+    </g>
+    <g class="hv-side">
+      <path d="M30 58 L30 48 C30 34 42 24 62 23 L86 22 C96 22 101 29 101 40 L101 58 Z" fill="var(--shell)"/>
+      <rect x="79" y="27" width="20" height="28" rx="8" fill="var(--shade)" opacity=".32"/>
+      <path d="M44 28 C52 25 66 24.2 80 24.5" stroke="#fff" stroke-width="2" fill="none" opacity=".7" stroke-linecap="round"/>
+      <rect x="27" y="44" width="13" height="16" rx="3" fill="var(--bill)"/>
+      <circle cx="31" cy="48.5" r="1.1" fill="var(--frame)"/><circle cx="36" cy="52.5" r="1.1" fill="var(--frame)"/><circle cx="31" cy="56" r="1.1" fill="var(--frame)"/>
+      <ellipse cx="89" cy="40" rx="8" ry="10.5" fill="var(--eye)"/>
+      <g class="lens">
+        <ellipse cx="89" cy="40" rx="5" ry="6.8" fill="var(--frame)"/>
+        <ellipse cx="89" cy="40" rx="2.6" ry="3.6" fill="var(--micHighlight)"/>
+        <circle cx="87.4" cy="37" r="1.4" fill="var(--dotBlue)"/>
+      </g>
+      <circle class="led" cx="76" cy="44" r="1.3" fill="var(--led)"/>
+      <circle class="led" cx="76" cy="48.5" r="1.3" fill="var(--led)"/>
+      <rect x="40" y="59" width="58" height="5" rx="2" fill="var(--frame)"/>
+      <path d="M34 56 L103 56 Q105 56 104.5 58 L103.5 61 Q103 62 101 62 L36 62 Z" fill="var(--bill)"/>
+      <g class="jaw"><path d="M40 62 L102 62 L100 65 Q99.5 66 98 66 L42 66 Z" fill="var(--billDeep)"/></g>
+    </g>
+  </g>`;
+}
+
+function duckA() {
+  return `
+  <ellipse cx="62" cy="163" rx="38" ry="4" fill="#000" opacity=".35"/>
+  <g class="whole">
+    <g class="legs">
+      <rect x="35" y="120" width="14" height="30" rx="3" class="fr"/>
+      <rect x="75" y="120" width="14" height="30" rx="3" class="fr"/>
+      <circle cx="42" cy="132" r="3.5" fill="var(--metal)"/><circle cx="82" cy="132" r="3.5" fill="var(--metal)"/>
+      <rect x="27" y="146" width="30" height="12" rx="4" fill="var(--bill)"/>
+      <rect x="27" y="155" width="30" height="5" rx="2.5" fill="var(--sole)"/>
+      <rect x="67" y="146" width="30" height="12" rx="4" fill="var(--bill)"/>
+      <rect x="67" y="155" width="30" height="5" rx="2.5" fill="var(--sole)"/>
+    </g>
+    <g class="torso">
+      <rect x="30" y="110" width="64" height="14" rx="5" class="fr"/>
+      <circle cx="44" cy="117" r="3" fill="var(--metal)"/><circle cx="80" cy="117" r="3" fill="var(--metal)"/>
+      <rect x="38" y="82" width="48" height="32" rx="9" fill="var(--shell)"/>
+      <rect x="73" y="84" width="11" height="28" rx="5" fill="var(--shade)" opacity=".5"/>
+      <circle cx="47" cy="92" r="2.2" fill="var(--dotBlue)"/>
+      <text class="chest" x="44" y="105">SB<tspan class="dot" dy="-3.6">dot</tspan></text>
+      <rect x="55" y="52" width="15" height="36" rx="3" class="fr"/>
+      <circle cx="62.5" cy="62" r="2" fill="var(--metal)"/><circle cx="62.5" cy="76" r="2" fill="var(--metal)"/>
+      ${vectorHead()}
+    </g>
+  </g>`;
+}
+
+function duckC() {
+  return `
+  <ellipse cx="64" cy="163" rx="44" ry="4.5" fill="#000" opacity=".35"/>
+  <g class="whole">
+    <g class="torso">
+      <path d="M88 118 L112 152 Q114 160 106 160 L86 160 Z" fill="var(--shell)"/>
+      <path d="M88 118 L112 152 Q114 160 106 160 L98 160 Z" fill="var(--shade)" opacity=".45"/>
+      <rect x="34" y="128" width="60" height="22" rx="6" class="fr"/>
+      <circle cx="50" cy="139" r="3.2" fill="var(--metal)"/><circle cx="78" cy="139" r="3.2" fill="var(--metal)"/>
+      <rect x="40" y="104" width="50" height="30" rx="9" fill="var(--shell)"/>
+      <rect x="77" y="106" width="11" height="26" rx="5" fill="var(--shade)" opacity=".5"/>
+      <circle cx="49" cy="114" r="2.2" fill="var(--dotBlue)"/>
+      <text class="chest" x="46" y="127">SB<tspan class="dot" dy="-3.6">dot</tspan></text>
+      <rect x="56" y="84" width="14" height="24" rx="3" class="fr"/>
+      <circle cx="63" cy="94" r="2" fill="var(--metal)"/>
+      <g transform="translate(-12 18) scale(1.18)">${vectorHead()}</g>
+    </g>
+    <g class="legs">
+      <rect x="26" y="130" width="26" height="31" rx="8" fill="var(--bill)"/>
+      <rect x="26" y="130" width="26" height="8" rx="4" fill="var(--billDeep)" opacity=".5"/>
+      <rect x="62" y="130" width="26" height="31" rx="8" fill="var(--bill)"/>
+      <rect x="62" y="130" width="26" height="8" rx="4" fill="var(--billDeep)" opacity=".5"/>
+      <circle cx="70" cy="150" r="2.4" fill="var(--frame)"/><circle cx="78" cy="150" r="2.4" fill="var(--frame)"/>
+    </g>
+  </g>`;
+}
+
+// B: a 22-pixel-wide sprite. W shell · S shade · E eye ring · N navy · B dot glint
+// O bill · D jaw · M metal · Y sole · L led.
+const PX = 5;
+const SPRITE = {
+  headFront: [
+    ".......WWWWWWWW.......",
+    ".....WWWWWWWWWWWW.....",
+    "....WWWWWEEEEWWWWW....",
+    "....WWWWEEKKEEWWWW....",
+    "....WWWWEKBKKEWKKW....",
+    "....WWWWEKKKKEWWWW....",
+    "....WLWWWEEEEWWWWW....",
+    "....SSSSSSSSSSSSSS....",
+    "....OOOOOOOOOOOOOO....",
+  ],
+  jawFront: [
+    ".....DDDDDDDDDDDD.....",
+  ],
+  headSide: [
+    "........WWWWWWWW......",
+    "......WWWWWWWWWWWW....",
+    ".....WWWWWWWWWWWEEE...",
+    "....WWWWWWWWWWWEEKE...",
+    "...OOWWWWWWWWWWEKBK...",
+    "...OOWWWWWWWLWWEKKE...",
+    "...OOWWWWWWWWWWWEEE...",
+    "....SSSSSSSSSSSSSSS...",
+    "....OOOOOOOOOOOOOOOO..",
+  ],
+  jawSide: [
+    ".....DDDDDDDDDDDDDD...",
+  ],
+  torso: [
+    "..........NNN.........",
+    "..........NMN.........",
+    "..........NNN.........",
+    "..........NMN.........",
+    "........WWWWWWW.......",
+    ".......WWWWWWWWS......",
+    ".......WBWWWWWWS......",
+    ".......WWWWWWWWS......",
+    "......NNNNNNNNNNN.....",
+  ],
+  legs: [
+    "......NNN.....NNN.....",
+    "......NMN.....NMN.....",
+    "......NNN.....NNN.....",
+    ".....OOOOO...OOOOO....",
+    ".....YYYYY...YYYYY....",
+  ],
+};
+const PAL = { W: "var(--shell)", S: "var(--shade)", E: "var(--eye)", N: "var(--joint)", K: "var(--frame)", B: "var(--dotBlue)",
+              O: "var(--bill)", D: "var(--billDeep)", M: "var(--metal)", Y: "var(--sole)" };
+
+function sprite(rows, y0, cls) {
+  let out = "";
+  rows.forEach((row, r) => {
+    [...row].forEach((ch, c) => {
+      if (ch === ".") return;
+      const x = 10 + c * PX, y = y0 + r * PX;
+      if (ch === "L") { out += `<rect class="led" x="${x}" y="${y}" width="${PX}" height="${PX}" fill="var(--led)"/>`; return; }
+      out += `<rect x="${x}" y="${y}" width="${PX}" height="${PX}" fill="${PAL[ch]}"/>`;
+    });
+  });
+  return cls ? `<g class="${cls}">${out}</g>` : out;
+}
+
+function duckB() {
+  const headY = 5, jawY = headY + SPRITE.headFront.length * PX, torsoY = jawY + SPRITE.jawFront.length * PX, legsY = torsoY + SPRITE.torso.length * PX;
+  return `
+  <rect x="25" y="${legsY + 5 * PX}" width="85" height="4" fill="#000" opacity=".35"/>
+  <g class="whole">
+    ${sprite(SPRITE.legs, legsY, "legs")}
+    <g class="torso">
+      ${sprite(SPRITE.torso, torsoY)}
+      <g class="head"><g class="hv-front">${sprite(SPRITE.headFront, headY)}${sprite(SPRITE.jawFront, jawY, "jaw")}</g><g class="hv-side">${sprite(SPRITE.headSide, headY)}${sprite(SPRITE.jawSide, jawY, "jaw")}</g></g>
+    </g>
+  </g>`;
+}
+
+const DRAW = { a: duckA, b: duckB, c: duckC };
+const ducks = [...document.querySelectorAll(".duck:not(.rig)")];
+ducks.forEach(d => {
+  d.innerHTML = DRAW[d.dataset.kind]();
+  d.dataset.state = d.dataset.lock === "enter" ? "listen" : (d.dataset.lock || "listen");
+});
+
+/* ---------- States ---------- */
+
+const buttons = [...document.querySelectorAll("[data-set]")];
+function enter(d) {
+  d.classList.remove("entering"); void d.getBoundingClientRect(); d.classList.add("entering");
+}
+function setState(state) {
+  buttons.forEach(b => b.classList.toggle("on", b.dataset.set === state));
+  ducks.filter(d => !d.dataset.lock).forEach(d => {
+    if (state === "enter") { d.dataset.state = "listen"; enter(d); }
+    else d.dataset.state = state;
+  });
+  current = state === "enter" ? "listen" : state;
+}
+let current = "listen";
+buttons.forEach(b => b.addEventListener("click", () => { stopCycle(); setState(b.dataset.set); }));
+
+// The locked ENTER cell replays its entrance every two seconds.
+const enterCell = ducks.find(d => d.dataset.lock === "enter");
+setInterval(() => enter(enterCell), 2000);
+enter(enterCell);
+
+/* ---------- Auto cycle: one whole dictation, then one that fails ---------- */
+
+const SCRIPT = [["enter", 600], ["listen", 3600], ["wait", 2400], ["yes", 2200],
+                ["enter", 600], ["listen", 2600], ["wait", 1800], ["no", 2200]];
+let timer = null;
+const cycleBtn = document.querySelector("[data-cycle]");
+function stopCycle() { clearTimeout(timer); timer = null; cycleBtn.classList.remove("on"); }
+cycleBtn.addEventListener("click", () => {
+  if (timer) return stopCycle();
+  cycleBtn.classList.add("on");
+  let i = 0;
+  (function step() { const [s, ms] = SCRIPT[i++ % SCRIPT.length]; setState(s); cycleBtn.classList.add("on"); timer = setTimeout(step, ms); })();
+});
+
+/* ---------- Simulated voice drives the bill ---------- */
+
+const meter = document.getElementById("meter");
+for (let i = 0; i < 12; i++) {
+  const b = document.createElement("i"); if (i >= 7) b.className = i >= 10 ? "r" : "g"; meter.appendChild(b);
+}
+let level = 0, syllable = 0;
+setInterval(() => {
+  syllable += 1;
+  const speaking = Math.sin(syllable / 9) > -0.3;           // phrases with pauses
+  const target = speaking ? 0.35 + 0.6 * Math.abs(Math.sin(syllable * 1.7)) * Math.random() : 0.03;
+  level += (target - level) * 0.45;
+  const lit = Math.round(level * 12);
+  [...meter.children].forEach((b, i) => b.classList.toggle("lit", i < lit));
+  ducks.forEach(d => {
+    const open = d.dataset.state === "listen" ? level : 0;
+    d.style.setProperty("--jaw", (open * 16).toFixed(1));
+    d.style.setProperty("--jawPx", String(Math.round(open * 2) * 2.5));
+  });
+}, 70);
+
+/* ---------- Wallpaper ---------- */
+
+document.querySelectorAll("[data-wall]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-wall]").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".grid, .sheet, .variants, .rigwall").forEach(g => {
+    g.classList.remove("wall-dark", "wall-light", "wall-busy"); g.classList.add("wall-" + b.dataset.wall);
+  });
+}));
+
+/* ---------- Articulated rig: one body, many poses ----------
+   Every joint is a group rotated in its parent's space, so a pose is only a list of
+   angles: hip, knee and ankle on each leg, the body, three neck links and the head. */
+
+const GROUND = 188, RX = 78, THIGH = 16, SHIN = 16, FOOT = 11.5, R = Math.PI / 180;
+
+const POSES = {
+  front:   { tF: -6,  kF: 10,  tB: 8,   kB: 6,   body: 0,  n: [0, 0, 0],      head: 0,   jaw: 0, view: "front" },
+  stand:   { tF: -6,  kF: 10,  tB: 8,   kB: 6,   body: 0,  n: [0, 0, 0],      head: 0,   jaw: 0, view: "side" },
+  lean:    { tF: -10, kF: 18,  tB: 10,  kB: 8,   body: 9,  n: [26, 16, -8],   head: 8,   jaw: 0, view: "side" },
+  stretch: { tF: 0,   kF: 0,   tB: 2,   kB: 0,   body: -5, n: [-8, -4, 2],    head: -14, jaw: 1, view: "side" },
+  lookUp:  { tF: -4,  kF: 8,   tB: 6,   kB: 6,   body: -4, n: [28, 12, -42],  head: -22, jaw: 0, view: "side" },
+  step:    { tF: -28, kF: 34,  tB: 16,  kB: 4,   body: 3,  n: [6, -4, 0],     head: 4,   jaw: 0, view: "side" },
+  crouch:  { tF: -42, kF: 74,  tB: -30, kB: 62,  body: 6,  n: [18, 8, 0],     head: 4,   jaw: 0, view: "side" },
+  sit:     { tF: -86, kF: 122, tB: -76, kB: 116, body: -8, n: [34, -14, -26], head: 14,  jaw: 0, view: "side" },
+};
+
+const SEG = `<rect class="fr" x="-6" y="-11" width="12" height="13" rx="3"/><circle cx="0" cy="-5" r="2" fill="var(--metal)"/>`;
+
+function rigLeg(id, back) {
+  return `
+    <g data-j="${id}T"${back ? ' style="filter: brightness(.72)"' : ""}>
+      <rect class="fr" x="-6.5" y="-2" width="13" height="19" rx="3.5"/>
+      <circle cx="0" cy="0" r="3.4" fill="var(--metal)"/>
+      <g data-j="${id}K">
+        <rect class="fr" x="-6" y="-2" width="12" height="18" rx="3.5"/>
+        <circle cx="0" cy="0" r="3" fill="var(--metal)"/>
+        <g data-j="${id}A">
+          <rect x="-10" y="0" width="28" height="10" rx="4" fill="var(--bill)"/>
+          <rect x="-10" y="7" width="28" height="4.5" rx="2.2" fill="var(--sole)"/>
+        </g>
+      </g>
+    </g>`;
+}
+
+function duckRig() {
+  return `
+  <ellipse cx="${RX + 4}" cy="${GROUND + 1}" rx="40" ry="4" fill="#000" opacity=".35"/>
+  <g class="whole">
+    <g data-j="root">
+      ${rigLeg("B", true)}
+      <g data-j="body">
+        <rect class="fr" x="-20" y="-8" width="40" height="12" rx="4"/>
+        <circle cx="-9" cy="-2" r="2.6" fill="var(--metal)"/><circle cx="9" cy="-2" r="2.6" fill="var(--metal)"/>
+        <rect x="-23" y="-38" width="46" height="32" rx="10" fill="var(--shell)"/>
+        <rect x="-23" y="-38" width="14" height="32" rx="7" fill="var(--shade)" opacity=".45"/>
+        <circle cx="13" cy="-29" r="2.2" fill="var(--dotBlue)"/>
+        <text class="chest" x="-7" y="-15">SB<tspan class="dot" dy="-3.6">dot</tspan></text>
+        <g data-j="n0">${SEG}<g data-j="n1">${SEG}<g data-j="n2">${SEG}
+          <g data-j="hd"><g transform="scale(1.15) translate(-62.5 -60)">${vectorHead()}</g></g>
+        </g></g></g>
+      </g>
+      ${rigLeg("F", false)}
+    </g>
+  </g>`;
+}
+
+function rigJoints(svg) {
+  return svg._j || (svg._j = Object.fromEntries([...svg.querySelectorAll("[data-j]")].map(e => [e.dataset.j, e])));
+}
+
+// How far below the hip a foot ends up; the lower foot decides where the hip must sit
+// so the duck always stands on the floor, whatever the legs are doing.
+function ankleY(t, k) { return THIGH * Math.cos(t * R) + SHIN * Math.cos((t + k) * R); }
+
+function applyPose(svg, p) {
+  const J = rigJoints(svg);
+  const hipY = GROUND - FOOT - Math.max(ankleY(p.tF, p.kF), ankleY(p.tB, p.kB));
+  J.root.setAttribute("transform", `translate(${RX} ${hipY.toFixed(2)})`);
+  for (const [id, dx, t, k] of [["F", 5, p.tF, p.kF], ["B", -5, p.tB, p.kB]]) {
+    J[id + "T"].setAttribute("transform", `translate(${dx} 0) rotate(${t.toFixed(2)})`);
+    J[id + "K"].setAttribute("transform", `translate(0 ${THIGH}) rotate(${k.toFixed(2)})`);
+    J[id + "A"].setAttribute("transform", `translate(0 ${SHIN}) rotate(${(-(t + k)).toFixed(2)})`);
+  }
+  J.body.setAttribute("transform", `rotate(${p.body.toFixed(2)})`);
+  J.n0.setAttribute("transform", `translate(6 -36) rotate(${p.n[0].toFixed(2)})`);
+  J.n1.setAttribute("transform", `translate(0 -10) rotate(${p.n[1].toFixed(2)})`);
+  J.n2.setAttribute("transform", `translate(0 -10) rotate(${p.n[2].toFixed(2)})`);
+  J.hd.setAttribute("transform", `translate(0 -10) rotate(${p.head.toFixed(2)})`);
+  svg.style.setProperty("--jaw", ((p.jaw || 0) * 16).toFixed(1));
+}
+
+const KEYS = ["tF", "kF", "tB", "kB", "body", "head", "jaw"];
+function mix(a, b, k) {
+  const o = { n: a.n.map((v, i) => v + (b.n[i] - v) * k) };
+  KEYS.forEach(key => { o[key] = a[key] + (b[key] - a[key]) * k; });
+  return o;
+}
+function withMods(p, mods) { return { ...p, ...mods, n: mods.n || p.n }; }
+
+document.querySelectorAll(".duck.rig").forEach(svg => { svg.innerHTML = duckRig(); });
+document.querySelectorAll(".duck.rig[data-pose]").forEach(svg => {
+  const p = POSES[svg.dataset.pose];
+  svg.dataset.view = p.view;
+  applyPose(svg, p);
+});
+
+/* ---------- One simulated dictation, looped ----------
+   The voice is simulated here; in the app it is AudioRecorder's measured level. */
+
+const liveRigs = [...document.querySelectorAll(".duck.rig[data-live]")];
+const TAKE = [
+  { phase: "rest",   voice: "none",  ms: 1200 },
+  { phase: "listen", voice: "speak", ms: 2600 },
+  { phase: "listen", voice: "loud",  ms: 1500 },
+  { phase: "listen", voice: "pause", ms: 1500 },
+  { phase: "listen", voice: "speak", ms: 2600 },
+  { phase: "listen", voice: "loud",  ms: 1300 },
+  { phase: "listen", voice: "pause", ms: 1400 },
+  { phase: "listen", voice: "speak", ms: 3200 },
+  { phase: "wait",   voice: "none",  ms: 2200 },
+  { phase: "yes",    voice: "none",  ms: 1800 },
+];
+const rigMeter = document.getElementById("rigMeter");
+for (let i = 0; i < 12; i++) {
+  const b = document.createElement("i"); if (i >= 7) b.className = i >= 10 ? "r" : "g"; rigMeter.appendChild(b);
+}
+const rigNow = document.getElementById("rigNow"), rigWhy = document.getElementById("rigWhy");
+const rules = [...document.querySelectorAll("[data-rule]")];
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let step = 0, stepMs = 0, talkMs = 0, lvl = 0, quietMs = 0, loudMs = 0, lastT = performance.now();
+let cur = { ...POSES.front, n: [...POSES.front.n] };
+
+function voiceTarget(kind, t) {
+  if (kind === "speak") return 0.26 + 0.4 * Math.abs(Math.sin(t * 9.3)) * (0.65 + 0.35 * Math.sin(t * 3.1));
+  if (kind === "loud") return 0.78 + 0.22 * Math.abs(Math.sin(t * 12.7));
+  return 0.02;
+}
+
+function rigFrame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  const t = now / 1000;
+  stepMs += dt * 1000;
+  if (stepMs > TAKE[step].ms) {
+    stepMs = 0; step = (step + 1) % TAKE.length;
+    if (TAKE[step].phase === "listen" && TAKE[(step + TAKE.length - 1) % TAKE.length].phase === "rest") {
+      talkMs = 0; liveRigs.forEach(enter);
+    }
+  }
+  const s = TAKE[step];
+  lvl += (voiceTarget(s.voice, t) - lvl) * Math.min(1, dt * 14);
+  quietMs = lvl < 0.12 ? quietMs + dt * 1000 : 0;
+  loudMs = lvl > 0.65 ? loudMs + dt * 1000 : 0;
+
+  let target, rule, why;
+  if (s.phase === "listen") {
+    talkMs += dt * 1000;
+    const seated = talkMs > 8000;
+    if (loudMs > 250) {
+      target = seated ? withMods(POSES.sit, { n: [8, -6, -8], head: -16 }) : POSES.stretch;
+      rule = "loud"; why = seated ? "Louder, seated: the neck still stretches up" : "Louder: stretches up, bill wide";
+    } else if (quietMs > 600) {
+      target = seated ? withMods(POSES.sit, { n: [30, -20, -34], head: -20 }) : POSES.lookUp;
+      rule = "pause"; why = "A pause: cocks its head and looks up";
+    } else {
+      target = seated ? POSES.sit : POSES.lean;
+      rule = seated ? "long" : "talk"; why = seated ? "Talking 8 s and on: sits down to listen" : "Talking: leans toward the capsule";
+    }
+    target = withMods(target, { jaw: Math.min(1, lvl * (loudMs > 250 ? 1.25 : 1)) });
+  } else {
+    target = POSES.front;
+    rule = s.phase === "rest" ? null : s.phase;
+    why = s.phase === "wait" ? "Key released: faces you and looks around" : s.phase === "yes" ? "Delivered: nods yes" : "Idle: standing, facing you";
+  }
+
+  cur = mix(cur, target, reduceMotion ? 1 : 1 - Math.exp(-dt * 6));
+  let shown = cur;
+  if (!reduceMotion && s.phase === "listen") {
+    shown = withMods(cur, { body: cur.body + Math.sin(t * 2.3) * 1.2,
+                            n: [cur.n[0] + Math.sin(t * 1.7) * 2.5, cur.n[1], cur.n[2] + Math.sin(t * 2.1) * 2] });
+  }
+  liveRigs.forEach(svg => {
+    const st = s.phase === "rest" ? "" : s.phase;
+    if (svg.dataset.state !== st) svg.dataset.state = st;
+    applyPose(svg, shown);
+  });
+
+  const nowTxt = s.phase === "rest" ? "READY" : s.phase.toUpperCase();
+  if (rigNow.textContent !== nowTxt) rigNow.textContent = nowTxt;
+  if (rigWhy.textContent !== why) rigWhy.textContent = why;
+  const lit = s.phase === "listen" ? Math.round(lvl * 12) : 0;
+  [...rigMeter.children].forEach((b, i) => b.classList.toggle("lit", i < lit));
+  rules.forEach(r => r.classList.toggle("hit", r.dataset.rule === rule));
+  requestAnimationFrame(rigFrame);
+}
+requestAnimationFrame(rigFrame);
+</script>
+</body>
+</html>

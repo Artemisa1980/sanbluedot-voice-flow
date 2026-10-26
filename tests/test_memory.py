@@ -9,6 +9,7 @@ from sanbluedot_voiceflow.memory import (
     apply_corrections,
     build_initial_prompt,
     load_vocabulary,
+    remove_vocabulary_term,
 )
 
 
@@ -36,6 +37,18 @@ class VocabularyTests(unittest.TestCase):
             path.write_bytes(b"UTEL\n\xff")
 
             self.assertEqual(load_vocabulary(path), [])
+            self.assertFalse(path.exists())
+            self.assertEqual(
+                len([f for f in Path(temp_dir).iterdir() if ".corrupt-" in f.name]),
+                1,
+            )
+
+    def test_remove_vocabulary_term_quarantines_unreadable_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "vocabulary.local.txt"
+            path.write_bytes(b"UTEL\n\xff")
+
+            self.assertFalse(remove_vocabulary_term("UTEL", path=path))
             self.assertFalse(path.exists())
             self.assertEqual(
                 len([f for f in Path(temp_dir).iterdir() if ".corrupt-" in f.name]),
@@ -314,3 +327,118 @@ class CorrectionStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuarantineRaceTests(unittest.TestCase):
+    """D-135: a store rewritten since the failed read is not moved aside."""
+
+    def test_a_rewritten_store_is_left_in_place(self) -> None:
+        import tempfile
+        from sanbluedot_voiceflow.memory import _identity, quarantine_file
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "corrections.local.json"
+            path.write_text("{broken", encoding="utf-8")
+            seen = _identity(path)
+            path.write_text('{"ok": true, "more": 1}', encoding="utf-8")
+
+            quarantine_file(path, "Corrections", "bad json", read_identity=seen)
+
+            self.assertTrue(path.is_file())
+            self.assertEqual(list(Path(directory).glob("*.corrupt-*")), [])
+
+
+class FlushedWriteTests(unittest.TestCase):
+    """D-134: the atomic writer still writes, and leaves no temporary file."""
+
+    def test_the_write_lands_whole_and_leaves_nothing_behind(self) -> None:
+        import tempfile
+        from sanbluedot_voiceflow.memory import write_json_atomically
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.json"
+            write_json_atomically(path, {"a": 1})
+            self.assertEqual(path.read_text(encoding="utf-8"), '{\n  "a": 1\n}\n')
+            self.assertEqual([p.name for p in Path(directory).iterdir()], ["store.json"])
+
+
+class HistoryExportTests(unittest.TestCase):
+    """D-11: the window's recent dictations travel with `vf export`."""
+
+    def test_the_history_file_is_exported_and_counted(self) -> None:
+        import tempfile
+        from sanbluedot_voiceflow.memory import export_memory
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "history.local.json").write_text(
+                json.dumps([{"finalText": "hola"}]), encoding="utf-8"
+            )
+            written, counts = export_memory(
+                folder / "out.json", vocabulary=folder / "vocabulary.local.txt", directory=folder
+            )
+
+            self.assertEqual(counts["dictation_history"], 1)
+            payload = json.loads(written.read_text(encoding="utf-8"))
+            self.assertEqual(payload["dictation_history"], [{"finalText": "hola"}])
+
+
+class VocabularyTermShapeTests(unittest.TestCase):
+    """D-89 and D-155: a term that could not load is refused, not reported added."""
+
+    def test_a_comment_or_multi_line_term_is_refused(self) -> None:
+        from sanbluedot_voiceflow.memory import add_vocabulary_term
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "vocabulary.local.txt"
+            for bad in ("#hashtag", "uno\rdos", "uno\x0bdos"):
+                with self.subTest(term=bad), self.assertRaises(ValueError):
+                    add_vocabulary_term(bad, path)
+
+
+class QuarantineMessageTests(unittest.TestCase):
+    """D-154: a failed move says the file was left in place."""
+
+    def test_a_failed_move_is_reported_as_left_in_place(self) -> None:
+        import io
+        from contextlib import redirect_stderr
+        from unittest.mock import patch
+        from sanbluedot_voiceflow.memory import quarantine_file
+
+        errors = io.StringIO()
+        with patch("os.replace", side_effect=OSError("read-only")), redirect_stderr(errors):
+            quarantine_file(Path("/tmp/x.json"), "The store", "bad")
+        self.assertIn("left in place", errors.getvalue())
+        self.assertNotIn("moved to x.json", errors.getvalue())
+
+
+class CorrectionWhitespaceTests(unittest.TestCase):
+    """D-161: a pair typed with a double space still fires."""
+
+    def test_odd_whitespace_matches(self) -> None:
+        from sanbluedot_voiceflow.memory import Correction, apply_corrections
+
+        pair = Correction(heard="sun blue  dog", intended="sanblue", confirmed_at="")
+        self.assertEqual(apply_corrections("es sun blue dog ya", [pair]), "es sanblue ya")
+
+
+class SkippedEntryTests(unittest.TestCase):
+    """D-97: a store with unreadable entries is copied once before they can vanish."""
+
+    def test_one_copy_per_version(self) -> None:
+        import io
+        from contextlib import redirect_stderr
+        from sanbluedot_voiceflow.memory import CorrectionStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "corrections.local.json"
+            path.write_text(json.dumps({"schema_version": 1, "corrections": [
+                {"heard": "oyama", "intended": "Ollama"}, {"heard": 3},
+            ]}), encoding="utf-8")
+            errors = io.StringIO()
+            with redirect_stderr(errors):
+                self.assertEqual(len(CorrectionStore(path).load()), 1)
+                CorrectionStore(path).load()
+            copies = list(Path(directory).glob("*.skipped-*"))
+            self.assertEqual(len(copies), 1)
+            self.assertEqual(errors.getvalue().count("unreadable"), 1)

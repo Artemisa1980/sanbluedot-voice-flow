@@ -87,6 +87,23 @@ func enginesRewritingModes() throws -> Set<String> {
     return Set(values)
 }
 
+/// `MODEL_CHAIN` as `cleaners/gemini.py` declares it, read at check time (D-166).
+func enginesGeminiModelChain() throws -> [String] {
+    let projectRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+    let file = projectRoot.appendingPathComponent("src/sanbluedot_voiceflow/cleaners/gemini.py")
+    guard let source = try? String(contentsOf: file, encoding: .utf8),
+          let declaration = source.range(of: "MODEL_CHAIN = ("),
+          let close = source[declaration.upperBound...].range(of: ")") else {
+        throw CheckFailure.failed("The engine no longer declares MODEL_CHAIN in gemini.py.")
+    }
+    return source[declaration.upperBound..<close.lowerBound]
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \n\t\"'")) }
+        .filter { !$0.isEmpty }
+}
+
 /// The `--mode` values the engine's `process` subcommand actually accepts.
 ///
 /// Read out of `cli.py` at check time. Duplicating the list in Swift is what this check
@@ -363,7 +380,7 @@ do {
         "dev.warp.Warp-Stable",
         "com.mitchellh.ghostty",
         "net.kovidgoyal.kitty",
-        "io.alacritty",
+        "org.alacritty",
         "com.github.wez.wezterm",
         "co.zeit.hyper",
     ]
@@ -436,8 +453,8 @@ do {
         "The configured default must be one of the models the window offers."
     )
     try check(
-        GeminiModel.allCases == [.flash38],
-        "The window should offer only gemini-3.8-flash."
+        GeminiModel.allCases == [.flash38, .argon4],
+        "The window should offer gemini-3.8-flash and gemini-4-argon."
     )
     try check(
         Set(GeminiModel.fallbackOrder) == Set(GeminiModel.allCases),
@@ -535,11 +552,41 @@ do {
     try check(action2?.type == .googleSearch(query: "mechanical keyboard"), "Google search EN parse failed.")
 
     let action3 = VoiceActionParser.parse(text: "abre safari y busca amazon.")
-    try check(action3?.type == .googleSearch(query: "amazon"), "Browser search ES parse failed.")
+    // The sentence names the browser, so the run must open that one, not the default (D-136).
+    try check(
+        action3?.type == .googleSearch(query: "amazon", browserBundleID: "com.apple.Safari"),
+        "Browser search ES parse failed, or lost the browser it named."
+    )
 
     let action4 = VoiceActionParser.parse(text: "open chrome and search macbook pro")
-    try check(action4?.type == .googleSearch(query: "macbook pro"), "Browser search EN parse failed.")
+    try check(
+        action4?.type == .googleSearch(query: "macbook pro", browserBundleID: "com.google.Chrome"),
+        "Browser search EN parse failed, or lost the browser it named."
+    )
+    try check(
+        VoiceActionParser.parse(text: "abre el navegador y busca amazon")?.type
+            == .googleSearch(query: "amazon"),
+        "\"el navegador\" names no browser, so the default one should open."
+    )
 
+    // D-60: "search for" is the verb, not part of the query.
+    try check(
+        VoiceActionParser.parse(text: "open chrome and search for macbook")?.type
+            == .googleSearch(query: "macbook", browserBundleID: "com.google.Chrome"),
+        "\"search for\" leaked into the query."
+    )
+    // D-61: a literal plus survives into the query string instead of reading as a space.
+    try check(
+        SearchURL.google("c++")?.absoluteString == "https://www.google.com/search?q=c%2B%2B",
+        "A plus in a spoken search must be encoded."
+    )
+    // D-01: an accented app name parses.
+    try check(
+        VoiceActionParser.parse(text: "abre música")?.type == .openApp(appName: "Music")
+            && VoiceActionParser.parse(text: "abre configuración")?.type
+                == .openApp(appName: "System Settings"),
+        "Accented app names must parse."
+    )
     let action5 = VoiceActionParser.parse(text: "googlear swiftui tutorial")
     try check(action5?.type == .googleSearch(query: "swiftui tutorial"), "Google direct verb parse failed.")
 
@@ -1201,33 +1248,26 @@ do {
         ).width
     }
 
-    let wordmark = width("sanblue", size: 10, weight: .bold) + width("dot", size: 7, weight: .heavy)
-    // Row 1: on-air dot, its spacing, the minimum spacer, and the wordmark.
-    let badgeBudget = HUDLayout.contentColumn - 7 - 5 - 4 - wordmark
-    let widestBadge = HUDBadge.recording(
-        mode: .translate,
-        context: AppContext(
-            bundleIdentifier: "com.example.unlisted",
-            localizedName: "Twelve Chars",
-            shortName: String(repeating: "M", count: AppContext.shortNameLimit),
-            category: .code
-        )
-    )
+    // In the Microduck redesign (I-82), the wordmark sits on the duck's chest.
+    // Row 1 inside the bubble carries the status lamp (5), status word (5.2 heavy),
+    // target app chip (3.8 heavy) and ESC ✕ (3.8 heavy).
+    let statusWidth = width("ON AIR", size: 5.2, weight: .heavy)
+    let maxAppChip = width(String(repeating: "M", count: AppContext.shortNameLimit), size: 3.8, weight: .heavy) + 7
+    let escWidth = width("ESC ✕", size: 3.8, weight: .heavy)
+    let row1Content = 5 + 3.5 + statusWidth + 3.5 + maxAppChip + 3.5 + escWidth
     try check(
-        width(widestBadge, size: 10, weight: .heavy) <= badgeBudget,
-        "The widest recording badge overruns its row: \(width(widestBadge, size: 10, weight: .heavy)) > \(badgeBudget)."
+        row1Content <= HUDLayout.contentColumn,
+        "The widest recording row 1 overruns its bubble width: \(row1Content) > \(HUDLayout.contentColumn)."
     )
 
-    // The mode strip divides the row evenly between every mode, so adding one narrows
-    // all of them. The widest label has to survive that division.
-    let modeCount = CGFloat(ProcessingMode.allCases.count)
-    let perSegment = (HUDLayout.contentColumn - (modeCount - 1) * 3) / modeCount
-    for mode in ProcessingMode.allCases {
-        try check(
-            width(mode.badgeName, size: 7, weight: .heavy) <= perSegment,
-            "Mode segment \(mode.badgeName) overruns its \(perSegment)pt share of the strip."
-        )
-    }
+    // In the short bubble (120pt), mode changes show 4 indicator segments (10pt each + 2pt gap).
+    let modeBarWidth: CGFloat = 10.0
+    let modeBarGap: CGFloat = 2.0
+    let totalModeBars = CGFloat(ProcessingMode.allCases.count) * modeBarWidth + CGFloat(ProcessingMode.allCases.count - 1) * modeBarGap
+    try check(
+        totalModeBars <= HUDLayout.contentColumn,
+        "Mode segments overrun the short bubble width: \(totalModeBars) > \(HUDLayout.contentColumn)."
+    )
 
     // The order a spoken application name is looked for.
     let searched = ApplicationSearch.candidatePaths(for: "Notes", home: "/Users/fixture")
@@ -1519,7 +1559,7 @@ do {
     )
     try check(
         Array(learnRun.arguments.dropFirst(3)) == [
-            "correct", "--heard", "olama", "--intended", "Ollama", "--source", "fix", "--allow-global",
+            "correct", "--heard=olama", "--intended=Ollama", "--source", "fix", "--allow-global",
         ]
             && learnRun.standardInput == nil,
         "LEARN did not ask the engine to confirm the pair with its source and consent."
@@ -1656,6 +1696,141 @@ do {
     try check(
         legacyRecord.fixedText == nil && legacyRecord.currentText == dictated.finalText,
         "A record written before fixes existed must still decode and show its text."
+    )
+
+    // D-68: a sweep removes this app's stranded takes, keeps the live one, and touches
+    // nothing else in the folder.
+    let sweepFolder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vf-sweep-check-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: sweepFolder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: sweepFolder) }
+    let stranded = sweepFolder.appendingPathComponent("\(RecordingHygiene.temporaryAudioPrefix)old.wav")
+    let live = sweepFolder.appendingPathComponent("\(RecordingHygiene.temporaryAudioPrefix)live.wav")
+    let foreign = sweepFolder.appendingPathComponent("someone-else.wav")
+    for url in [stranded, live, foreign] {
+        try Data([0]).write(to: url)
+    }
+    try check(
+        RecordingHygiene.sweep(in: sweepFolder, keeping: live) == 0
+            && !FileManager.default.fileExists(atPath: stranded.path)
+            && FileManager.default.fileExists(atPath: live.path)
+            && FileManager.default.fileExists(atPath: foreign.path),
+        "The sweep must delete stranded takes only, never the live one or another app's file."
+    )
+    // D-67: a take has a ceiling, well past a dictation and short of an unnoticed hour.
+    try check(
+        (60...300).contains(RecordingHygiene.maximumRecordingSeconds),
+        "A recording must stop on its own within minutes."
+    )
+
+    // D-137: the id Alacritty's own Info.plist carries, in both tables.
+    try check(
+        PasteTarget.isTerminal(bundleIdentifier: "org.alacritty")
+            && !PasteTarget.isTerminal(bundleIdentifier: "io.alacritty"),
+        "Alacritty must be recognised by its real bundle id."
+    )
+    // D-72: the badge names processing and failure instead of reading READY.
+    try check(
+        StationState.processing.badgeLabel != StationState.ready.badgeLabel
+            && StationState.failed.badgeLabel != StationState.ready.badgeLabel,
+        "Processing and failure must not read READY."
+    )
+
+    // D-73: the capsule names the engine that listens and whether a model runs.
+    try check(
+        RunLabels.speech(.parakeet) == "PARAKEET"
+            && !RunLabels.runsModel(cleaner: .literal, mode: .translate, speech: .whisper)
+            && !RunLabels.runsModel(cleaner: .gemini, mode: .clean, speech: .parakeet)
+            && RunLabels.runsModel(cleaner: .gemini, mode: .translate, speech: .parakeet)
+            && RunLabels.runsModel(cleaner: .apple, mode: .clean, speech: .whisper),
+        "The capsule must say which engine listens and whether a model runs."
+    )
+
+    // D-75: a repeated trigger is found before it is replaced, whatever its case.
+    let replaceStore = VoiceSnippetStore()
+    _ = replaceStore.add(trigger: "mi firma", expansion: "Sandy")
+    try check(
+        replaceStore.existing(trigger: "  Mi Firma ")?.expansion == "Sandy"
+            && replaceStore.existing(trigger: "otra") == nil,
+        "An existing trigger must be found so the window can ask before replacing it."
+    )
+
+    // D-134: the flushed writer lands the whole file and leaves no temporary behind.
+    let flushFolder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vf-flush-check-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: flushFolder) }
+    let flushTarget = flushFolder.appendingPathComponent("snippets.local.json")
+    let flushedStore = VoiceSnippetStore.edit(at: flushTarget) { _ = $0.add(trigger: "x", expansion: "y") }
+    try check(
+        flushedStore?.snippets.count == 1
+            && !((try? FileManager.default.contentsOfDirectory(atPath: flushFolder.path)) ?? [])
+                .contains { $0.hasSuffix(".tmp") }
+            && VoiceSnippetStore.loadReporting(from: flushTarget).store.snippets.count == 1,
+        "The flushed write must land whole and leave nothing else behind."
+    )
+
+    // D-11: history moves from user defaults to its file once, then lives there.
+    let historyFolder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("vf-history-check-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: historyFolder) }
+    let historyFile = historyFolder.appendingPathComponent("history.local.json")
+    let historyDefaults = UserDefaults(suiteName: "vf-history-check-\(UUID().uuidString)")!
+    var legacyHistory = DictationHistoryStore()
+    legacyHistory.append(dictated)
+    historyDefaults.set(legacyHistory.encode(), forKey: DictationHistoryStore.defaultsKey)
+    let migrated = DictationHistoryStore.loadFromDisk(at: historyFile, defaults: historyDefaults)
+    try check(
+        migrated.records.count == 1
+            && FileManager.default.fileExists(atPath: historyFile.path)
+            && historyDefaults.data(forKey: DictationHistoryStore.defaultsKey) == nil
+            && DictationHistoryStore.loadFromDisk(at: historyFile, defaults: historyDefaults).records.count == 1,
+        "History must move to its file once and be read from there after."
+    )
+
+    // D-85: one damaged record does not erase the other nine.
+    var twoRecords = DictationHistoryStore()
+    twoRecords.append(dictated)
+    if let encoded = twoRecords.encode(),
+       var array = try JSONSerialization.jsonObject(with: encoded) as? [Any] {
+        array.append(["broken": true])
+        let damaged = try JSONSerialization.data(withJSONObject: array)
+        try check(
+            DictationHistoryStore.load(from: damaged)?.records.count == 1,
+            "One unreadable history record must not erase the rest."
+        )
+    }
+
+    // D-203: a corrupted history file is quarantined under a dated name, not silently overwritten.
+    let corruptHistoryFile = historyFolder.appendingPathComponent("history.corrupt.test.json")
+    try Data("corrupt json bytes".utf8).write(to: corruptHistoryFile)
+    let corruptResult = DictationHistoryStore.loadReporting(from: corruptHistoryFile)
+    let quarantinedHistory = try? FileManager.default.contentsOfDirectory(atPath: historyFolder.path)
+        .filter { $0.contains("history.corrupt.test.json.corrupt-") }
+    try check(
+        corruptResult.failure != nil
+            && !FileManager.default.fileExists(atPath: corruptHistoryFile.path)
+            && (quarantinedHistory?.count ?? 0) == 1,
+        "A damaged history file must be quarantined to .corrupt-* and reported."
+    )
+
+    // D-77: a file name is not a web address; a capitalised scheme still is one.
+    try check(
+        VoiceActionParser.parse(text: "open README.md")?.type != .openURL(url: URL(string: "https://README.md")!)
+            && VoiceActionParser.parse(text: "abre github.com")?.type == .openURL(url: URL(string: "https://github.com")!),
+        "A file name must not open as a site, and a domain still must."
+    )
+
+    // D-81: a terminal receives one line with no control characters.
+    try check(
+        PasteTarget.terminalSafe("ls -la\u{1B}[31m\n  rm x\u{07} ") == "ls -la[31m rm x",
+        "Terminal text must be one line without control characters."
+    )
+
+    // D-166: the window's fallback order is the engine's chain, read from gemini.py.
+    let engineChain = try enginesGeminiModelChain()
+    try check(
+        GeminiModel.fallbackOrder.map(\.rawValue) == engineChain,
+        "GeminiModel.fallbackOrder must match MODEL_CHAIN in cleaners/gemini.py."
     )
 
     print("VoiceFlowMacCore checks passed.")

@@ -25,7 +25,7 @@ class CliTests(unittest.TestCase):
             "language": "auto",
             "cleaner": "literal",
             "mode": "clean",
-            "gemini_model": "gemini-3.7-flash",
+            "gemini_model": "gemini-3.8-flash",
             "copy": False,
             "json": False,
             "no_memory": True,
@@ -93,7 +93,7 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="literal",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
             copy=True,
             json=False,
             no_memory=True,
@@ -122,7 +122,7 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="apple",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
             copy=True,
             json=False,
             no_memory=True,
@@ -142,7 +142,8 @@ class CliTests(unittest.TestCase):
         ):
             status = cli._process(args)
 
-        self.assertEqual(status, 1)
+        # D-88: the printed text is kept; the copy failure goes to stderr only.
+        self.assertEqual(status, 2)
         self.assertIn("palabras rescatadas", output.getvalue())
 
     def test_clipboard_failure_still_emits_the_cleaned_transcript(self) -> None:
@@ -152,7 +153,7 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="literal",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
             copy=True,
             json=False,
             no_memory=True,
@@ -175,7 +176,8 @@ class CliTests(unittest.TestCase):
         ):
             status = cli._process(args)
 
-        self.assertEqual(status, 1)
+        # D-88: the printed text is kept; the copy failure goes to stderr only.
+        self.assertEqual(status, 0)
         self.assertIn("Texto limpio.", output.getvalue())
 
     def test_json_output_contains_all_transcript_layers(self) -> None:
@@ -185,7 +187,7 @@ class CliTests(unittest.TestCase):
             whisper_model=Path("model.bin"),
             language="auto",
             cleaner="literal",
-            gemini_model="gemini-3.7-flash",
+            gemini_model="gemini-3.8-flash",
             copy=False,
             json=True,
             no_memory=True,
@@ -563,3 +565,113 @@ class DistillCommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DistillationPairContentTests(unittest.TestCase):
+    """D-27: a pair is the cleaner's own input and output."""
+
+    def test_the_pair_holds_the_personalized_text_and_the_unexpanded_output(self) -> None:
+        result = PipelineResult(
+            raw_text="hola oyama",
+            personalized_text="hola Ollama",
+            final_text="Hello Ollama. https://example.com",
+            language="es",
+            cleaner="gemini",
+            cleaner_output="Hello Ollama. mi web",
+        )
+        args = CliTests._process_args(cleaner="gemini", distill=True)
+        with (
+            patch.object(cli.DictationPipeline, "process", return_value=result),
+            patch.object(cli.DistillationStore, "record") as record,
+            redirect_stdout(StringIO()),
+            redirect_stderr(StringIO()),
+        ):
+            self.assertEqual(cli._process(args), 0)
+
+        self.assertEqual(record.call_args.kwargs["raw_text"], "hola Ollama")
+        self.assertEqual(record.call_args.kwargs["cleaned_text"], "Hello Ollama. mi web")
+
+
+class CallerPathTests(unittest.TestCase):
+    """D-64: a relative path lands where the command was typed."""
+
+    def test_a_relative_path_resolves_against_the_caller(self) -> None:
+        with patch.dict("os.environ", {"VF_CALLER_DIR": "/tmp/caller"}):
+            self.assertEqual(cli._caller_path("backup.json"), Path("/tmp/caller/backup.json"))
+            self.assertEqual(cli._caller_path("/abs/x.json"), Path("/abs/x.json"))
+
+    def test_without_the_launcher_the_path_is_left_alone(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(cli._caller_path("backup.json"), Path("backup.json"))
+
+
+class PracticeInterruptTests(unittest.TestCase):
+    """D-65: Ctrl-C during a take deletes it instead of stranding it."""
+
+    def test_an_interrupted_take_is_deleted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            take = Path(directory) / "take-001.wav"
+
+            def interrupted(path: Path, *_a: object, **_k: object) -> Path:
+                path.write_bytes(b"RIFF")
+                raise KeyboardInterrupt
+
+            store = patch.object(cli, "PracticeStore").start()
+            self.addCleanup(patch.stopall)
+            store.return_value.sweep_orphans.return_value = []
+            store.return_value.next_audio_path.return_value = take
+            args = Namespace(
+                delete=None, list=False, text="hola", text_file=None,
+                whisper_model=None, whisper_bin="whisper-cli", language="es",
+            )
+            with (
+                patch.object(cli, "record", interrupted),
+                redirect_stdout(StringIO()),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                cli._practice(args)
+
+            self.assertFalse(take.exists())
+
+
+class SmallCliTests(unittest.TestCase):
+    """D-96, D-98, D-163."""
+
+    def test_a_term_with_a_comma_counts_once(self) -> None:
+        from sanbluedot_voiceflow.memory import prompt_terms
+
+        self.assertEqual(len(prompt_terms(["Smith, John", "Ollama"])), 2)
+
+    def test_forget_reports_a_disk_error(self) -> None:
+        errors = StringIO()
+        with (
+            patch.object(cli.CorrectionStore, "remove", side_effect=OSError("disk")),
+            redirect_stderr(errors),
+        ):
+            self.assertEqual(cli._forget(Namespace(heard="x")), 1)
+        self.assertIn("could not be deleted", errors.getvalue())
+
+    def test_text_and_text_file_together_are_refused(self) -> None:
+        errors = StringIO()
+        args = Namespace(delete=None, list=False, text="hola", text_file=Path("x.txt"))
+        with patch.object(cli, "PracticeStore"), redirect_stderr(errors):
+            self.assertEqual(cli._practice(args), 1)
+        self.assertIn("not both", errors.getvalue())
+
+    def test_process_parser_defaults_whisper_model(self) -> None:
+        parser = cli._build_parser()
+        args = parser.parse_args(["process", "sample.wav"])
+        self.assertEqual(args.whisper_model, cli.DEFAULT_WHISPER_MODEL)
+
+    def test_doctor_json_output(self) -> None:
+        from sanbluedot_voiceflow.doctor import Check
+        parser = cli._build_parser()
+        args = parser.parse_args(["doctor", "--json"])
+        self.assertTrue(args.json)
+        out = StringIO()
+        with patch.object(cli, "run_checks", return_value=[Check("Demo", True, "ok")]), redirect_stdout(out):
+            status = cli._doctor(args)
+        self.assertEqual(status, 0)
+        parsed = json.loads(out.getvalue())
+        self.assertTrue(parsed["ok"])
+        self.assertEqual(parsed["checks"][0]["name"], "Demo")

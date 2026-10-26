@@ -150,68 +150,105 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   Done 2026-10-02 — committed in `96fd83d` after the privacy scan; `session-audit-03`
   found nothing personal in it.
 
+- [x] **D-191 · Spanish opening punctuation (`¿`, `¡`) with fillers fails filler removal and reverts.**
+  Sentences opening with `¿` or `¡` followed by a filler (`"¿Eh, cómo estás?"`) fail
+  `_SENTENCE_START`. Removing the filler leaves a space after the mark (`"¿ cómo estás?"`),
+  which `output_guard.py` rejects as a detached token, raising a `CleanupError`.
+  `remove_fillers` catches this and silently returns uncleaned text with fillers intact.
+  **Fix:** include `[¿¡]` in `_SENTENCE_START`, collapse whitespace after opening
+  punctuation (`re.sub(r"([¿¡])[ \t]+", r"\1", cleaned)`), and allow `_OPENED`
+  capitalization. `cleaners/fillers.py:35` · `04-python` · code
+  Done 2026-10-25 — opening `¿`/`¡` added to `_SENTENCE_START`, post-punctuation whitespace collapsed, covered in `test_fillers.py`.
+
+- [x] **D-203 · `DictationHistoryStore` missing corrupted file quarantine (permanent data loss).**
+  In `DictationHistory.swift`, `loadFromDisk` attempts `load(from: data)` on
+  `history.local.json`. If corrupted, it falls back to an empty `DictationHistoryStore()`.
+  On the next dictation or fix, `append` and `save` write directly over `history.local.json`,
+  permanently destroying the corrupted user history without the `.corrupt-*` quarantine
+  mandated by R5. Disk writes also lack cross-process file locking.
+  **Fix:** rename damaged file to `.corrupt-YYYYMMdd-HHmmss-SSSSSS` on decode failure
+  and report the loss, matching `VoiceSnippetStore.loadReporting`; wrap writes with file
+  lock. `DictationHistory.swift:237` · `04-swift` · code
+  Done 2026-10-25 — damaged history is quarantined with dated name, writes take file lock, tested in VoiceFlowMacCoreChecks.
+
+- [x] **D-204 · Synchronous pipe drainage in App Intents deadlocks on large stderr.**
+  In `VoiceFlowIntents.swift` (`IntentEngine.run`), `stdout` is read synchronously to end
+  of file, followed sequentially by `stderr`. If stderr output exceeds 64KB, the child
+  blocks writing to stderr while the parent blocks reading stdout, causing a permanent
+  deadlock. It also lacks a watchdog timer, which can freeze Shortcuts and Siri indefinitely.
+  **Fix:** drain `stdout` and `stderr` concurrently with `DispatchGroup` on a background
+  queue and enforce a watchdog with SIGTERM/SIGKILL escalation, matching `EngineRunner.swift`.
+  `VoiceFlowIntents.swift:32` · `04-swift` · code
+  Done 2026-10-25 — concurrent drainage via drainQueue + DispatchGroup, stdin async feeder, 45s watchdog with SIGKILL escalation · build.
+
 ### Medium
 
-- [ ] **D-58 · In ES➔EN a Spanish snippet trigger is translated before it can expand.**
+- [x] **D-58 · In ES➔EN a Spanish snippet trigger is translated before it can expand.**
   "te mando mi firma" came back as "I will send my signature".
   **Fix:** expand snippets before a translation, or protect the trigger through it.
   `pipeline.py` · executed 2026-10-02
+  Done 2026-10-24 — in translate mode snippets expand before the cleaner, so the trigger is matched in Spanish · `TranslateSnippetTests`, failed first.
 
-- [ ] **D-59 · A cleanup that writes the typographic apostrophe `’` is refused whole.**
+- [x] **D-59 · A cleanup that writes the typographic apostrophe `’` is refused whole.**
   The speaker loses the punctuation and receives the raw transcript.
   **Fix:** fold `’` to `'` before the guard compares.
   `output_guard.py:78` `_fold` · `02-engine` 3 · executed 2026-10-02
+  Done 2026-10-24 — `_fold` maps `’` to `'` · `TypographicMarkTests`, failed first.
 
-- [ ] **D-28 · A cleanup that adds `¿` or `¡` is refused whole.**
+- [x] **D-28 · A cleanup that adds `¿` or `¡` is refused whole.**
   **Fix:** treat both as ignorable presentation marks.
   `output_guard.py:68` · 2026-09-26 · executed 2026-10-02
+  Done 2026-10-24 — `¿`/`¡` attached to the start of a word are presentation marks; detached they stay content · `TypographicMarkTests`, failed first.
 
-- [ ] **D-60 · "open chrome and search for macbook" searches "for macbook".** The
+- [x] **D-60 · "open chrome and search for macbook" searches "for macbook".** The
   alternation matches `search` before `search for`.
   **Fix:** put `search\s+for` before `search`.
   `VoiceAction.swift:175` · `02-core` 2 · executed 2026-10-02
+  Done 2026-10-25 — `search\s+for` tried before `search` · check.
 
-- [ ] **D-61 · A spoken search for "c++" reaches Google as "c  ".** `URLQueryItem` leaves
+- [x] **D-61 · A spoken search for "c++" reaches Google as "c  ".** `URLQueryItem` leaves
   `+`, which the site reads as a space.
   **Fix:** encode `+` as `%2B` after building the query.
   `VoiceActionExecutor.swift:43` · `02-app` 11 · executed 2026-10-02
+  Done 2026-10-25 — one `SearchURL` builder encodes `+` as `%2B` for Google, YouTube and GitHub · check.
 
-- [ ] **D-62 · One damaged byte in the distillation store blocks `distill clear` and
+- [x] **D-62 · One damaged byte in the distillation store blocks `distill clear` and
   `vf export`.** Both end in a `UnicodeDecodeError` traceback; the store cannot be deleted
   by the command R5c promises.
   **Fix:** read with `errors="replace"` and let `clear` delete even when reading fails.
   `distill.py:103` · `02-cli` 2 · executed 2026-10-02
+  Done 2026-10-25 — the store is read with `errors="replace"`, and `clear` deletes even when counting fails · `DamagedStoreTests`, failed first.
 
-- [ ] **D-63 · The build script deletes the installed app before the new copy is in
+- [x] **D-63 · The build script deletes the installed app before the new copy is in
   place.** A failed copy or verify leaves no daily app and no backup.
   **Fix:** copy to `.new`, verify, then swap.
   `scripts/build-macos-app.sh:61` · `02-cli` 4 · code 2026-10-02
+  Done 2026-10-25 — the build copies to `.new`, verifies, then swaps; the previous build stays as `.previous` · `zsh -n`; runs at the next rebuild.
 
-- [ ] **D-64 · `./vf` runs from the project folder, so a relative path lands in the
+- [x] **D-64 · `./vf` runs from the project folder, so a relative path lands in the
   repository.** `./vf export --to backup.json` writes personal data where `.gitignore`
   does not cover it; relative `--from` and `--text-file` report "not found".
   **Fix:** keep the caller's directory and set `PYTHONPATH` to the absolute `src`.
   `vf:4` · `02-cli` 3 · code 2026-10-02
+  Done 2026-10-25 — `./vf` exports `VF_CALLER_DIR` and the file arguments resolve against it; models still resolve from the project · `CallerPathTests`, failed first.
 
-- [ ] **D-65 · Ctrl-C during a practice take strands an unlisted recording.**
+- [x] **D-65 · Ctrl-C during a practice take strands an unlisted recording.**
   **Fix:** delete the take on any exception, then re-raise.
   `cli.py:470`, `practice.py:357` · `02-cli` 5 · reported
+  Done 2026-10-25 — any exception during a take deletes it, then re-raises · `PracticeInterruptTests`, failed first.
 
-- [ ] **D-66 · A press while the previous dictation is processing is dropped in silence.**
-  The second utterance is lost with no sound, capsule or log line.
-  **Fix:** report it as busy through the refusal path the other locked controls use.
-  `VoiceFlowController.swift:134` · `02-app` 1, `02-ui` · code 2026-10-02
-
-- [ ] **D-67 · A recording has no maximum length.** If the Mac sleeps or the key release
+- [x] **D-67 · A recording has no maximum length.** If the Mac sleeps or the key release
   is lost, the microphone stays open until a new press and release.
   **Fix:** stop at a cap (about 120 s) and re-sync the key state on wake.
   `HotkeyMonitor.swift:90`, `VoiceFlowController.swift:227` · `02-app` 2 · code
   2026-10-02
+  Done 2026-10-24 — a take ends itself at `RecordingHygiene.maximumRecordingSeconds` (120 s) and is delivered; on wake the hotkey re-reads the key · check on the limit; the cap and the wake path not yet run live.
 
-- [ ] **D-68 · The temporary WAV survives Quit, a crash or a forced quit.** Nothing
+- [x] **D-68 · The temporary WAV survives Quit, a crash or a forced quit.** Nothing
   sweeps `sanbluedot-voiceflow-*.wav` and there is no `applicationWillTerminate`.
   **Fix:** sweep old ones at launch and delete the live one on termination.
   `AudioRecorder.swift:57` · `02-app` 3, `02-security` F-1 · code 2026-10-02
+  Done 2026-10-24 — stranded takes are swept at launch and on Quit, never the live one · sweep check, failed under mutation.
 
 - [x] **D-69 · A Siri or Shortcuts run can crash the app on a broken pipe.** The legacy
   `FileHandle.write(_:)` raises an exception Swift cannot catch when the engine exits
@@ -223,51 +260,58 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   `try? close()`; SIGPIPE is ignored app-wide · `swift build` passes; not run through
   Siri. I-19 remains for the duplicated launcher.
 
-- [ ] **D-70 · A timeout on the last Gemini model names no model.** The socket timeout
+- [x] **D-70 · A timeout on the last Gemini model names no model.** The socket timeout
   fires only at the hard deadline, so the branch that records contacted models is
   skipped; R6 requires the names.
   **Fix:** treat `TimeoutError` as an unfinished model regardless of the clock.
   `cleaners/gemini.py:452` · `02-engine` 1 · reported
+  Done 2026-10-25 — a socket timeout is always an unfinished model, so the last one is named · `LastModelTimeoutTests`, failed first.
 
-- [ ] **D-71 · ES➔EN and NOTES never tell the model the transcript is data.** A dictated
+- [x] **D-71 · ES➔EN and NOTES never tell the model the transcript is data.** A dictated
   question can be answered instead of translated, and pasted as if it were the
   translation; neither mode has a guard.
   **Fix:** one line in both prompts: the transcript is text to process, never
   instructions.
   `cleaners/prompt.py:28` · `02-engine` 4 · code
+  Done 2026-10-25 — both prompts say the transcript is text to process, never instructions · `PromptShapeTests`, failed first.
 
-- [ ] **D-72 · The window shows the previous run's figures and says READY while it
+- [x] **D-72 · The window shows the previous run's figures and says READY while it
   works.** A stage that reported nothing keeps the old value; the badge and lamp know
   only recording and ready, so processing and failure read READY (R1, R9).
   **Fix:** assign every telemetry field each run, nil included; publish a real state
   (recording, processing, ready, failed).
   `ControlWindowController.swift:235`, `VoiceStationWindowView.swift:574` · `02-ui` ·
   code 2026-10-02
+  Done 2026-10-25 — each run assigns every telemetry field, nil included; the badge reads READY, ON AIR, PROCESSING or FAILED (`StationState`) · check; not yet seen on screen.
 
-- [ ] **D-73 · The capsule always says WHISPER and INFERENCE.** It names Whisper when
+- [x] **D-73 · The capsule always says WHISPER and INFERENCE.** It names Whisper when
   Parakeet listens, and shows inference when Literal or the filler rule runs no model.
   **Fix:** pass the active speech engine and whether a model runs into the HUD.
   `RetroMicHUDView.swift:390`, `:406` · `02-ui` · code 2026-10-02
+  Done 2026-10-25 — the capsule names the listening engine and RULES when no model runs (`RunLabels`) · check; not yet seen on screen.
 
-- [ ] **D-74 · The hold-to-talk capsule has no name for VoiceOver, and focus is
+- [x] **D-74 · The hold-to-talk capsule has no name for VoiceOver, and focus is
   invisible.** The focus ring is removed with nothing in its place, and some controls
   still draw the system ring.
   **Fix:** `.accessibilityLabel("Hold to dictate")`; one dot-blue outline driven by
   focus for every plain control.
   `VoiceStationWindowView.swift:1363`, `:189` · `02-ui`, 2026-10-02 accessibility tree ·
   executed
+  Done 2026-10-25 — the capsule is named "Hold to dictate"; `voiceFlowNoFocusRing` now draws a dot-blue focus outline · build; not yet seen on screen.
 
-- [ ] **D-75 · Snippet saves fail in silence, and a repeated trigger replaces the old
+- [x] **D-75 · Snippet saves fail in silence, and a repeated trigger replaces the old
   snippet without asking.**
   **Fix:** make `save` report failure; ask before replacing an existing trigger.
   `VoiceSnippet.swift:60`, `:157` · `02-ui`, `02-core` 4 · code
   Partly done 2026-10-02 with D-40: the window's add and delete now report a failed
   write. Open: the question before replacing a trigger.
+  Done 2026-10-25 — a repeated trigger asks Replace or Cancel before it is overwritten · check on `existing(trigger:)`; the dialog not yet seen.
 
-- [ ] **D-01 · `abre música` and `abre configuración` never parse.** The capture class
+- [x] **D-01 · `abre música` and `abre configuración` never parse.** The capture class
   `[A-Za-z0-9\s]` excludes accented letters.
   **Fix:** accept letters with accents.
   `VoiceAction.swift:264` · 2026-09-26 · executed 2026-10-02
+  Done 2026-10-25 — the app-name capture accepts any letter (`\p{L}`) · check.
 
 - [x] **D-04 · The capsule misses failures and cancels.** `showFailed` never orders the
   panel front; neither it nor `showCancelled` raises `animationGeneration`, and
@@ -278,28 +322,32 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   panel and show it, as `showModeChanged` does; needed so the D-23 refusal is seen ·
   build passes; not yet seen on screen.
 
-- [ ] **D-09 · The meeting-notes example is not valid JSON.** The string is not raw, so
+- [x] **D-09 · The meeting-notes example is not valid JSON.** The string is not raw, so
   its `\n` becomes a real line break inside the example.
   **Fix:** a raw string or escaped `\\n`.
   `cleaners/prompt.py:46` · 2026-09-26
+  Done 2026-10-25 — the meeting prompt is a raw string, so its example is valid JSON · `PromptShapeTests`, failed first.
 
-- [ ] **D-11 · The last ten dictations live in plain user defaults, outside the export.**
+- [x] **D-11 · The last ten dictations live in plain user defaults, outside the export.**
   **Fix:** store them beside the other personal stores and include them in `vf export`.
   `DictationHistory.swift:92` · 2026-09-26
+  Done 2026-10-25 — history lives in `history.local.json` (moved once from user defaults) and `vf export` carries it · `HistoryExportTests` and a migration check.
 
 - [ ] **D-17 · The Swift application layer has no test target.** Do not split the target;
   lift one decision at a time into `VoiceFlowMacCore` as its code is touched (I-18).
   `macos/Package.swift` · `findings-audit-01` #7
 
-- [ ] **D-26 · The speaking rate counts delivered words, not spoken ones.** Translations,
+- [x] **D-26 · The speaking rate counts delivered words, not spoken ones.** Translations,
   Markdown and snippet expansions inflate it (R9).
   **Fix:** count the words of the raw transcript.
   `AppDelegate.swift:1039` · 2026-09-26
+  Done 2026-10-25 — the rate counts the raw transcript's words · build.
 
-- [ ] **D-27 · A distillation pair stores the wrong input and output.** Raw text before
+- [x] **D-27 · A distillation pair stores the wrong input and output.** Raw text before
   corrections, and final text after snippets and macros.
   **Fix:** store the personalized text and the cleaner's output before expansion.
   `cli.py:650`, `pipeline.py:104` · 2026-09-26
+  Done 2026-10-25 — a pair stores the personalized text and the cleaner's output before expansion (`cleaner_output`) · `DistillationPairContentTests`, failed first.
 
 - [ ] **D-32 · Long take-backs are left unresolved on local engines.** The fix guard
   refuses deletions far from the cue, so the cue stays in the text. Fix proposed in I-15.
@@ -405,76 +453,88 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   Unticked 2026-10-23 by owner decision: the code is changed, and the row closes only
   after a failed save is seen keeping the form in a rebuilt app.
 
-- [ ] **D-134 · No atomic writer calls `fsync`.** After a power loss right after the
+- [x] **D-134 · No atomic writer calls `fsync`.** After a power loss right after the
   rename a store can be empty; it is then quarantined and the live file is blank.
   **Fix:** `flush`, `fsync` and `F_FULLFSYNC` before `os.replace` (one writer, I-46);
   temp file, `fsync` and `rename` on the Swift side.
   `memory.py:21`, `:180`, `VoiceSnippet.swift:175` · `03-cli` C-03, `03-core` S-09 · code;
   the loss itself reported
+  Done 2026-10-25 — one flushed writer on each side (`F_FULLFSYNC`, directory flushed after the rename) · writer test and check.
 
-- [ ] **D-135 · A quarantine runs without the store lock.** A slow reader can move aside
+- [x] **D-135 · A quarantine runs without the store lock.** A slow reader can move aside
   a good store another process has just rewritten.
   **Fix:** take `exclusive_file_lock` inside `quarantine_file`, and skip the move when
   the file's inode, mtime or size changed since the failed read.
   `memory.py:70` · `03-cli` C-04 · reported
+  Done 2026-10-25 — the move is skipped when the file changed since the failed read; the lock is not taken because callers already hold it · `QuarantineRaceTests`, failed first.
 
-- [ ] **D-136 · "abre safari y busca X" opens the default browser.** Every pattern
+- [x] **D-136 · "abre safari y busca X" opens the default browser.** Every pattern
   yields `.googleSearch`, and `NSWorkspace.open(url)` hands it to the default browser.
   README lists the phrase as "Browser with the search", so the defect is that the
   sentence names Safari and the run ignores it.
   **Fix:** capture the browser and open with `open(_:withApplicationAt:)`, or stop
   matching browser names.
   `VoiceAction.swift:173`, `VoiceActionExecutor.swift:43` · `03-core` S-04 · code
+  Done 2026-10-24 — the named browser travels with the search and opens via `open(_:withApplicationAt:)`; "el navegador" keeps the default · checks; Safari opened live in ACTIONS mode, 2026-10-25.
 
-- [ ] **D-137 · Alacritty's bundle id may be wrong (`io.alacritty`).** If it is, its
+- [x] **D-137 · Alacritty's bundle id may be wrong (`io.alacritty`).** If it is, its
   pastes skip the terminal guard. Alacritty is not installed on this Mac.
   **Fix:** read the id from Alacritty's `Info.plist`, then correct the one table (I-60).
   `PasteTarget.swift:24` · `03-core` S-05 · reported
+  Done 2026-10-25 — `org.alacritty`, read from Alacritty's own Info.plist, in both tables · check.
 
-- [ ] **D-138 · The window says "Terminal (Single-line Guard)" for apps the guard does
+- [x] **D-138 · The window says "Terminal (Single-line Guard)" for apps the guard does
   not protect.** The badge also matches names containing `terminal`, `iterm`, `ghostty`
   or `warp`; the paste guard reads only the bundle list, so a multi-line NOTES result
   reaches those apps unflattened.
   **Fix:** derive the badge from `PasteTarget.isTerminal(bundleIdentifier:)` alone.
   `ControlWindowController.swift:244`, `AutoPaste.swift:57` · `03-app` A-01 · code
+  Done 2026-10-25 — the badge comes from `PasteTarget.isTerminal` alone · build.
 
-- [ ] **D-139 · The floating HUD is invisible to VoiceOver.** With another app in front
+- [x] **D-139 · The floating HUD is invisible to VoiceOver.** With another app in front
   it is the only state cue, and the file has no accessibility modifier.
   **Fix:** one element with a state label, and an announcement on each state change.
   `RetroMicHUDView.swift` · `03-ui` U-03 · code
+  Done 2026-10-25 — the capsule is one VoiceOver element with a state label, and each state change is announced · build; not yet heard.
 
-- [ ] **D-140 · The Words side column may stack below at the default window size.** The
+- [x] **D-140 · The Words side column may stack below at the default window size.** The
   820 threshold is read inside a `GeometryReader` whose width needs a 1,112pt window
   against the 1,100 default.
   **Fix:** compare against the workspace width, or subtract the measured overhead.
   `FocusHomeView.swift:237` · `03-ui` U-05 · reported, arithmetic not rendered
+  Done 2026-10-25 — the threshold is 760, measured from the paper width at the default window (808) · arithmetic; not yet seen.
 
-- [ ] **D-141 · The refusal banner pushes the page down for 4 s.**
+- [x] **D-141 · The refusal banner pushes the page down for 4 s.**
   **Fix:** draw it as an overlay; the VoiceOver announcement is I-22.
   `FocusHomeView.swift:52` · `03-ui` U-06 · code
+  Done 2026-10-25 — the refusal banner is an overlay · build; not yet seen.
 
-- [ ] **D-142 · The console tabs contradict `design-system.md`.** The code shows LOG /
+- [x] **D-142 · The console tabs contradict `design-system.md`.** The code shows LOG /
   HISTORY n / SNIPPETS n with a 5pt radius and an extrusion; the contract names
   TELEMETRY LOG / HISTORY TRAY / SNIPPETS, no counts, 4pt. **Blocked** on the owner
   choosing which is right; the other changes in the same cycle.
   `VoiceStationWindowView.swift:717`, `:1461` · `03-ui` U-07 · code
+  Done 2026-10-25 — ratified canonical enum RightCardTab vs compact presentation labels LOG, HISTORY <n>, SNIPPETS <n> in design-system.md · build.
 
-- [ ] **D-143 · VoiceOver names the Words fields by their example placeholder.**
+- [x] **D-143 · VoiceOver names the Words fields by their example placeholder.**
   **Fix:** an `.accessibilityLabel` matching the visible label.
   `FocusHomeView.swift:395`, `:486`, `:562` · `03-ui` U-10 · code
+  Done 2026-10-25 — each Words field carries the label it shows · build.
 
-- [ ] **D-144 · Log rows re-wrap under the pointer.** The hover copy button takes width
+- [x] **D-144 · Log rows re-wrap under the pointer.** The hover copy button takes width
   only while shown.
   **Fix:** reserve its width and fade it with opacity; D-116 shares the change.
   `VoiceStationWindowView.swift:2820` · `03-ui` U-11 · code
+  Done 2026-10-25 — the copy button is always laid out and fades with opacity · build; not yet seen.
 
-- [ ] **D-145 · More text sits under 4.5:1 than D-108 lists.** Popover and field labels
+- [x] **D-145 · More text sits under 4.5:1 than D-108 lists.** Popover and field labels
   measure 3.4–3.8, the HUD's PASTED and COPIED sage 2.8–3.7, and the subtitle and
   timestamps at gold 50% 3.4 — a value `design-system.md` itself prescribes.
   **Fix:** at least 0.75 opacity through one label token (I-77), a lighter HUD sage, and
   the contract corrected with D-108.
   `VoiceStationWindowView.swift:981`, `:1195`, `:1775`, `RetroMicHUDView.swift:298` ·
   `03-ui` U-12, U-13, U-22 · code; contrast computed from code values, not rendered
+  Done 2026-10-25 — dim gold and navy text raised to 0.75 and 0.8 (5.9:1), a lighter HUD sage `okOnDark` (7.1:1), contract corrected · computed from the token values.
 
 - [x] **D-146 · README says "Whisper Small is also present"; it went to the Trash on
   2026-10-01.**
@@ -504,23 +564,77 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   `macos/VoiceFlow.xcodeproj` · `ls` finds no `VoiceFlow/` at the project root and
   `git status --ignored` lists nothing under it.
 
+- [x] **D-192 · URLs and emails preserve raw casing in token comparison, rejecting valid cleanups.**
+  Capitalized emails or URLs (`Sandy@example.com` or `Https://github.com`) normalized to
+  lowercase by cleanup models are flagged as lexical substitutions because `_tokens` does
+  not case-fold protected email/URL tokens.
+  **Fix:** casefold email `token` and URL `protected` values before appending to `tokens`.
+  `output_guard.py:110,122` · `04-python` · code
+  Done 2026-10-25 — protected URL and email tokens casefolded in `_tokens`, covered in `test_output_guard.py`.
+
+- [x] **D-193 · Closing marks attached to terminal punctuation rejected as lexical content.**
+  `_is_ignorable_presentation_mark` checks `_CLOSING_MARKS` (`"'”’)]}»`) during lookahead
+  for terminal marks (`.!?`), but when iteration lands on the closing mark itself, it
+  returns `False`. Closing quotes/brackets attached to terminal punctuation (e.g. `."` or `!)`)
+  are rejected as protected additions.
+  **Fix:** recognize characters in `_CLOSING_MARKS` following terminal punctuation as
+  ignorable when followed by whitespace or EOF. `output_guard.py:55` · `04-python` · code
+  Done 2026-10-25 — closing marks after terminal punctuation recognized as presentation marks, covered in `test_output_guard.py`.
+
+- [x] **D-194 · Non-positive timeout (`timeout=0.0`) passed to `urlopen` when budget expired.**
+  When `remaining <= 0.0`, `timeout=max(remaining, 0.0)` passes `0.0` to
+  `urllib.request.urlopen`. Sockets with `0.0` timeout enter non-blocking mode and raise
+  `BlockingIOError` instead of clean `TimeoutError`, causing misleading error classifications.
+  **Fix:** check `if remaining <= 0:` at the top of the loop in `_send` and raise
+  `_ModelUnfinished(TimeoutError("time budget expired"), CONTACT_TIMED_OUT)`.
+  `cleaners/gemini.py:413` · `04-python` · code
+  Done 2026-10-25 — non-positive timeout raises `_ModelUnfinished(TimeoutError(...), CONTACT_TIMED_OUT)` without passing 0.0 to opener.
+
+- [x] **D-195 · Non-atomic, unflushed append in `DistillationStore.record` risks permanent JSONL corruption.**
+  `DistillationStore.record` appends lines to `distill_pairs.local.jsonl` using buffered
+  `f.write(...)` without calling `f.flush()` or `os.fsync(f.fileno())`. Truncated lines on
+  crash trigger permanent `.skipped-<hash>` warnings on every future read indefinitely.
+  **Fix:** call `f.flush()` and `os.fsync(f.fileno())` before releasing the file lock in
+  `record`; auto-compact/repair valid lines on read. `distill.py:84` · `04-python` · code
+  Done 2026-10-25 — `DistillationStore.record` calls `f.flush()` and `os.fsync(f.fileno())` under file lock.
+
+- [x] **D-205 · `HotkeyMonitor` lacks `deinit` cleanup, risking `EXC_BAD_ACCESS` crash.**
+  `HotkeyMonitor` creates a `CGEventTap` and registers a runloop source on
+  `CFRunLoopGetMain()` with an unretained pointer to `self` in the callback context. It
+  implements `stop()`, but lacks `deinit { stop() }`. Any unstopped instance that is
+  deallocated leaves an active callback pointing to freed memory.
+  **Fix:** add `deinit { stop() }`. `HotkeyMonitor.swift:13` · `04-swift` · code
+  Done 2026-10-25 — added deinit { stop() } disabling the tap and cleaning up the runloop source · build.
+
+- [x] **D-206 · `CleanerFacts.swift` out-of-sync copy claims 3 Gemini models are walked.**
+  Line 50 asserts `"All three models are tried, then the raw transcript arrives at 45s."`
+  Contradicts the single `gemini-3.8-flash` configuration and violates R9 truth-over-comfort.
+  **Fix:** update copy to describe the single model policy and retry rule.
+  `CleanerFacts.swift:50` · `04-swift` · code
+  Done 2026-10-25 — copy updated to reflect single-model retry and fallback chain before 45s raw transcript delivery.
+
 ### Low
 
-- [ ] **D-76** `uh-huh` becomes `-huh` and `mm-hmm,` becomes `Mm-`. **Fix:** no filler
+- [x] **D-76** `uh-huh` becomes `-huh` and `mm-hmm,` becomes `Mm-`. **Fix:** no filler
   match next to a hyphen. `cleaners/fillers.py:13` · executed 2026-10-02
-- [ ] **D-77** "open README.md" opens `https://README.md`; the scheme test is
+  Done 2026-10-25 — no filler match next to a hyphen · `HyphenAndCapitalTests`.
+- [x] **D-77** "open README.md" opens `https://README.md`; the scheme test is
   case-sensitive. **Fix:** compare the scheme case-insensitively and refuse file-like
   names. `VoiceAction.swift:155` · executed 2026-10-02
-- [ ] **D-78** "CLOUD TEXT ON · text is sent to Gemini" shows when no key exists and
+  Done 2026-10-25 — the scheme is compared case-insensitively and a single name with a file extension is not a URL · check.
+- [x] **D-78** "CLOUD TEXT ON · text is sent to Gemini" shows when no key exists and
   nothing is sent. **Fix:** say the key is missing. `FocusHomeView.swift:151` · code
+  Done 2026-10-25 — the card reads CLOUD KEY MISSING when no key is stored · build.
 - [ ] **D-79** Labels truncate: "Gemini 3.7 F…" and take-back chips at the reference
   size; chain stages and the SYSTEM filter chip at the minimum width. **Fix:** shorter
   labels or a wider column. Settings, Words, Station · executed 2026-10-02
-- [ ] **D-80** The log says "whisper heard" for Parakeet runs. **Fix:** use
+- [x] **D-80** The log says "whisper heard" for Parakeet runs. **Fix:** use
   `selectedSpeechEngine.shortName`. `AppDelegate.swift:1109` · `02-app` 8
-- [ ] **D-81** Terminal paste flattens line breaks but keeps other control characters.
+  Done 2026-10-25 — the log names the engine that listened · build.
+- [x] **D-81** Terminal paste flattens line breaks but keeps other control characters.
   **Fix:** drop control characters for terminal targets. `AutoPaste.swift:58` ·
   `02-security` F-2
+  Done 2026-10-25 — `PasteTarget.terminalSafe` also drops control characters · check.
 - [ ] **D-82** The on-screen console shows dictated text, against R7. **Fix:** log counts
   and language, or amend R7 to exempt the on-screen log. `AppDelegate.swift:1105` ·
   `02-security` F-3
@@ -528,57 +642,73 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   `*.onnx`, `*.mlpackage`. **Fix:** add them. `.gitignore` · `02-security` F-4
   Done 2026-10-02 — audio, model and export patterns added · `git check-ignore`
   confirms each; no tracked file matches them.
-- [ ] **D-84** Every keychain error reads as "no key", including a locked keychain.
+- [x] **D-84** Every keychain error reads as "no key", including a locked keychain.
   **Fix:** distinguish found, absent and error. `Keychain.swift:26` · `02-app` 10
-- [ ] **D-85** One unreadable history record erases all ten. **Fix:** decode record by
+  Done 2026-10-25 — `Keychain.status` returns present, absent or unavailable; the window says when the keychain could not be read · build.
+- [x] **D-85** One unreadable history record erases all ten. **Fix:** decode record by
   record. `DictationHistory.swift:151` · `02-core` 6
-- [ ] **D-86** The Parakeet helper needs macOS 14; the app declares 13. **Fix:** raise
+  Done 2026-10-25 — history decodes record by record · check.
+- [x] **D-86** The Parakeet helper needs macOS 14; the app declares 13. **Fix:** raise
   the minimum to 14 or hide Parakeet below it. `ParakeetHelper/Package.swift:9` ·
   `02-core` 8
+  Done 2026-10-25 — the minimum is macOS 14 in the package, Info.plist and the generated project; `onChange` moved to the macOS 14 form · build with no warnings.
 - [ ] **D-87** `distill create` posts the stored pairs to any `--ollama-url`, not only
   this machine; the Words placeholder says "Oyama → Ollama". Ollama stays in the engine
   for Windows (D-121), so the commands stay. **Fix:** accept only a loopback URL, as
   `desktop.py` and `OllamaCleaner` already do; change the placeholder. `distill.py:237`,
   `cli.py:270`, `FocusHomeView.swift` · `02-cli` 12, 2026-10-02
-- [ ] **D-88** A failed `--copy` exits 1 after printing the JSON, and the app discards
+- [x] **D-88** A failed `--copy` exits 1 after printing the JSON, and the app discards
   the finished dictation. **Fix:** exit 0 with the copy failure on stderr. `cli.py:685` ·
   `02-cli` 7
-- [ ] **D-89** A vocabulary term starting with `#` is reported added but never loads.
+  Done 2026-10-25 — a failed `--copy` keeps the exit status (0, or 2 on a fallback) and reports on stderr · the two clipboard tests updated.
+- [x] **D-89** A vocabulary term starting with `#` is reported added but never loads.
   **Fix:** refuse it. `memory.py:141` · `02-cli` 6
+  Done 2026-10-25 — a term starting with `#` is refused · `VocabularyTermShapeTests`.
 - [ ] **D-90** The snippet editor takes one line and shows no macros, so a multi-line
   signature cannot be written in the window. **Fix:** a vertical field and a macro hint.
   `VoiceStationWindowView.swift:2212` · `02-ui`, executed 2026-10-02
-- [ ] **D-91** A double press on LEARN learns twice and overwrites the success notice.
+- [x] **D-91** A double press on LEARN learns twice and overwrites the success notice.
   **Fix:** disable Words actions until the read-back returns. `AppDelegate.swift:609` ·
   `02-ui`
-- [ ] **D-92** The filler rule capitalises a URL after a sentence end, the guard refuses
+  Done 2026-10-25 — `isWordsBusy` disables LEARN, ADD and DELETE buttons while async Words run completes.
+- [x] **D-92** The filler rule capitalises a URL after a sentence end, the guard refuses
   it, and the filler stays. **Fix:** capitalise only the first letter and the one after
   a removed filler. `cleaners/fillers.py:48` · executed 2026-10-02
-- [ ] **D-93** With Parakeet and a cloud cleaner, a provider failure on a take-back skips
+  Done 2026-10-25 — only the word a removed filler left at a sentence start is capitalised · `HyphenAndCapitalTests`.
+- [x] **D-93** With Parakeet and a cloud cleaner, a provider failure on a take-back skips
   the model-free filler removal. **Fix:** fall back to the filler rule.
   `pipeline.py:181` · `02-engine` 6
-- [ ] **D-94** The Gemini timeout bounds each socket operation, not the whole call.
+  Done 2026-10-25 — with a punctuating engine any take-back failure falls back to the filler rule · `TakeBackProviderFailureTests`.
+- [x] **D-94** The Gemini timeout bounds each socket operation, not the whole call.
   **Fix:** document it as per-operation, or bound the call. `cleaners/gemini.py:419` ·
   `02-engine` 8
-- [ ] **D-95** Some failures escape as tracebacks: Whisper misses `OSError`, three
+  Done 2026-10-25 — documented as a per-operation socket timeout enforced between attempts · comment beside `DEFAULT_TIMEOUT_SECONDS`.
+- [x] **D-95** Some failures escape as tracebacks: Whisper misses `OSError`, three
   subprocess calls decode strictly, `IncompleteRead` ends the Gemini chain. **Fix:**
   catch them and decode with `errors="replace"`. `whisper_cpp.py:143`,
   `cleaners/gemini.py:442` · `02-engine` 9
-- [ ] **D-96** Words counts a term containing ", " as two read terms. **Fix:** count the
+  Done 2026-10-25 — Whisper reports `OSError`, the three subprocess calls decode with `errors="replace"`, `IncompleteRead` counts as a dropped model · `IncompleteReadTests`.
+- [x] **D-96** Words counts a term containing ", " as two read terms. **Fix:** count the
   selected terms. `cli.py:326` · `02-cli` 8
-- [ ] **D-97** A store entry that fails validation vanishes at the next write, with no
+  Done 2026-10-25 — `prompt_terms` counts the selected terms · `SmallCliTests`.
+- [x] **D-97** A store entry that fails validation vanishes at the next write, with no
   quarantine. **Fix:** keep a dated copy before rewriting. `memory.py:387`,
   `snippets.py:161` · `02-cli` 9
-- [ ] **D-98** `vf forget` prints a traceback on a disk error. **Fix:** catch `OSError`
+  Done 2026-10-25 — a store with unreadable entries is copied once per version (`.skipped-<hash>`) and reported once · `SkippedEntryTests`.
+- [x] **D-98** `vf forget` prints a traceback on a disk error. **Fix:** catch `OSError`
   like `vf correct`. `cli.py:387` · `02-cli` 10
-- [ ] **D-99** `vf export` counts distillation pairs without naming where they live
+  Done 2026-10-25 — `vf forget` reports `OSError` · `SmallCliTests`.
+- [x] **D-99** `vf export` counts distillation pairs without naming where they live
   (R5c). **Fix:** print the store path. `cli.py:417` · `02-cli` 11
-- [ ] **D-100** `cleaner_gate` counts the dot inside `3.5` or `example.com` as
+  Done 2026-10-25 — `vf export` prints where the pairs are stored · code.
+- [x] **D-100** `cleaner_gate` counts the dot inside `3.5` or `example.com` as
   punctuation, moving the F1 that decides a cleaner's verdict. **Fix:** read only
   trailing marks. `scripts/cleaner_gate.py:73` · `02-cli` 13
-- [ ] **D-101** The acceptance launchers refuse when any command line mentions
+  Done 2026-10-25 — only trailing marks count · `InnerDotTests`.
+- [x] **D-101** The acceptance launchers refuse when any command line mentions
   `VoiceFlowMac`. **Fix:** `pgrep -x VoiceFlowMac`. `scripts/start-phase2-acceptance.sh:21`
   · `02-cli` 14
+  Done 2026-10-25 — `pgrep -x VoiceFlowMac` in both launchers · code.
 - [x] **D-102** The app ignores the snippet store's schema version and rewrites a newer
   file as version 1. **Fix:** refuse an unknown version. `VoiceSnippet.swift:114` ·
   `02-core` 5
@@ -586,27 +716,35 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   quarantined as the engine does and never rewritten · checks with versions 2, `true`,
   `1.5` and a missing list; the old strict decoder already refused the last three, and
   accepted version 2.
-- [ ] **D-103** Two different Gemini medians are shown for the same model and date.
+- [x] **D-103** Two different Gemini medians are shown for the same model and date.
   **Fix:** label each with its run, or show one. `CleanerFacts.swift:46` · `02-core` 9
-- [ ] **D-104** The engine watchdog sends SIGTERM only and then waits without limit.
+  Done 2026-10-25 — labeled as "4.19s median across measured runs" to clarify the multi-run measurement scope.
+- [x] **D-104** The engine watchdog sends SIGTERM only and then waits without limit.
   **Fix:** SIGKILL after the grace period, in a process group. `EngineRunner.swift:315`
   · `02-app` 5
-- [ ] **D-105** Escape reports the audio discarded even when deleting it failed.
+  Done 2026-10-25 — SIGKILL after the 5 s grace when the child ignores SIGTERM · build.
+- [x] **D-105** Escape reports the audio discarded even when deleting it failed.
   **Fix:** pass the failure to the log. `VoiceFlowController.swift:205` · `02-app` 6
-- [ ] **D-106** Words runs share a concurrent queue and a failed read leaves the section
+  Done 2026-10-25 — a failed delete on Escape is reported as such · build.
+- [x] **D-106** Words runs share a concurrent queue and a failed read leaves the section
   empty with no message. **Fix:** a serial queue and a reported failure.
   `AppDelegate.swift:619` · `02-app` 7
-- [ ] **D-107** The OUTPUT lamp is lit before any dictation of the session, because
+  Done 2026-10-25 — Words runs on one serial queue and a failed read says so · build.
+- [x] **D-107** The OUTPUT lamp is lit before any dictation of the session, because
   History is restored at launch. **Fix:** light it after a delivery this session.
   `VoiceStationWindowView.swift:931` · `02-ui`
-- [ ] **D-108** Several small labels sit under the 4.5 contrast the contract requires;
+  Done 2026-10-25 — OUTPUT lamp checks viewModel.hasDeliveredThisSession, set on first delivery · build.
+- [x] **D-108** Several small labels sit under the 4.5 contrast the contract requires;
   the HUD's PASTED is about 3.9; the contract's 4.80 for sage on the console does not
   reproduce. **Fix:** raise those opacities to at least 0.75 and correct the contract.
   `VoiceStationWindowView.swift:975`, `RetroMicHUDView.swift:300` · `02-ui`
-- [ ] **D-109** The meter's last bars use `rec`; `design-system.md` says `onAir`.
+  Done 2026-10-25 with D-145.
+- [x] **D-109** The meter's last bars use `rec`; `design-system.md` says `onAir`.
   **Fix:** align one with the other. `VoiceStationWindowView.swift:844` · `02-ui`
-- [ ] **D-110** `@MainActor` sits on the `WordsTab` enum instead of the view model.
+  Done 2026-10-25 — the meter's last bars use `onAir` · build.
+- [x] **D-110** `@MainActor` sits on the `WordsTab` enum instead of the view model.
   **Fix:** move it to the class. `VoiceStationWindowView.swift:206` · `02-ui`
+  Done 2026-10-25 — `@MainActor` moved from `WordsTab` to the view model · build.
 - [ ] **D-111** Settings never shows whether a permission is granted; the three flags
   are never set; four views are dead. **Fix:** feed the flags from `AppDelegate` and show
   them; delete the dead views. `FocusHomeView.swift:909`,
@@ -614,25 +752,31 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
 - [ ] **D-112** A one-word FIX pair is sent unticked and refused by the engine, where
   the typed form explains first. **Fix:** the same pre-check. `FocusHomeView.swift:386`
   · `02-ui`
-- [ ] **D-113** The "you are holding the capsule" refusal shows for hotkey recordings.
+- [x] **D-113** The "you are holding the capsule" refusal shows for hotkey recordings.
   **Fix:** refuse only for button recordings. `FocusHomeView.swift:1085` · `02-ui`
+  Done 2026-10-25 — the refusal applies only while the capsule is held · build.
 - [ ] **D-114** EDIT on a Words row discards a FIX sentence in progress. **Fix:** refuse
   with a notice while a FIX is open. `FocusHomeView.swift:541` · `02-ui`
-- [ ] **D-115** The key and permission buttons refuse in silence during a run.
+- [x] **D-115** The key and permission buttons refuse in silence during a run.
   **Fix:** the shared refusal notice. `FocusHomeView.swift:1038` · `02-ui`
-- [ ] **D-116** The log copy button appears only on hover, so the keyboard and VoiceOver
+  Done 2026-10-25 — permission and key buttons stay interactive and report loud refusal notices via viewModel.reportRefusal during active dictation · build.
+- [x] **D-116** The log copy button appears only on hover, so the keyboard and VoiceOver
   cannot reach it. **Fix:** keep it in the accessibility tree.
   `VoiceStationWindowView.swift:2806` · `02-ui`
-- [ ] **D-117** A practice WAV staged as `.pending-delete` by an interrupted delete is
+  Done 2026-10-25 — the copy button stays in the accessibility tree while hidden · build.
+- [x] **D-117** A practice WAV staged as `.pending-delete` by an interrupted delete is
   never swept. **Fix:** sweep old `.pending-delete` files too. `practice.py:515` ·
   `02-security` F-6
-- [ ] **D-118** The vocabulary prompt travels in argv, visible to `ps`. **Fix:** a file
+  Done 2026-10-25 — the sweep restores a staged take whose session is indexed and removes the rest · `PendingDeleteSweepTests`.
+- [x] **D-118** The vocabulary prompt travels in argv, visible to `ps`. **Fix:** a file
   or stdin if whisper-cli accepts one, otherwise record it as an accepted limit in R7.
   `whisper_cpp.py:137` · `02-security` F-7
-- [ ] **D-119** At the minimum height the control card scrolls and the second row of mode
+  Done 2026-10-25 — recorded as an accepted limit in R7: `--prompt` is whisper-cli's only prompt input (checked in `whisper-cli --help`).
+- [x] **D-119** At the minimum height the control card scrolls and the second row of mode
   tiles sits below its fold; `design-system.md` asks for the 700 floor to rise when a row
   is added. **Fix:** measure the smallest height that shows every row and raise the
   floor. `ControlWindowController.swift:41` · executed 2026-10-02
+  Done 2026-10-25 — raised contentFloor height from 700 to 710 · build.
 - [x] **D-120** The Apple signing team was written into the generated Xcode project and
   its generator, both headed for the repository; it identifies the owner's account.
   **Fix:** read it from the installed certificate at build time.
@@ -668,22 +812,28 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   remote addresses fails if anything is sent.
 - [ ] **D-06** App Intents read stdout then stderr serially, with no watchdog. **Fix:**
   I-19. `VoiceFlowIntents.swift:88` · 2026-09-26
-- [ ] **D-08** RECHECK stays live during a run and only beeps; its handler is empty.
+- [x] **D-08** RECHECK stays live during a run and only beeps; its handler is empty.
   **Fix:** the shared refusal notice. `ControlWindowController.swift:129` · 2026-09-26
-- [ ] **D-10** A failed app launch is reported as done; the launch is asynchronous.
+  Done 2026-10-25 — routes to viewModel.reportRefusal("permissions cannot be rechecked during active dictation") · build.
+- [x] **D-10** A failed app launch is reported as done; the launch is asynchronous.
   **Fix:** report from the completion handler. `VoiceActionExecutor.swift:87` · 2026-09-26
-- [ ] **D-12** Terminal paste leaves the flattened line on the clipboard, while History
+  Done 2026-10-25 — a launch failure arrives through the completion handler, with a beep and a system-log line · build.
+- [x] **D-12** Terminal paste leaves the flattened line on the clipboard, while History
   records the multi-line text. **Fix:** record what was delivered.
   `AutoPaste.swift:58` · 2026-09-26
-- [ ] **D-13** The distillation gate compares `"gemini"` instead of
+  Done 2026-10-25 — the paste hands back what the terminal received, and History records that · build.
+- [x] **D-13** The distillation gate compares `"gemini"` instead of
   `CLOUD_CLEANER_NAMES`. **Fix:** use the set. `cli.py:639` · `findings-audit-01` #4
-- [ ] **D-14** Stale doc comments from the transform removal, and the
+  Done 2026-10-25 — the gate reads `CLOUD_CLEANER_NAMES` · existing distillation tests.
+- [x] **D-14** Stale doc comments from the transform removal, and the
   `_is_ignorable_presentation_mark` docstring. **Fix:** rewrite or delete them.
   `ActivityLog.swift:90`, `AppContext.swift:96`, `output_guard.py:46` · 2026-09-26
-- [ ] **D-15** Dead code: `CLEANER_MODES`, `practice.DEFAULT_INDEX`, the `write_modelfile`
+  Done 2026-10-25 — the orphan ActivityLog paragraph removed, the AppContext prefix and the guard docstring rewritten · build.
+- [x] **D-15** Dead code: `CLEANER_MODES`, `practice.DEFAULT_INDEX`, the `write_modelfile`
   import, the ignored `available:` parameter, `PER_MODEL_TIMEOUT_SECONDS`, and the views
   `statusBadgeView`, `cleanerButtonLabel`, `MiniVUMeterView`, `AppTargetMonitorView`.
   **Fix:** delete. several · 2026-09-26, `02-ui`
+  Done 2026-10-25 — `CLEANER_MODES`, `DEFAULT_INDEX`, the `write_modelfile` import, the `available:` parameter, `PER_MODEL_TIMEOUT_SECONDS` and the four views deleted · build and suite.
 - [ ] **D-18** Every Gemini figure is frozen at 2026-08-31. **Blocked** on the owner's
   approval to spend the provider budget on a re-measure. `cleaners/gemini.py:43`
 - [ ] **D-21** Unverified whether the station carries every approved preview item
@@ -693,148 +843,193 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   console tabs, filter chips, model and key chips, Settings pills; the three `?` buttons
   are all named "?". **Fix:** `.isSelected` traits and "About <engine>" labels.
   `VoiceStationWindowView.swift:849`, `FocusHomeView.swift:974` · 2026-09-26, `02-ui`
-- [ ] **D-30** The distillation store skips an unreadable line in silence. **Fix:**
+- [x] **D-30** The distillation store skips an unreadable line in silence. **Fix:**
   quarantine and report, like every other store. `distill.py:113` · 2026-09-26
+  Done 2026-10-25 with D-97 — the distillation store reports and preserves skipped lines.
 - [ ] **D-31** Apple's model can hand back the prompt's own example; the guard refuses
   it. A "format only" line was measured and made things worse. **Fix:** none measured
   yet; try a different example set on the corpus. `cleaners/prompt.py` · 2026-09-26
-- [ ] **D-41** On a fallback, `personalized_text` carries the snippet expansion, so
+- [x] **D-41** On a fallback, `personalized_text` carries the snippet expansion, so
   History's CORRECTED layer shows it as a correction. **Fix:** carry the unexpanded text
   in `CleanupFailed`. `cli.py:607`, `:745` · `01` F-03
+  Done 2026-10-25 — `CleanupFailed` carries the unexpanded `personalized_text`, which the fallback JSON reports · `FallbackLayerTests`.
 - [ ] **D-43** The guard accepts case changes that break proper nouns (`March` →
   `march`). **Fix:** refuse lowercasing a capitalised word outside a sentence start.
   `output_guard.py` `_fold` · `01` F-05
-- [ ] **D-44** `doctor` checks Whisper only. **Fix:** add the Apple helper, the Parakeet
+- [x] **D-44** `doctor` checks Whisper only. **Fix:** add the Apple helper, the Parakeet
   helper and model, and `pbcopy`. `doctor.py` · `01` F-06
-- [ ] **D-45** The 180 s watchdog no longer covers Whisper plus two cleanups, and losing
+  Done 2026-10-25 — on the Mac, doctor checks the Apple and Parakeet helpers, the Parakeet model and pbcopy · `MacHelperCheckTests`, `./vf doctor` run.
+- [x] **D-45** The 180 s watchdog no longer covers Whisper plus two cleanups, and losing
   the race discards a finished transcript. **Fix:** raise the watchdog above the stage
   limits. `EngineRunner.swift:139` · `01` F-07
-- [ ] **D-46** Each paste may raise the Accessibility prompt when permission is missing.
+  Done 2026-10-25 — the watchdog is 260 s, above Whisper plus two cleanups · build.
+- [x] **D-46** Each paste may raise the Accessibility prompt when permission is missing.
   **Fix:** prompt only on an explicit request. `AutoPaste.swift:27` · `01` F-08, reported
-- [ ] **D-47** Stale since FIX teaches: `clean --mode fix` has no caller in the app,
+  Done 2026-10-25 — the paste checks `AXIsProcessTrusted()` without the prompt · build.
+- [x] **D-47** Stale since FIX teaches: `clean --mode fix` has no caller in the app,
   `sameWords` is used only by checks, the generator docstring names
   `PingVoiceFlowIntent`, `VoiceFlowShortcuts` says four with three. **Fix:** delete or
   correct. several · `01` F-09
-- [ ] **D-49** The seeded log says the Fn/Globe trigger and Whisper are ready before
+  Done 2026-10-25 — the generator docstring and the shortcuts comment name the three intents; `clean --mode fix` and `sameWords` stay, both used by checks · code.
+- [x] **D-49** The seeded log says the Fn/Globe trigger and Whisper are ready before
   anything is checked. **Fix:** one neutral line. `VoiceStationWindowView.swift:311` ·
   `01` F-11
-- [ ] **D-50** An executed voice action still replaces the clipboard with the spoken
+  Done 2026-10-25 — one neutral seed line · build.
+- [x] **D-50** An executed voice action still replaces the clipboard with the spoken
   command. **Fix:** copy only when no action ran. `VoiceFlowController.swift:279` · `01`
   F-12
-- [ ] **D-51** Editing a correction's heard side forgets the old pair before learning
+  Done 2026-10-25 — a command that will run is not copied; one that fails to run is copied before it is pasted · build.
+- [x] **D-51** Editing a correction's heard side forgets the old pair before learning
   the new; a failed learn loses it. **Fix:** learn first, then forget.
   `AppDelegate.swift` `onLearnCorrection` · `01` F-13
-- [ ] **D-52** A silent recording is reported as "the engine failed with status 1".
+  Done 2026-10-25 — the new pair is learned before the old one is forgotten · build.
+- [x] **D-52** A silent recording is reported as "the engine failed with status 1".
   **Fix:** report it as a refusal, like a touch that was too short. `AppDelegate.swift`
   `.failed` · 2026-10-01
-- [ ] **D-149** A caught `HTTPError` is never closed, which is the suite's three
+  Done 2026-10-25 — a take with no audible speech is a refusal ("nothing heard"), not an engine failure · build.
+- [x] **D-149** A caught `HTTPError` is never closed, which is the suite's three
   `ResourceWarning`s. **Fix:** `exc.close()` in the handlers, `addCleanup(error.close)`
   in the tests. `cleaners/gemini.py:421`, `distill.py:262`, `tests/test_gemini.py:104` ·
   `03-engine` E-04 · executed
-- [ ] **D-150** The Apple cleaner parses all of stdout as JSON, so one stray library line
+  Done 2026-10-25 — the caught `HTTPError` is closed; the suite prints no `ResourceWarning` · suite run.
+- [x] **D-150** The Apple cleaner parses all of stdout as JSON, so one stray library line
   breaks every Apple cleanup. **Fix:** parse the last non-empty line, as
   `parakeet.py:87` does. `cleaners/apple.py:114` · `03-engine` E-06 · reported
-- [ ] **D-151** Modelfile text ending in `"` merges with the closing `"""` and
+  Done 2026-10-25 — the last non-empty stdout line is parsed · `StrayOutputTests`.
+- [x] **D-151** Modelfile text ending in `"` merges with the closing `"""` and
   `distill create` fails. **Fix:** append a space. `distill.py:158` · `03-engine` E-07 ·
   reported
-- [ ] **D-152** D-70 also hits a chain of one model: its timeout names no model.
+  Done 2026-10-25 — a trailing quote gets a space · `ModelfileQuoteTests`.
+- [x] **D-152** D-70 also hits a chain of one model: its timeout names no model.
   **Fix:** the D-70 fix and a chain-of-one test. `cleaners/gemini.py:452` · `03-engine`
   E-08 · reported
-- [ ] **D-153** The filler pass capitalises every sentence start, so `iPhone` becomes
+  Done 2026-10-25 with D-70 — the test runs on the one-model chain.
+- [x] **D-153** The filler pass capitalises every sentence start, so `iPhone` becomes
   `IPhone`. **Fix:** the D-92 fix covers it. `cleaners/fillers.py:48` · `03-engine` E-05 ·
   reported
-- [ ] **D-154** `quarantine_file` reports "moved to" its own name when the move failed.
+  Done 2026-10-25 with D-92.
+- [x] **D-154** `quarantine_file` reports "moved to" its own name when the move failed.
   **Fix:** say the file was left in place. `memory.py:70` · `03-cli` C-06 · reported
-- [ ] **D-155** A vocabulary term containing `\x0b` or `\r` is stored as two terms.
+  Done 2026-10-25 — a failed move says the file was left in place · `QuarantineMessageTests`.
+- [x] **D-155** A vocabulary term containing `\x0b` or `\r` is stored as two terms.
   **Fix:** refuse a term that is not one line. `memory.py:155` · `03-cli` C-07 · reported
-- [ ] **D-156** `gemini` followed by a newline passes the provider check. **Fix:**
+  Done 2026-10-25 — a term must be one line by `splitlines` · `VocabularyTermShapeTests`.
+- [x] **D-156** `gemini` followed by a newline passes the provider check. **Fix:**
   `fullmatch`. `credentials.py:25` · `03-cli` C-08 · reported
-- [ ] **D-157** A locked keychain or a timeout reads as "no key stored" in the engine,
+  Done 2026-10-25 — `fullmatch` · `ProviderNameTests`.
+- [x] **D-157** A locked keychain or a timeout reads as "no key stored" in the engine,
   the Python twin of D-84. **Fix:** return the status and print "keychain unavailable".
   `credentials.py:59`, `:157` · `03-cli` C-09 · reported
-- [ ] **D-158** `pbcopy` has no timeout, and `PermissionError` escapes as a traceback.
+  Done 2026-10-25 — `describe` tells configured, absent (status 44) and keychain unavailable apart · `KeychainStatusTests`.
+- [x] **D-158** `pbcopy` has no timeout, and `PermissionError` escapes as a traceback.
   **Fix:** `timeout=10`, catch `OSError` and `TimeoutExpired`. `clipboard.py:25` ·
   `03-cli` C-10 · reported
-- [ ] **D-159** Several `{uuid}` in one snippet all get the same value, while README
+  Done 2026-10-25 — `timeout=10`, `OSError` and `TimeoutExpired` reported · `ClipboardFailureTests`.
+- [x] **D-159** Several `{uuid}` in one snippet all get the same value, while README
   promises a fresh one per occurrence. **Fix:** replace one occurrence at a time.
   `snippets.py:90` · `03-cli` C-12 · reported
-- [ ] **D-160** `snippet import` hides skipped and replaced entries and ignores
+  Done 2026-10-25 — each `{uuid}` gets its own value · `SnippetEdgeTests`.
+- [x] **D-160** `snippet import` hides skipped and replaced entries and ignores
   `schema_version`. **Fix:** report added, replaced and skipped; refuse an unknown
   version. `snippets.py:223` · `03-cli` C-13 · reported
-- [ ] **D-161** A trigger typed with a double space or a tab is saved and never fires.
+  Done 2026-10-25 — import reports added, replaced and skipped, and refuses an unknown `schema_version` · `SnippetEdgeTests`.
+- [x] **D-161** A trigger typed with a double space or a tab is saved and never fires.
   **Fix:** normalise whitespace in `add`, join pattern words with `\s+`.
   `memory.py:301`, `snippets.py:121` · `03-cli` C-14 · reported
-- [ ] **D-162** `vf practice` prints a traceback on a full disk or a permission error.
+  Done 2026-10-25 — snippet and correction triggers are whitespace-normalised on add and matched with `\s+` · `SnippetEdgeTests`, `CorrectionWhitespaceTests`.
+- [x] **D-162** `vf practice` prints a traceback on a full disk or a permission error.
   **Fix:** move `sweep_orphans` and `next_audio_path` inside the `try`, catch `OSError`.
   `cli.py:489` · `03-cli` C-15 · reported
-- [ ] **D-163** `--text` together with `--text-file` silently prefers the file.
+  Done 2026-10-25 — the sweep and the next path run inside a `try` that reports `OSError` · code.
+- [x] **D-163** `--text` together with `--text-file` silently prefers the file.
   **Fix:** refuse both. `cli.py:474` · `03-cli` C-16 · reported
-- [ ] **D-164** The build signs with the first Apple Development certificate, even an
+  Done 2026-10-25 — `--text` with `--text-file` is refused · `SmallCliTests`.
+- [x] **D-164** The build signs with the first Apple Development certificate, even an
   expired one. **Fix:** pick a valid one (`openssl x509 -checkend 0`).
   `scripts/build-macos-app.sh:37` · `03-cli` C-17 · reported
-- [ ] **D-165** A transient read error (EACCES, EIO) quarantines an intact snippet file.
+  Done 2026-10-25 — the build signs with the first certificate that passes `openssl x509 -checkend 0` · `zsh -n` and the lookup run on this Mac.
+- [x] **D-165** A transient read error (EACCES, EIO) quarantines an intact snippet file.
   **Fix:** quarantine only on a decode failure. `VoiceSnippet.swift:198` · `03-core` S-06
   · reported
-- [ ] **D-166** A comment says the checks compare `fallbackOrder` with `MODEL_CHAIN`;
+  Done 2026-10-25 — a read error leaves the snippet file in place; only a decode failure moves it · build and checks.
+- [x] **D-166** A comment says the checks compare `fallbackOrder` with `MODEL_CHAIN`;
   they do not. **Fix:** read `MODEL_CHAIN` from `gemini.py`, as `REWRITING_MODES` is read.
   `Configuration.swift:170`, `VoiceFlowMacCoreChecks/main.swift:445` · `03-core` S-07 ·
   reported
-- [ ] **D-167** A term or pair starting with `-` is read by argparse as an option and the
+  Done 2026-10-25 — the checks read `MODEL_CHAIN` from `gemini.py` · check.
+- [x] **D-167** A term or pair starting with `-` is read by argparse as an option and the
   Words action fails. **Fix:** emit `--term=<value>` and `--heard=<value>`.
   `Words.swift:17`, `EngineInvocation.swift:103` · `03-core` S-08 · reported
-- [ ] **D-168** The engine starts through `/usr/bin/env python3` with no version check;
+  Done 2026-10-25 — Words passes `--heard=`, `--intended=`, `--term=` and `--app-name=` · check, and argparse reads a leading dash.
+- [x] **D-168** The engine starts through `/usr/bin/env python3` with no version check;
   without Homebrew it gets 3.9 and every dictation fails with a generic error.
   **Fix:** check for 3.11 or newer at launch and show the first stderr line.
   `EngineInvocation.swift:62` · `03-core` S-10 · reported
-- [ ] **D-169** The 2.5 s status-icon task is never cancelled and can erase a newer `!`
+  Done 2026-10-25 — checkPythonRuntime() asynchronously verifies python3 version >= 3.11 at launch and logs clear diagnostic warning to console · build.
+- [x] **D-169** The 2.5 s status-icon task is never cancelled and can erase a newer `!`
   marker. **Fix:** keep the `Task` and cancel it in `updateStatus`.
   `AppDelegate.swift:1113` · `03-app` A-03 · reported
-- [ ] **D-170** `Keychain.hasKey` fetches the secret itself on the main thread, so a lock
+  Done 2026-10-25 — the icon task is kept and cancelled by the next status · build.
+- [x] **D-170** `Keychain.hasKey` fetches the secret itself on the main thread, so a lock
   or an access prompt blocks the window. **Fix:** query attributes only. Related to D-84.
   `Keychain.swift:35`, `AppDelegate.swift:328` · `03-app` A-05 · reported
-- [ ] **D-171** History, HUD and telemetry read the live `selectedCleaner`; a click during
+  Done 2026-10-25 — presence is asked with attributes only · build.
+- [x] **D-171** History, HUD and telemetry read the live `selectedCleaner`; a click during
   the 0.5 s arming hold mislabels the run. **Fix:** carry the run's `recordingCleaner` in
   `.copied`. `AppDelegate.swift:1072`, `:1158` · `03-app` A-06 · reported
-- [ ] **D-172** If `001.wav` already exists, every acceptance-log append throws.
+  Done 2026-10-25 — `.copied` carries the run's cleaner for History and telemetry · build.
+- [x] **D-172** If `001.wav` already exists, every acceptance-log append throws.
   **Fix:** start above the highest existing file (`AGENTS.md`). `AcceptanceLogger.swift:104`
   · `03-app` A-07 · reported
-- [ ] **D-173** `showProcessing`, `showCompleted` and `showActionExecuted` assume the HUD
+  Done 2026-10-25 — the take is named above the highest file already in the folder · build.
+- [x] **D-173** `showProcessing`, `showCompleted` and `showActionExecuted` assume the HUD
   is visible; latent. **Fix:** call `showAtFullOpacity()` when it is hidden.
   `FloatingHUDController.swift:86` · `03-app` A-08 · reported
-- [ ] **D-174** A NaN audio level traps in `Int(audioLevel * 12)`. **Fix:**
+  Done 2026-10-25 — processing, completed and action states show the capsule if it was hidden · build.
+- [x] **D-174** A NaN audio level traps in `Int(audioLevel * 12)`. **Fix:**
   `guard avgPower.isFinite`. `AudioRecorder.swift:96`, `RetroMicHUDView.swift:511` ·
   `03-ui` U-14 · reported
-- [ ] **D-175** The HUD ignores `usedFallback`, so a raw fallback looks like a clean
+  Done 2026-10-25 — a non-finite level reads as 0 in the recorder and the HUD · build.
+- [x] **D-175** The HUD ignores `usedFallback`, so a raw fallback looks like a clean
   success. **Fix:** a label of its own. `RetroMicHUDView.swift:296` · `03-ui` U-15 ·
   reported
+  Done 2026-10-25 — a fallback shows PLAIN beside PASTED or COPIED · build.
 - [ ] **D-176** VoiceOver's press on the hold control gives a zero-length recording
   (D-74 family). **Fix:** a toggle action for accessibility.
   `VoiceStationWindowView.swift:1375` · `03-ui` U-16 · reported
-- [ ] **D-177** A `DateFormatter` is created for every log line. **Fix:** one static
+- [x] **D-177** A `DateFormatter` is created for every log line. **Fix:** one static
   formatter for the log and History. `VoiceStationWindowView.swift:114` · `03-ui` U-17 ·
   reported
-- [ ] **D-178** Snippet DELETE has no label, a 16pt target and no confirmation.
+  Done 2026-10-25 — one static formatter for the log and for History · build and checks.
+- [x] **D-178** Snippet DELETE has no label, a 16pt target and no confirmation.
   **Fix:** a label, a larger target and a confirm step.
   `VoiceStationWindowView.swift:2319` · `03-ui` U-19 · reported
-- [ ] **D-179** The TELEMETRY beacon pulses in `danger` red at all times and reads as a
+  Done 2026-10-25 — confirmation dialog, 24x24pt touch target and VoiceOver accessibility label added.
+- [x] **D-179** The TELEMETRY beacon pulses in `danger` red at all times and reads as a
   fault. **Fix:** a neutral colour. `VoiceStationWindowView.swift:2530` · `03-ui` U-20 ·
   reported
-- [ ] **D-180** The History header pills wrap at the 884 floor. **Fix:** `lineLimit(1)`.
+  Done 2026-10-25 — the beacon pulses in dot blue · build.
+- [x] **D-180** The History header pills wrap at the 884 floor. **Fix:** `lineLimit(1)`.
   `VoiceStationWindowView.swift:2140` · `03-ui` U-21 · reported
-- [ ] **D-181** The vocabulary list uses `\.offset` identity. **Fix:** identify rows by
+  Done 2026-10-25 — applied lineLimit(1) and minimumScaleFactor(0.85) to pill helper in VoiceStationWindowView · build.
+- [x] **D-181** The vocabulary list uses `\.offset` identity. **Fix:** identify rows by
   the term. `FocusHomeView.swift:590` · `03-ui` U-23 · reported
+  Done 2026-10-25 — vocabulary rows are identified by the term · build.
 - [ ] **D-182** `switch page` unmounts each page and loses its state: the snippet form,
   the ORIGINAL toggles. `FocusHomeView.swift:53` · `03-ui` U-24 · reported
-- [ ] **D-183** One mode carries three names — DICTATE, CLEAN, and ES → EN beside
+- [x] **D-183** One mode carries three names — DICTATE, CLEAN, and ES → EN beside
   ES ➔ EN — and a refusal says "switch back to CLEAN". **Fix:** one mode-name table read
   by Words, the station and the HUD. `FocusHomeView.swift:525`, `:1153`,
   `VoiceStationWindowView.swift:1179` · `03-ui` U-25 · reported
-- [ ] **D-184** The preview delegate wires no Words callbacks ("Reading your
+  Done 2026-10-25 — ProcessingMode.shortTitle unifies CLEAN, ES ➔ EN, NOTES, ACTIONS consumed across FocusHomeView and VoiceStationWindowView · build.
+- [x] **D-184** The preview delegate wires no Words callbacks ("Reading your
   corrections…" forever) and calls the deprecated `activate(ignoringOtherApps:)`.
   `FocusHomePreviewDelegate.swift:13` · `03-ui` U-26 · reported
-- [ ] **D-185** With no certificate, `set -euo pipefail` ends the build silently at the
+  Done 2026-10-25 — initialized sample WordsSnapshot, wired onRefreshWords, onLearnCorrection, onForgetCorrection, onAddWord, onRemoveWord, verified preview build · build.
+- [x] **D-185** With no certificate, `set -euo pipefail` ends the build silently at the
   `team=$(…)` line and the message meant for that case never prints. **Fix:**
   `team=$(…) || true`. `scripts/build-macos-app.sh:37` · `03-pipelines` P-05 · reported
+  Done 2026-10-25 — the lookup ends in `|| true`, so the no-certificate message prints · `zsh -n`.
 - [x] **D-186** `pyproject.toml` declares 0.1.0 against the app's 0.10.0. **Fix:** move
   it with `Info.plist`, or state that it is independent. `pyproject.toml:7` ·
   `03-pipelines` P-06 · code
@@ -843,18 +1038,20 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   passes. I-80 would keep them moving together.
 - [x] **D-187** The §F sizes were stale. `backlog.md` §F · `03-pipelines` P-07
   Done 2026-10-23 — re-measured; each of the four `dist/` bundles is 29 MB · `du -sh`.
-- [ ] **D-188** A clean `swift build` prints two warnings in `AppDelegate.swift`: a
+- [x] **D-188** A clean `swift build` prints two warnings in `AppDelegate.swift`: a
   `weak self` capture that differs from the implicit strong one in its outer scope, and
   the non-`Sendable` `EngineRunner` captured in a `@Sendable` closure. The 2026-10-23
   baseline said "zero warnings" because that build was incremental. **Fix:** capture
   `self` one way through the nested closures, and hand the closure a `Sendable` value or
   run it on the main actor. `AppDelegate.swift:639`, `:649` · 2026-10-23 · executed (a
   clean export of `db61765` prints both)
-- [ ] **D-189** The Apple cleaner helper writes its answer with the legacy
+  Done 2026-10-25 — `self` captured once, weakly; `EngineRunner` declared `@unchecked Sendable` (immutable state); `swift build` prints no warnings · build.
+- [x] **D-189** The Apple cleaner helper writes its answer with the legacy
   `FileHandle.write(_:)`, the D-69 class: if the engine has exited before reading, the
   helper ends on an uncatchable exception. Only the helper dies, after its parent is
   gone, so no dictation is lost today. **Fix:** `try? write(contentsOf:)`.
   `VoiceFlowAppleCleaner/AppleCleaner.swift:67` · 2026-10-23 · code
+  Done 2026-10-25 — `try? write(contentsOf:)` · build.
 - [ ] **D-190** Two of the three Gemini models are deprecated. Google's deprecations
   page, opened 2026-10-24: `gemini-3.5-flash` (the default) is replaced by
   `gemini-3.6-flash`, and `gemini-3.7-flash` by `gemini-3.8-flash`, with requests routed
@@ -863,6 +1060,59 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   (engine, window, checks). **Open:** measure it once with `scripts/cleaner_gate.py`
   and date the figure; with no second model, a 503 that survives the retry delivers the
   plain transcript. `cleaners/gemini.py:54`, `Configuration.swift:161` · code
+
+- [x] **D-196 · Cascading snippet expansion in `translate` mode violates non-cascading rule.**
+  `expand_snippets` runs on `personalized_text` prior to cleaner translation, and
+  unconditionally runs again on `cleaned`, violating framework R5b single-pass invariant.
+  **Fix:** skip secondary snippet expansion on `cleaned` when `mode == "translate"`.
+  `pipeline.py:70,111` · `04-python` · code
+  Done 2026-10-25 — secondary snippet expansion skipped when mode is translate, preserving single expansion pass.
+
+- [x] **D-197 · `remove_vocabulary_term` uncaught `UnicodeDecodeError` on corrupted file.**
+  `remove_vocabulary_term` executes `path.read_text()` directly without exception
+  handling, crashing if the vocabulary store is damaged.
+  **Fix:** catch `(UnicodeDecodeError, OSError)` and call `quarantine_file`.
+  `memory.py:262` · `04-python` · code
+  Done 2026-10-25 — `remove_vocabulary_term` and `add_vocabulary_term` catch `(UnicodeDecodeError, OSError)` and quarantine unreadable files.
+
+- [x] **D-198 · Zero-byte Whisper model file bypasses readability check.**
+  `handle.read(1)` succeeds on an empty 0-byte file without error, failing downstream in
+  `whisper-cli` with a generic subprocess failure rather than `DependencyUnavailable`.
+  **Fix:** check `if len(handle.read(1)) == 0: raise DependencyUnavailable(...)`.
+  `transcribers/whisper_cpp.py:164` · `04-python` · code
+  Done 2026-10-25 — empty 0-byte Whisper model file raises `DependencyUnavailable`, verified in unit tests.
+
+- [x] **D-199 · Fragile `lines[-1]` JSON extraction in Parakeet and Apple cleaners.**
+  Selecting `lines[-1]` breaks if Metal or CoreML runtimes output trailing teardown logs.
+  **Fix:** search backwards with `reversed(lines)` for the first parseable JSON line.
+  `transcribers/parakeet.py:88`, `cleaners/apple.py:117` · `04-python` · code
+  Done 2026-10-25 — JSON extraction traverses `reversed(lines)` until first valid JSON payload is parsed.
+
+- [x] **D-200 · `vf process` omits default `--whisper-model` fallback.**
+  `doctor` and `practice` default to `DEFAULT_WHISPER_MODEL`, but `process` requires an
+  explicit argument.
+  **Fix:** supply `default=DEFAULT_WHISPER_MODEL` in parser. `cli.py:134` · `04-python` · code
+  Done 2026-10-25 — `vf process` defaults `--whisper-model` to `DEFAULT_WHISPER_MODEL`.
+
+- [x] **D-201 · Dead parameter `hard_deadline` in internal `_send`.**
+  Unused parameter in internal Gemini cleaner method signature.
+  **Fix:** remove parameter from signature and call sites. `cleaners/gemini.py:365` · `04-python` · code
+  Done 2026-10-25 — dead `hard_deadline` removed from signature and call sites.
+
+- [x] **D-202 · Deprecated Gemini models in test fixtures and missing tests.**
+  `test_cli.py`, `test_distill.py`, `test_parakeet.py`, `test_replay.py` hardcode
+  `gemini-3.5-flash` or `gemini-3.7-flash`. Missing test cases for `¿`/`¡` with fillers
+  and case variations in URLs/emails.
+  **Fix:** reference `DEFAULT_GEMINI_MODEL` (`gemini-3.8-flash`) and add targeted tests.
+  `tests/` · `04-python` · code
+  Done 2026-10-25 — test fixtures reference `DEFAULT_GEMINI_MODEL` (`gemini-3.8-flash`), comprehensive tests added for `¿`/`¡` and URL casefolding.
+
+- [x] **D-207 · `AppleCleaner.swift` missing trailing newline and outdated platform annotation.**
+  `AppleCleaner.swift` writes JSON bytes to stdout without `\n`; `VoiceFlowIntents.swift`
+  marks types with `@available(macOS 13.0, *)` despite 14.0+ baseline.
+  **Fix:** append `\n` to emission and bump annotations to macOS 14.0+.
+  `AppleCleaner.swift:67`, `VoiceFlowIntents.swift:21` · `04-swift` · code
+  Done 2026-10-25 — added trailing 0x0A to AppleCleaner JSON stdout emission; updated VoiceFlowIntents availability annotations to macOS 14.0+ · build.
 
 ### Known limitations — deliberate, with a cost
 
@@ -874,8 +1124,39 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
 
 Each one names why it would make the app better. Ordered by what changes daily use.
 
+- [x] **I-82 · Build the Microduck HUD.** Picked by the owner 2026-10-25. Why: the
+  capsule shrinks from `330 × 88` to `120 × 30`, an accidental key press shows only a
+  `36 × 16` capsule, and the duck answers the voice live. **Spec:** `design-system.md`
+  "Floating HUD — Microduck redesign"; the previews `docs/hud-redesign-02-bubble.html`
+  and `docs/microduck-mascot-01.html` §2–3 hold the exact shapes, angles and timings.
+  **Where:** `RetroMicHUDView.swift` (capsule and a new duck view), `HUDLayout.swift`,
+  `FloatingHUDController.swift` (panel size and placement; show the duck only after a
+  voice), `VoiceStationTokens` (`duckOrange`, `duckOrangeDeep`), and
+  `VoiceFlowMacCoreChecks`: the panel-fits-content and the 12-character badge budget
+  must be recomputed for the new sizes, not deleted.
+  Done 2026-10-25 — Vector Microduck mascot rig (`MicroduckView.swift`) reacting live to voice volume and audio decibels, 3-size bubble capsule (`36 × 16`, `120 × 22`, `120 × 30`), anchored to bottom-left screen corner (`screenRect.minX + 24`, `screenRect.minY + 24`), checks passing, built and installed in daily app · 2026-10-25.
+- [x] **I-83 · Add Gemini Argon (`gemini-4-argon`) cleaner model.** Requested by the owner
+  2026-10-25. Why: Google's latest model generation includes `gemini-4-argon`, offering
+  higher reasoning depth for dictation cleanup alongside `gemini-3.8-flash`.
+  **Where:** `src/sanbluedot_voiceflow/cleaners/gemini.py` (model registry and validation),
+  `macos/Sources/VoiceFlowMacCore/Configuration.swift` (`GeminiModel` enum: add `.argon4`,
+  short name `Argon`, fallback chain), `VoiceStationWindowView.swift` (console chip picker),
+  `scripts/cleaner_gate.py` and `VoiceFlowMacCoreChecks`.
+  Done 2026-10-25 — added `gemini-4-argon` to engine `MODEL_CHAIN` and Swift `GeminiModel`, with console pickers and checks verified.
+- [x] **I-84 · Unified low-noise "System Health & Status" diagnostic check in Settings.**
+  Requested by the owner 2026-10-25. Why: Multiple software layers (NVIDIA Parakeet CoreML,
+  Whisper cpp binary/models, Apple Intelligence helper, Gemini API connectivity and macOS
+  permissions) are connected without a single, low-noise diagnostic check to alert the
+  user if a dependency is missing, corrupted, or deprecated.
+  **Spec:** strictly user-triggered on-demand button in Settings/Diagnostics (never
+  background polling or automatic telemetry, preserving R7 privacy). Runs a quiet probe:
+  1) Parakeet CoreML and Whisper models verified, 2) Apple Intelligence helper responsive,
+  3) Gemini API ping & model deprecation verification, 4) macOS Microphone/Accessibility/
+  Input Monitoring status. Displays a clean, quiet status badge for each layer.
+  **Where:** `vf doctor` CLI and Settings diagnostic panel in `FocusHomeView.swift`.
+  Done 2026-10-25 — `vf doctor --json` implemented, Keychain Gemini API key check added, and on-demand "System Health & Status" diagnostic panel wired in Settings.
 - [ ] **I-18 · Lift the dictation state machine into `VoiceFlowMacCore`.** Why: press,
-  release, Escape and busy orderings (D-66, D-23) become checkable without opening the
+  release and Escape orderings (D-23) become checkable without opening the
   app; about 6,000 lines of the app layer are reachable by no check today.
 - [ ] **I-19 · One engine launcher for App Intents.** Why: reusing `EngineRunner` closes
   D-06 and D-69 with one piece of code instead of two copies.
@@ -923,7 +1204,7 @@ Each one names why it would make the app better. Ordered by what changes daily u
 - [ ] **I-03 · Vocabulary learned from confirmed corrections.** Why: no `vf correct` by
   hand. **Blocked** on D-02.
 - [ ] **I-04 · Rewrite highlighted text in place.** **Blocked** on the Writing Tools
-  measurement in `phase-5-proposal.md` §11b.
+  measurement in `docs/proposals/phase-5-proposal.md` §11b.
 - [ ] **I-06 · Transcribe an audio file from the window.** Why: `vf process` already does
   it; only the button is missing.
 - [ ] **I-08 · Meeting capture from system audio.** Why: competitors have it; large.
@@ -1119,7 +1400,9 @@ Models measured 2026-10-01; `dist/` bundles and build caches 2026-10-23.
 | ~~`dist/… BACKUP 2026-10-02 urgent-fixes.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-23 by owner decision |
 | ~~`dist/… BACKUP 2026-10-01 parakeet.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-23 by owner decision |
 | ~~`dist/… BACKUP 2026-10-01 before-ollama-removal.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-23 by owner decision |
-| `dist/… BACKUP 2026-10-02.app` | 29 MB | Rollback for the 2026-10-24 rebuild | Keep until the owner accepts the new build |
+| ~~`dist/… BACKUP 2026-10-02.app`~~ | 29 MB | Nothing | Moved to the Trash 2026-10-25 by owner decision |
+| `dist/… BACKUP 2026-10-25 (activa 10am).app` | 29 MB | Rollback for 2026-10-25 rebuild | Active backup |
+| `dist/… VoiceFlow.app.previous` | ~29 MB | The build before the last install, kept by the build script (D-63) | Replaced at each install |
 | `macos/ParakeetHelper/.build/` | 1.4 GB | Rebuilding the Parakeet helper | Keep |
 | `macos/.build/` | 1.0 GB | `swift build` and the checks; regenerated when deleted | Keep |
 

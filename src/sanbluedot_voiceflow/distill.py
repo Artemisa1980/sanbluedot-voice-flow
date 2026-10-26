@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -13,7 +14,7 @@ from .cleaners.prompt import (
     TRANSLATE_EN_SYSTEM_PROMPT,
 )
 from .errors import VoiceFlowError
-from .memory import DEFAULT_DIRECTORY, exclusive_file_lock
+from .memory import DEFAULT_DIRECTORY, exclusive_file_lock, preserve_skipped
 
 DEFAULT_DISTILL_STORE = DEFAULT_DIRECTORY / "distill_pairs.local.jsonl"
 DEFAULT_BASE_MODEL = "qwen2.5:3b"
@@ -83,6 +84,8 @@ class DistillationStore:
         with exclusive_file_lock(self.path):
             with self.path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(pair.to_dict(), ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
         return pair
 
     def load_all(self, mode: str | None = None) -> list[DistillationPair]:
@@ -100,7 +103,11 @@ class DistillationStore:
             return []
 
         pairs: list[DistillationPair] = []
-        with self.path.open("r", encoding="utf-8") as f:
+        skipped = 0
+        # One damaged byte ended `clear` and `export` in a traceback, so the store could
+        # not be deleted by the command that promises it (D-62). The bad line is
+        # replaced, fails to parse, and is skipped like any other unreadable line.
+        with self.path.open("r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -111,7 +118,8 @@ class DistillationStore:
                     if mode is None or pair.mode == mode:
                         pairs.append(pair)
                 except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-                    continue
+                    skipped += 1
+        preserve_skipped(self.path, "The distillation store", skipped)
         return pairs
 
     def count_by_mode(self) -> dict[str, int]:
@@ -129,7 +137,11 @@ class DistillationStore:
         that still records that dictation happened.
         """
         with exclusive_file_lock(self.path):
-            removed = len(self._read_pairs())
+            try:
+                removed = len(self._read_pairs())
+            except OSError:
+                # Deleting is the promise; counting is a courtesy that must not block it.
+                removed = 0
             self.path.unlink(missing_ok=True)
         return removed
 
@@ -159,6 +171,9 @@ def _sanitize_modelfile_text(text: str) -> str:
     """Escape triple quotes and normalize trailing backslashes for Modelfile message blocks."""
     sanitized = text.replace('"""', r'\"\"\"').strip()
     if sanitized.endswith('\\') and not sanitized.endswith(r'\\'):
+        sanitized += ' '
+    # A closing quote would merge with the block's own `"""` (D-151).
+    if sanitized.endswith('"'):
         sanitized += ' '
     return sanitized
 

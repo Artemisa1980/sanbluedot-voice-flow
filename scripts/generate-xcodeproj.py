@@ -7,7 +7,7 @@ Why this project exists at all. App Intents are what Siri, Spotlight and Shortcu
 and the metadata they read is produced by `appintentsmetadataprocessor`, an Xcode build
 phase. Verified twice on 2026-09-18: neither `swift build` nor `xcodebuild` on the package
 produces it, because a SwiftPM executable is not an app target. With this project the
-bundle carries `Contents/Resources/Metadata.appintents`, and it names `PingVoiceFlowIntent`.
+bundle carries `Contents/Resources/Metadata.appintents`, naming the three text intents.
 
 Why a generator rather than a project file edited by hand. The target lists its source
 files one by one, so a new `.swift` file under `Sources/VoiceFlowMac/` does not reach the
@@ -153,7 +153,7 @@ target_settings = f'''\t\t\t\tCODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.e
 \t\t\t\tENABLE_HARDENED_RUNTIME = YES;
 \t\t\t\tGENERATE_INFOPLIST_FILE = NO;
 \t\t\t\tINFOPLIST_FILE = "Resources/Info.plist";
-\t\t\t\tMACOSX_DEPLOYMENT_TARGET = 13.0;
+\t\t\t\tMACOSX_DEPLOYMENT_TARGET = 14.0;
 \t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "{BUNDLE_ID}";
 \t\t\t\tPRODUCT_NAME = "{APP_NAME}";
 \t\t\t\t// The bundle is named for the brand and the binary is not. `Info.plist`
@@ -338,7 +338,7 @@ pbxproj = f'''// !$*UTF8*$!
 \t\t\t\tENABLE_STRICT_OBJC_MSGSEND = YES;
 \t\t\t\tENABLE_TESTABILITY = YES;
 \t\t\t\tGCC_OPTIMIZATION_LEVEL = 0;
-\t\t\t\tMACOSX_DEPLOYMENT_TARGET = 13.0;
+\t\t\t\tMACOSX_DEPLOYMENT_TARGET = 14.0;
 \t\t\t\tONLY_ACTIVE_ARCH = YES;
 \t\t\t\tSDKROOT = macosx;
 \t\t\t\tSWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;

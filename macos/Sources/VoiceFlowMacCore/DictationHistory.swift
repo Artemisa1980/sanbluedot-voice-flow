@@ -93,16 +93,25 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
             .map(String.init)
     }
 
-    public var timeString: String {
+    // Built once, not per row (D-177).
+    private static let clock: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: timestamp)
+        return formatter
+    }()
+
+    private static let shortClock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    public var timeString: String {
+        Self.clock.string(from: timestamp)
     }
 
     public var shortTimeString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: timestamp)
+        Self.shortClock.string(from: timestamp)
     }
 
     /// Single-line compact snippet for menu display.
@@ -138,7 +147,77 @@ public struct DictationRecord: Codable, Equatable, Identifiable, Sendable {
 
 public struct DictationHistoryStore: Codable, Equatable, Sendable {
     public static let maxCapacity = 10
+    /// Where the history lived until 2026-10-25: user defaults, outside `vf export`
+    /// (D-11). Read once to move it, then removed.
     public static let defaultsKey = "dot.sanblue.voiceflow.dictationHistory"
+
+    /// Beside the other personal stores, so `vf export` carries it.
+    public static var defaultStoreURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("sanblue.voiceflow/history.local.json")
+    }
+
+    /// The history on disk, moving the user-defaults copy there the first time.
+    ///
+    /// If the file on disk cannot be decoded due to damage or corruption, it is moved
+    /// aside to `.corrupt-<timestamp>` and reported (R5) rather than silently returning
+    /// an empty store that the next edit would overwrite (D-203).
+    public static func loadReporting(
+        from fileURL: URL = defaultStoreURL,
+        defaults: UserDefaults = .standard
+    ) -> (store: DictationHistoryStore, failure: String?) {
+        VoiceSnippetStore.withFileLock(fileURL) {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                guard let data = try? Data(contentsOf: fileURL) else {
+                    return (DictationHistoryStore(), "The dictation history could not be read right now; it was left in place.")
+                }
+                guard let store = load(from: data) else {
+                    return (DictationHistoryStore(), quarantine(fileURL, reason: "the file is not valid dictation history JSON"))
+                }
+                return (store, nil)
+            }
+            guard let data = defaults.data(forKey: defaultsKey), let store = load(from: data) else {
+                return (DictationHistoryStore(), nil)
+            }
+            if let encoded = store.encode(), VoiceSnippetStore.writeFlushed(encoded, to: fileURL) {
+                defaults.removeObject(forKey: defaultsKey)
+            }
+            return (store, nil)
+        }
+    }
+
+    public static func loadFromDisk(
+        at fileURL: URL = defaultStoreURL,
+        defaults: UserDefaults = .standard
+    ) -> DictationHistoryStore {
+        loadReporting(from: fileURL, defaults: defaults).store
+    }
+
+    private static func quarantine(_ fileURL: URL, reason: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSSSSS"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let stamp = formatter.string(from: Date())
+        let destination = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("\(fileURL.lastPathComponent).corrupt-\(stamp)")
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: destination)
+            return "dictation history could not be read (\(reason)). Kept as \(destination.lastPathComponent); "
+                + "this session starts with none."
+        } catch {
+            return "dictation history could not be read (\(reason)) and could not be moved aside. "
+                + "Nothing was written over it; fix or remove \(fileURL.lastPathComponent)."
+        }
+    }
+
+    @discardableResult
+    public func save(to fileURL: URL = defaultStoreURL) -> Bool {
+        guard let data = encode() else { return false }
+        return VoiceSnippetStore.withFileLock(fileURL) {
+            VoiceSnippetStore.writeFlushed(data, to: fileURL)
+        }
+    }
 
     public private(set) var records: [DictationRecord]
 
@@ -146,16 +225,25 @@ public struct DictationHistoryStore: Codable, Equatable, Sendable {
         self.records = Array(records.prefix(Self.maxCapacity))
     }
 
+    /// One record that fails to decode is dropped alone; it used to take all ten with it
+    /// (D-85).
+    private struct Lossy: Decodable {
+        let record: DictationRecord?
+        init(from decoder: Decoder) throws {
+            record = try? DictationRecord(from: decoder)
+        }
+    }
+
     public init(from decoder: Decoder) throws {
         // Support both single array representation and keyed container
         if let container = try? decoder.singleValueContainer(),
-           let items = try? container.decode([DictationRecord].self) {
-            self.records = Array(items.prefix(Self.maxCapacity))
+           let items = try? container.decode([Lossy].self) {
+            self.records = Array(items.compactMap(\.record).prefix(Self.maxCapacity))
             return
         }
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let items = try container.decode([DictationRecord].self, forKey: .records)
-        self.records = Array(items.prefix(Self.maxCapacity))
+        let items = try container.decode([Lossy].self, forKey: .records)
+        self.records = Array(items.compactMap(\.record).prefix(Self.maxCapacity))
     }
 
     public func encode(to encoder: Encoder) throws {

@@ -16,6 +16,7 @@ from typing import Any
 
 from .errors import VoiceFlowError
 from .memory import (
+    preserve_skipped,
     DEFAULT_DIRECTORY,
     exclusive_file_lock,
     quarantine_file,
@@ -88,7 +89,9 @@ def evaluate_macro_expansion(
     if "{day}" in resolved:
         resolved = resolved.replace("{day}", current.strftime("%d"))
     if "{uuid}" in resolved:
-        resolved = resolved.replace("{uuid}", str(uuid.uuid4()))
+        # One fresh value per occurrence, as README promises; `replace` gave every
+        # `{uuid}` the same one (D-159).
+        resolved = re.sub(r"\{uuid\}", lambda _: str(uuid.uuid4()), resolved)
     if app_name is not None and "{app}" in resolved:
         resolved = resolved.replace("{app}", app_name)
     return resolved
@@ -116,10 +119,15 @@ def expand_snippets(
 
     # Sort longest triggers first so specific multi-word phrases match before substrings
     ordered = sorted(usable, key=lambda s: len(s.trigger.strip()), reverse=True)
-    by_key = {s.trigger.strip().casefold(): s.expansion for s in ordered}
+    by_key = {" ".join(s.trigger.split()).casefold(): s.expansion for s in ordered}
 
+    # Words joined by any whitespace, so a trigger spoken or stored with a double space
+    # or a tab still fires (D-161).
     pattern = re.compile(
-        "|".join(rf"(?<!\w){re.escape(s.trigger.strip())}(?!\w)" for s in ordered),
+        "|".join(
+            r"(?<!\w)" + r"\s+".join(re.escape(word) for word in s.trigger.split()) + r"(?!\w)"
+            for s in ordered
+        ),
         re.IGNORECASE | re.UNICODE,
     )
 
@@ -159,15 +167,17 @@ class SnippetStore:
             return []
 
         snippets: list[Snippet] = []
+        skipped = 0
         for item in raw_items:
             try:
                 snippets.append(Snippet.from_dict(item))
             except (ValueError, TypeError, KeyError):
-                continue
+                skipped += 1
+        preserve_skipped(self.path, "The snippet store", skipped)
         return snippets
 
     def add(self, trigger: str, expansion: str, description: str | None = None) -> Snippet:
-        trig = trigger.strip()
+        trig = " ".join(trigger.split())
         exp = expansion.strip()
         if not trig or not exp:
             raise VoiceFlowError("Snippet trigger and expansion cannot be empty.")
@@ -220,7 +230,7 @@ class SnippetStore:
         write_json_atomically(dest, payload)
         return len(snippets)
 
-    def import_json(self, src: Path) -> int:
+    def import_json(self, src: Path) -> "ImportReport":
         if not src.is_file():
             raise VoiceFlowError(f"Snippet import file not found: {src}")
 
@@ -231,23 +241,45 @@ class SnippetStore:
             raw_items = payload.get("snippets")
             if not isinstance(raw_items, list):
                 raise ValueError("Payload missing snippets list.")
+            # An unknown version is refused rather than read as this one (D-160).
+            version = payload.get("schema_version", SCHEMA_VERSION)
+            if type(version) is not int or version != SCHEMA_VERSION:
+                raise ValueError(f"unsupported schema version: {version!r}")
         except Exception as exc:
             raise VoiceFlowError(f"Failed to read snippet import file: {exc}") from exc
 
+        added = replaced = skipped = 0
         with exclusive_file_lock(self.path):
             existing_map = {s.trigger.strip().casefold(): s for s in self.load()}
-            count = 0
             for item in raw_items:
                 try:
                     snip = Snippet.from_dict(item)
-                    existing_map[snip.trigger.strip().casefold()] = snip
-                    count += 1
                 except Exception:
+                    skipped += 1
                     continue
+                key = " ".join(snip.trigger.split()).casefold()
+                if key in existing_map:
+                    replaced += 1
+                else:
+                    added += 1
+                existing_map[key] = snip
 
             payload_to_write = {
                 "schema_version": SCHEMA_VERSION,
                 "snippets": [s.to_dict() for s in existing_map.values()],
             }
             write_json_atomically(self.path, payload_to_write)
-        return count
+        return ImportReport(added=added, replaced=replaced, skipped=skipped)
+
+
+@dataclass(frozen=True)
+class ImportReport:
+    """What an import did, entry by entry: it used to report one count (D-160)."""
+
+    added: int
+    replaced: int
+    skipped: int
+
+    @property
+    def imported(self) -> int:
+        return self.added + self.replaced

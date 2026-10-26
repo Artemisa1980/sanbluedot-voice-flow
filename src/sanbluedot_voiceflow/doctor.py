@@ -177,6 +177,7 @@ def run_checks(
     whisper_model: Path | None,
     ollama_url: str = "http://127.0.0.1:11434",
     ollama_model: str | None = None,
+    mac_helpers: bool = False,
 ) -> list[Check]:
     """Check what a dictation needs. Ollama is checked only when a model is named.
 
@@ -201,6 +202,39 @@ def run_checks(
     )
 
     checks.append(inspect_whisper_model(whisper_model))
+
+    # The Mac's other engines: `doctor` checked Whisper only, so a missing Apple or
+    # Parakeet helper surfaced as a failed dictation (D-44).
+    if mac_helpers:
+        from .cleaners.apple import DEFAULT_BINARY as APPLE_BINARY
+        from .transcribers.parakeet import DEFAULT_BINARY as PARAKEET_BINARY
+        from .transcribers.parakeet import DEFAULT_MODEL_DIR as PARAKEET_MODELS
+
+        for name, binary in (("Apple cleanup helper", APPLE_BINARY),
+                             ("Parakeet helper", PARAKEET_BINARY),
+                             ("pbcopy", "pbcopy")):
+            found = resolve_binary(binary)
+            detail = str(found) if found else (
+                f"not on PATH: {binary} (the app carries its own copy; this shell does not)"
+            )
+            checks.append(Check(name, found is not None, detail))
+        checks.append(
+            Check(
+                "Parakeet model",
+                PARAKEET_MODELS.is_dir() and any(PARAKEET_MODELS.iterdir()),
+                str(PARAKEET_MODELS.resolve()),
+            )
+        )
+        from .credentials import read_api_key
+
+        has_gemini = read_api_key("gemini") is not None
+        checks.append(
+            Check(
+                "Gemini API key",
+                has_gemini,
+                "configured in keychain or environment" if has_gemini else "no key configured",
+            )
+        )
 
     if ollama_model is not None:
         status = ollama_status(ollama_url, ollama_model)

@@ -21,7 +21,8 @@ public enum PasteTarget {
         "dev.warp.Warp-Stable",
         "co.zeit.hyper",
         "net.kovidgoyal.kitty",
-        "io.alacritty",
+        // Alacritty's own Info.plist names it `org.alacritty` (D-137).
+        "org.alacritty",
         "com.github.wez.wezterm",
         "com.mitchellh.ghostty",
     ]
@@ -30,6 +31,18 @@ public enum PasteTarget {
     public static func isTerminal(bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return false }
         return terminalBundleIdentifiers.contains(bundleIdentifier)
+    }
+
+    /// The text a terminal receives: one line, trimmed, and no control characters, which
+    /// a shell can act on (D-81). Line breaks become spaces first.
+    public static func terminalSafe(_ text: String) -> String {
+        let singleLine = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let printable = singleLine.unicodeScalars.filter { $0.properties.generalCategory != .control }
+        return String(String.UnicodeScalarView(printable)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Whether the focused application must receive clipboard delivery only.

@@ -1,21 +1,16 @@
 import SwiftUI
 import VoiceFlowMacCore
 
-enum HUDMode {
+public enum HUDMode: Equatable {
     case recording
     case processing
     case completed(didAutoPaste: Bool, usedFallback: Bool, unrecognizedCommand: Bool = false)
     case actionExecuted(description: String)
     case failed(String)
-    /// The mode switch was used while nothing was being dictated. The capsule appears
-    /// on its own to confirm the new mode, then leaves.
     case modeChanged(ProcessingMode)
-    /// The speaker took the recording back with Escape. Nothing was pasted or kept.
     case cancelled
 
-    /// A stable name for the current state, used as the animation value so the capsule
-    /// morphs between states instead of cutting.
-    var stateKey: String {
+    public var stateKey: String {
         switch self {
         case .recording: return "recording"
         case .processing: return "processing"
@@ -27,136 +22,216 @@ enum HUDMode {
         }
     }
 
-    var showsTelemetry: Bool {
+    public var accessibilityStatus: String {
         switch self {
-        case .recording, .processing, .completed, .actionExecuted:
-            return true
-        case .failed, .modeChanged, .cancelled:
-            return false
+        case .recording: return "VoiceFlow recording"
+        case .processing: return "VoiceFlow processing"
+        case .completed(let didAutoPaste, let usedFallback, _):
+            let delivered = didAutoPaste ? "pasted" : "copied"
+            return usedFallback ? "VoiceFlow \(delivered) the plain transcript" : "VoiceFlow \(delivered)"
+        case .actionExecuted(let description): return "VoiceFlow ran \(description)"
+        case .failed(let message): return "VoiceFlow failed: \(message)"
+        case .modeChanged(let mode): return "VoiceFlow mode \(mode.rawValue)"
+        case .cancelled: return "VoiceFlow recording cancelled"
         }
     }
 }
 
-final class HUDViewModel: ObservableObject {
-    @Published var mode: HUDMode = .recording
-    @Published var audioLevel: Float = 0.0
-    @Published var cleanerName: String = "gemini"
-    @Published var processingMode: ProcessingMode = .clean
-    @Published var processingStep: Int = 0
-    /// The cloud model that answered, shown on completion so a capacity fallback to a
-    /// different model is visible rather than silent.
-    @Published var answeredModel: String? = nil
-    /// The target application context detected when recording began.
-    @Published var targetContext: AppContext? = nil
-    /// Measured speaking rate in words per minute.
-    @Published var measuredWPM: Int? = nil
-    /// Total turnaround latency in seconds.
-    @Published var latencySeconds: Double? = nil
+public final class HUDViewModel: ObservableObject {
+    @Published public var mode: HUDMode = .recording
+    @Published public var audioLevel: Float = 0.0
+    @Published public var cleanerName: String = "gemini"
+    @Published public var speechLabel: String = "WHISPER"
+    @Published public var runsModel: Bool = true
+    @Published public var processingMode: ProcessingMode = .clean
+    @Published public var processingStep: Int = 0
+    @Published public var answeredModel: String? = nil
+    @Published public var targetContext: AppContext? = nil
+    @Published public var measuredWPM: Int? = nil
+    @Published public var latencySeconds: Double? = nil
+
+    /// Whether voice speech has been detected since key down (level > 0.2).
+    /// If false during recording, only the minimal capsule shows.
+    @Published public var voiceHeard: Bool = false
+
+    public init() {}
 }
 
-struct RetroMicHUDView: View {
-    @ObservedObject var viewModel: HUDViewModel
-    
-    // sanblue brand colors
-    private let skyBlue = VoiceStationTokens.dotBlue
-    private let retroNavy = VoiceStationTokens.navy
-    // The brand gold, from the token rather than repeated as a literal. The values
-    // matched, which is exactly why a copy is dangerous: the day the token moves, this
-    // one stays behind and nothing fails.
-    private let vintageGold = VoiceStationTokens.gold
-    // The same #FF453B the station's meter uses, from the one token. It was written
-    // here as 1.0/0.27/0.23 and there as hex — two spellings of one colour, which is
-    // how a palette drifts without anything failing.
-    private let onAirRed = VoiceStationTokens.onAir
+// MARK: - Microduck HUD View (I-82)
+/// Articulated mascot and thought bubble capsule beside the duck.
+public struct RetroMicHUDView: View {
+    @ObservedObject public var viewModel: HUDViewModel
+    @State private var modeChangeTime: TimeInterval = ProcessInfo.processInfo.systemUptime
 
-    var body: some View {
-        HStack(spacing: HUDLayout.discToColumn) {
-            // Vintage Microphone Graphic
-            ZStack {
-                Circle()
-                    .fill(retroNavy.opacity(0.85))
-                    .frame(width: HUDLayout.micDisc, height: HUDLayout.micDisc)
-                    .overlay(
-                        Circle()
-                            .stroke(LinearGradient(
-                                colors: [.white.opacity(0.4), .white.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ), lineWidth: 1.5)
-                    )
-                
-                if glyphName == "mic.fill" {
-                    VintageMicIcon(color: iconColor)
-                        .transition(.scale.combined(with: .opacity))
-                        .id("vintage-mic")
-                } else {
-                    Image(systemName: glyphName)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(iconColor)
-                        .transition(.scale.combined(with: .opacity))
-                        .id(glyphName)
-                }
-            }
-            .shadow(color: iconGlowColor, radius: 8)
+    public init(viewModel: HUDViewModel) {
+        self.viewModel = viewModel
+    }
 
-            VStack(alignment: .leading, spacing: HUDLayout.rowSpacing) {
-                // Row 1: Status header (Left) + sanbluedot (Right)
-                HStack(alignment: .center, spacing: 6) {
-                    statusBadge
-                        .id("status-\(viewModel.mode.stateKey)")
-                    
-                    Spacer(minLength: 4)
-                    
-                    // sanblueᵈᵒᵗ Wordmark: gold word, dot-blue elevated superscript
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        Text("sanblue")
-                            .font(VoiceStationTokens.mono(size: 10, weight: .bold))
-                            .foregroundColor(vintageGold)
+    private var isRecording: Bool { viewModel.mode == .recording }
+    private var isProcessing: Bool { viewModel.mode == .processing }
 
-                        Text("dot")
-                            .font(VoiceStationTokens.mono(size: 7, weight: .heavy))
-                            .foregroundColor(skyBlue)
-                            .baselineOffset(5)
-                    }
-                    .fixedSize()
-                    .lineLimit(1)
-                }
-                
-                // Row 2: LED VU-Meter equalizer, processing wave, or mode switcher
-                if case .modeChanged(let mode) = viewModel.mode {
-                    modeStripView(active: mode)
-                        .id("mode-\(mode.rawValue)")
-                } else {
-                    vuMeterView
-                        .id("meter-\(viewModel.mode.stateKey)")
-                }
-
-                // Row 3: Live Telemetry Speed Pill (Sandy's unified choice)
-                if viewModel.mode.showsTelemetry {
-                    telemetryStripView
-                        .id("telemetry-\(viewModel.mode.stateKey)")
-                }
-            }
-            .frame(width: HUDLayout.contentColumn)
+    private var shouldShowDuck: Bool {
+        switch viewModel.mode {
+        case .recording, .processing, .completed, .actionExecuted, .failed, .cancelled:
+            return true
+        case .modeChanged:
+            return false
         }
-        .padding(.horizontal, HUDLayout.horizontalPadding)
-        .padding(.vertical, HUDLayout.verticalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+    }
+
+    private var bubbleSize: (width: CGFloat, height: CGFloat) {
+        switch viewModel.mode {
+        case .recording, .processing, .completed, .actionExecuted:
+            return (HUDLayout.capsuleFullSize.width, HUDLayout.capsuleFullSize.height)
+        case .failed, .cancelled, .modeChanged:
+            return (HUDLayout.capsuleShortSize.width, HUDLayout.capsuleShortSize.height)
+        }
+    }
+
+    private func currentPose(time: TimeInterval, uptime: TimeInterval) -> DuckPose {
+        let breathingPhase = time * 2.8
+        let wigglePhase = time * 3.8
+
+        switch viewModel.mode {
+        case .recording:
+            // Sits down when recording (knees folded in front, settling in to listen)
+            var base: DuckPose = .recordingSitting
+            let lvl = viewModel.audioLevel
+            if lvl > 0.65 {
+                base = .stretchSitting
+                base.jaw = Double(min(1.0, lvl * 1.35))
+            } else if lvl < 0.12 {
+                base = .recordingSitting
+                base.jaw = 0.0
+            } else {
+                base = .recordingSitting
+                base.jaw = Double(min(1.0, lvl * 1.25))
+            }
+            // Gentle breathing keeping head high & playful kid-like foot swinging
+            let breath = sin(breathingPhase)
+            base.body += breath * 0.6
+            base.n = base.n.map { $0 + breath * 1.0 }
+            base.footWiggle = wigglePhase
+            return base
+
+        case .processing:
+            // Thoughtful listening posture, sitting with feet still swaying
+            var base: DuckPose = .recordingSitting
+            base.head = -8.0 + sin(breathingPhase * 0.8) * 5.0
+            base.footWiggle = wigglePhase * 0.8
+            return base
+
+        case .completed, .actionExecuted:
+            // Stands upright, nodding head happily with joy!
+            var base: DuckPose = .standFront
+            let elapsed = uptime - modeChangeTime
+            if elapsed < 1.4 {
+                let decay = max(0.0, 1.0 - elapsed / 1.4)
+                base.head = -4.0 + sin(elapsed * .pi * 4.5) * 12.0 * decay
+            }
+            return base
+
+        case .failed, .cancelled:
+            // Stands upright, shaking head in error / cancellation!
+            var base: DuckPose = .standFront
+            let elapsed = uptime - modeChangeTime
+            if elapsed < 1.2 {
+                let decay = max(0.0, 1.0 - elapsed / 1.2)
+                base.head = -4.0 + sin(elapsed * .pi * 6.0) * 14.0 * decay
+            }
+            return base
+
+        case .modeChanged:
+            // Stands upright when ready / mode changed
+            return .standFront
+        }
+    }
+
+    private var ledColor: Color {
+        switch viewModel.mode {
+        case .recording:
+            return VoiceStationTokens.rec
+        case .processing:
+            return VoiceStationTokens.dotBlue
+        case .completed, .actionExecuted:
+            return VoiceStationTokens.okOnDark
+        case .failed, .cancelled:
+            return VoiceStationTokens.onAir
+        case .modeChanged:
+            return VoiceStationTokens.gold
+        }
+    }
+
+    public var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            let uptime = ProcessInfo.processInfo.systemUptime
+            let pose = currentPose(time: time, uptime: uptime)
+            let isSitting = pose.isSitting
+
+            ZStack(alignment: .bottomLeading) {
+                // 1. Duck Articulated Mascot (at bottom left, facing front)
+                if shouldShowDuck {
+                    MicroduckView(pose: pose, audioLevel: viewModel.audioLevel, ledColor: ledColor)
+                        .frame(width: HUDLayout.duckWidth, height: HUDLayout.duckHeight)
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.5, anchor: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                        .id("microduck-actor")
+
+                    // 2. Thought Trail Dots connecting duck's head to the bubble
+                    Circle()
+                        .fill(Color.black.opacity(0.85))
+                        .overlay(Circle().stroke(VoiceStationTokens.dotBlue.opacity(0.45), lineWidth: 0.8))
+                        .frame(width: 3.5, height: 3.5)
+                        .offset(x: isSitting ? 46 : 48, y: isSitting ? -39 : -48)
+                        .animation(.spring(response: 0.36, dampingFraction: 0.75), value: isSitting)
+
+                    Circle()
+                        .fill(Color.black.opacity(0.85))
+                        .overlay(Circle().stroke(VoiceStationTokens.dotBlue.opacity(0.45), lineWidth: 0.8))
+                        .frame(width: 5.5, height: 5.5)
+                        .offset(x: isSitting ? 53 : 55, y: isSitting ? -37 : -44)
+                        .animation(.spring(response: 0.36, dampingFraction: 0.75), value: isSitting)
+                }
+
+                // 3. Bubble Capsule (beside duck's head)
+                capsuleBubble
+                    .offset(
+                        x: shouldShowDuck ? HUDLayout.duckToBubble : 0,
+                        y: shouldShowDuck ? (isSitting ? -36 : -44) : -10
+                    )
+                    .animation(.spring(response: 0.36, dampingFraction: 0.75), value: shouldShowDuck)
+                    .animation(.spring(response: 0.36, dampingFraction: 0.75), value: isSitting)
+                    .animation(.spring(response: 0.36, dampingFraction: 0.75), value: bubbleSize.width)
+            }
+            .frame(width: HUDLayout.panelWidth, height: HUDLayout.panelHeight, alignment: .bottomLeading)
+        }
+        .onChange(of: viewModel.mode) { _, _ in
+            modeChangeTime = ProcessInfo.processInfo.systemUptime
+        }
+        .onChange(of: viewModel.audioLevel) { _, lvl in
+            if lvl > 0.20 && !viewModel.voiceHeard {
+                viewModel.voiceHeard = true
+            }
+        }
+    }
+
+    // MARK: - Capsule Bubble Component
+    private var capsuleBubble: some View {
+        let size = bubbleSize
+        return ZStack {
+            Capsule()
                 .fill(Color.black.opacity(0.85))
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(retroNavy.opacity(0.4))
-                        .blur(radius: 20)
-                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    Capsule()
                         .stroke(
                             LinearGradient(
                                 colors: [
-                                    .white.opacity(0.25),
-                                    skyBlue.opacity(0.35),
-                                    .white.opacity(0.08)
+                                    Color.white.opacity(0.28),
+                                    VoiceStationTokens.dotBlue.opacity(0.40),
+                                    Color.white.opacity(0.06)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -164,448 +239,276 @@ struct RetroMicHUDView: View {
                             lineWidth: 1
                         )
                 )
-        )
-        .shadow(color: .black.opacity(0.6), radius: 16, x: 0, y: 8)
-        .animation(
-            .spring(response: 0.30, dampingFraction: 0.82),
-            value: viewModel.mode.stateKey
-        )
-    }
+                .shadow(color: Color.black.opacity(0.55), radius: 6, x: 0, y: 3)
 
-    /// The mode's own accent. One rule, so the strip cannot drift into a palette of its
-    /// own: every mode lights the brand gold, except the one that can act on the
-    /// machine, which lights the approved coral the station already uses for live state.
-    static func accent(for mode: ProcessingMode) -> Color {
-        switch mode {
-        case .clean, .translate, .meeting:
-            return VoiceStationTokens.gold
-        case .actions:
-            return VoiceStationTokens.rec
-        }
-    }
-
-    /// One glyph per mode, so the confirmation reads before the word does.
-    static func glyph(for mode: ProcessingMode) -> String {
-        switch mode {
-        case .clean: return "sparkles"
-        case .translate: return "character.bubble.fill"
-        case .meeting: return "list.bullet.rectangle.fill"
-        case .actions: return "bolt.fill"
-        }
-    }
-
-    private var isRecording: Bool {
-        if case .recording = viewModel.mode { return true }
-        return false
-    }
-
-    private var glyphName: String {
-        if case .modeChanged(let mode) = viewModel.mode {
-            return Self.glyph(for: mode)
-        }
-        if case .cancelled = viewModel.mode {
-            return "mic.slash.fill"
-        }
-        return "mic.fill"
-    }
-
-    private var iconColor: Color {
-        switch viewModel.mode {
-        case .recording:
-            return .white
-        case .processing:
-            return skyBlue
-        case .completed:
-            return VoiceStationTokens.ok
-        case .actionExecuted:
-            return vintageGold
-        case .failed:
-            return onAirRed
-        case .modeChanged(let mode):
-            return Self.accent(for: mode)
-        case .cancelled:
-            return VoiceStationTokens.rec
-        }
-    }
-
-    private var iconGlowColor: Color {
-        switch viewModel.mode {
-        case .recording:
-            return onAirRed.opacity(0.6)
-        case .processing:
-            return skyBlue.opacity(0.6)
-        case .completed:
-            return VoiceStationTokens.ok.opacity(0.6)
-        case .actionExecuted:
-            return vintageGold.opacity(0.8)
-        case .failed:
-            return onAirRed.opacity(0.8)
-        case .modeChanged(let mode):
-            return Self.accent(for: mode).opacity(0.7)
-        case .cancelled:
-            return VoiceStationTokens.rec.opacity(0.6)
-        }
-    }
-
-    // The text itself lives in `HUDBadge`, in the core module, so a check can read what
-    // the speaker reads. This view only places it.
-    private var recordingBadgeText: String {
-        HUDBadge.recording(mode: viewModel.processingMode, context: viewModel.targetContext)
-    }
-
-    private var processingBadgeText: String {
-        HUDBadge.processing(mode: viewModel.processingMode, cleanerName: viewModel.cleanerName)
-    }
-
-    @ViewBuilder
-    private var statusBadge: some View {
-        switch viewModel.mode {
-        case .recording:
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(onAirRed)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: onAirRed, radius: 4)
-                Text(recordingBadgeText)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(onAirRed)
-                    .fixedSize()
-            }
-        case .processing:
-            HStack(spacing: 5) {
-                ProgressView()
-                    .scaleEffect(0.5)
-                    .frame(width: 10, height: 10)
-                Text(processingBadgeText)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(skyBlue)
-            }
-        case .actionExecuted(let desc):
-            HStack(spacing: 5) {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(vintageGold)
-                Text("ACTION")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(vintageGold)
-                Text(desc)
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.85))
-                    .lineLimit(1)
-            }
-        case .completed(let didAutoPaste, _, let unrecognizedCommand):
-            HStack(spacing: 5) {
-                Image(systemName: didAutoPaste ? "checkmark.circle.fill" : "doc.on.clipboard.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(VoiceStationTokens.ok)
-                if let target = viewModel.targetContext, target.category != .general {
-                    Text(didAutoPaste ? "PASTED ➔ \(target.shortName)" : "COPIED")
-                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                        .foregroundColor(VoiceStationTokens.ok)
+            // Content inside the capsule
+            Group {
+                if size.height <= 18 {
+                    minimalBubbleContent
+                } else if size.height <= 24 {
+                    shortBubbleContent
                 } else {
-                    Text(didAutoPaste ? "PASTED" : "COPIED")
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .foregroundColor(VoiceStationTokens.ok)
-                }
-                if unrecognizedCommand {
-                    Text("NO CMD")
-                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
-                        .foregroundColor(VoiceStationTokens.rec)
+                    fullBubbleContent
                 }
             }
-        case .failed:
-            HStack(spacing: 5) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(onAirRed)
-                Text("ERROR")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(onAirRed)
-            }
-        case .cancelled:
-            HStack(spacing: 5) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(VoiceStationTokens.rec)
-                Text("CANCELLED")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(VoiceStationTokens.rec)
-            }
-        case .modeChanged(let mode):
-            HStack(spacing: 5) {
-                Text("MODE")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.55))
-                Text(mode.badgeName)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundColor(Self.accent(for: mode))
+            .padding(.horizontal, HUDLayout.horizontalPadding)
+            .padding(.vertical, HUDLayout.verticalPadding)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    // MARK: - Minimal Capsule (Key down by accident, no voice yet)
+    private var minimalBubbleContent: some View {
+        HStack(spacing: 4.5) {
+            Circle()
+                .fill(VoiceStationTokens.onAir)
+                .frame(width: 5.0, height: 5.0)
+                .shadow(color: VoiceStationTokens.onAir, radius: 2.5)
+
+            HStack(spacing: 2.2) {
+                ForEach(0..<3) { _ in
+                    Circle()
+                        .fill(Color.white.opacity(0.35))
+                        .frame(width: 2.5, height: 2.5)
+                }
             }
         }
     }
 
-    /// The mode switch as it appears in the HUD: every mode at once, so the
-    /// confirmation also says what the others are and which way the toggle runs.
-    private func modeStripView(active: ProcessingMode) -> some View {
-        HStack(spacing: 3) {
-            ForEach(ProcessingMode.allCases, id: \.self) { mode in
-                let isOn = mode == active
-                Text(mode.badgeName)
-                    .font(.system(size: 7, weight: .heavy, design: .monospaced))
-                    .foregroundColor(isOn ? .black.opacity(0.85) : .white.opacity(0.45))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(isOn ? Self.accent(for: mode) : Color.white.opacity(0.1))
-                    )
-                    .shadow(
-                        color: isOn ? Self.accent(for: mode).opacity(0.8) : .clear,
-                        radius: 3
-                    )
-            }
-        }
-        .frame(height: 14)
-    }
-
-    @ViewBuilder
-    private var telemetryStripView: some View {
-        HStack(spacing: 5) {
+    // MARK: - Short Capsule (Mode change, error, cancelled)
+    private var shortBubbleContent: some View {
+        HStack(alignment: .center, spacing: 5) {
             switch viewModel.mode {
-            case .recording:
-                HStack(spacing: 2) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 7))
-                        .foregroundColor(vintageGold)
-                    Text("LIVE")
-                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
-                        .foregroundColor(vintageGold)
-                }
-                // R9: the capsule showed "44.1 kHz" while `AudioRecorder` opens the
-                // microphone at 16 kHz mono. It was a decoration in the shape of a
-                // reading, and a wrong one. Nothing measures a sample rate per run, so
-                // the row names the stage instead of inventing a figure for it.
-                Text("·")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.3))
-                Text("WHISPER")
-                    .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.75))
-
-            case .processing:
-                HStack(spacing: 2) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 7))
-                        .foregroundColor(skyBlue)
-                    Text("CLEANING")
-                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
-                        .foregroundColor(skyBlue)
-                }
-                Text("·")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.3))
-                Text("INFERENCE...")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                    .foregroundColor(vintageGold)
-                Text("·")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.3))
-                Text(viewModel.cleanerName.uppercased())
-                    .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.75))
-
-            case .completed:
-                if let wpm = viewModel.measuredWPM {
-                    HStack(spacing: 2) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 7))
-                            .foregroundColor(vintageGold)
-                        Text("\(wpm) WPM")
-                            .font(.system(size: 8, weight: .heavy, design: .monospaced))
-                            .foregroundColor(vintageGold)
+            case .modeChanged(let mode):
+                Text("MODE")
+                    .font(VoiceStationTokens.mono(size: 5.4, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.55))
+                Text(mode.shortTitle)
+                    .font(VoiceStationTokens.mono(size: 5.4, weight: .heavy))
+                    .foregroundColor(VoiceStationTokens.gold)
+                Spacer(minLength: 0)
+                HStack(spacing: 2.0) {
+                    ForEach(ProcessingMode.allCases, id: \.self) { m in
+                        RoundedRectangle(cornerRadius: 1.0)
+                            .fill(m == mode ? VoiceStationTokens.gold : Color.white.opacity(0.18))
+                            .frame(width: 10, height: 3.5)
                     }
-                    Text("·")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.3))
                 }
-
-                if let latency = viewModel.latencySeconds {
-                    Text(String(format: "%.1fs LATENCY", latency))
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(skyBlue)
-                    Text("·")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.3))
-                }
-
-                if let model = viewModel.answeredModel {
-                    Text(HUDBadge.shortModelName(model))
-                        .font(.system(size: 7, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.85))
-                } else if viewModel.cleanerName == "literal" {
-                    Text("LITERAL")
-                        .font(.system(size: 7, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.85))
-                }
-
-            case .actionExecuted(let desc):
-                HStack(spacing: 2) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 7))
-                        .foregroundColor(vintageGold)
-                    Text("ACTION")
-                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
-                        .foregroundColor(vintageGold)
-                }
-                Text("·")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.3))
-                Text(desc)
-                    .font(.system(size: 7, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.85))
+            case .failed(let msg):
+                Circle()
+                    .fill(VoiceStationTokens.onAir)
+                    .frame(width: 5.0, height: 5.0)
+                Text("ERROR")
+                    .font(VoiceStationTokens.mono(size: 5.0, weight: .heavy))
+                    .foregroundColor(VoiceStationTokens.onAir)
+                Spacer(minLength: 0)
+                Text(msg.isEmpty ? "NOTHING PASTED" : msg)
+                    .font(VoiceStationTokens.mono(size: 4.0, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.65))
                     .lineLimit(1)
-
-            case .failed, .cancelled, .modeChanged:
+            case .cancelled:
+                Circle()
+                    .fill(VoiceStationTokens.rec)
+                    .frame(width: 5.0, height: 5.0)
+                Text("CANCELLED")
+                    .font(VoiceStationTokens.mono(size: 5.0, weight: .heavy))
+                    .foregroundColor(VoiceStationTokens.rec)
+                Spacer(minLength: 0)
+                Text("ESC")
+                    .font(VoiceStationTokens.mono(size: 4.0, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.65))
+            default:
                 EmptyView()
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
-        .frame(height: 14)
-        .background(
-            RoundedRectangle(cornerRadius: 3)
-                .fill(Color.black.opacity(0.45))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                )
-        )
     }
 
-    private var vuMeterView: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<12, id: \.self) { index in
-                vuBar(for: index)
-            }
+    // MARK: - Full 3-Row Capsule (Recording, Processing, Pasted, Action)
+    private var fullBubbleContent: some View {
+        VStack(alignment: .leading, spacing: 2.0) {
+            // Row 1: Status lamp + status title + target app chip + ESC
+            HStack(alignment: .center, spacing: 3.5) {
+                statusLampView
 
-            // The way out, shown only while there is something to take back. It used to
-            // share the header with the wordmark, which could hold one or the other; the
-            // meter is twelve 9pt bars in a 226pt row, so the 85pt it never used is where
-            // the reminder belongs. Escape worked the whole time it was missing — an
-            // undiscoverable way out is still a way out, which is why nothing failed.
-            if isRecording {
-                Spacer(minLength: 4)
-                Text("ESC ✕")
-                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.5))
-                    .fixedSize()
-            }
-        }
-        .frame(height: 14)
-    }
+                Text(statusTitleText)
+                    .font(VoiceStationTokens.mono(size: 5.2, weight: .heavy))
+                    .foregroundColor(statusTitleColor)
 
-    private func vuBar(for index: Int) -> some View {
-        let activeCount: Int
-        switch viewModel.mode {
-        case .recording:
-            let scaledLevel = Int(viewModel.audioLevel * 12.0)
-            activeCount = max(1, scaledLevel)
-        case .processing:
-            // Moving wave effect during AI inference
-            let wavePos = viewModel.processingStep % 12
-            let dist = abs(index - wavePos)
-            activeCount = dist <= 2 ? 12 : 0
-        case .completed, .actionExecuted:
-            activeCount = 12
-        case .failed:
-            activeCount = 0
-        case .modeChanged:
-            // The strip replaces the meter in this state; the bars are never drawn.
-            activeCount = 0
-        case .cancelled:
-            activeCount = 0
-        }
+                if let ctx = viewModel.targetContext {
+                    Text(ctx.shortName.uppercased())
+                        .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                        .padding(.horizontal, 3.5)
+                        .padding(.vertical, 1.0)
+                        .background(VoiceStationTokens.dotBlue.opacity(0.12))
+                        .foregroundColor(VoiceStationTokens.accentHover)
+                        .clipShape(RoundedRectangle(cornerRadius: 2.0))
+                        .overlay(RoundedRectangle(cornerRadius: 2.0).stroke(VoiceStationTokens.dotBlue.opacity(0.55), lineWidth: 0.7))
+                        .lineLimit(1)
+                }
 
-        let isActive = index < activeCount
-        let barColor: Color
-        if index < 7 {
-            barColor = skyBlue
-        } else if index < 10 {
-            barColor = vintageGold
-        } else {
-            barColor = onAirRed
-        }
+                Spacer(minLength: 0)
 
-        let isProcessing: Bool
-        if case .processing = viewModel.mode {
-            isProcessing = true
-        } else {
-            isProcessing = false
-        }
-        let animValue = isProcessing ? Double(viewModel.processingStep) : Double(viewModel.audioLevel)
-        return RoundedRectangle(cornerRadius: 1.5)
-            .fill(isActive ? barColor : Color.white.opacity(0.1))
-            .frame(width: 9, height: 12)
-            .shadow(color: isActive ? barColor.opacity(0.8) : .clear, radius: 3)
-            .animation(.easeOut(duration: 0.08), value: animValue)
-    }
-}
-
-/// A vintage chrome condenser microphone with horizontal ribs (Shure 55 style).
-struct VintageMicIcon: View {
-    let color: Color
-
-    var body: some View {
-        ZStack {
-            // U-shaped metal cradle
-            Path { path in
-                path.addArc(
-                    center: CGPoint(x: 13, y: 13),
-                    radius: 9,
-                    startAngle: .degrees(15),
-                    endAngle: .degrees(165),
-                    clockwise: false
-                )
-            }
-            .stroke(color.opacity(0.85), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-            .frame(width: 26, height: 26)
-
-            // Stem and pedestal base
-            Path { path in
-                path.move(to: CGPoint(x: 13, y: 22))
-                path.addLine(to: CGPoint(x: 13, y: 24.5))
-                path.move(to: CGPoint(x: 9, y: 24.5))
-                path.addLine(to: CGPoint(x: 17, y: 24.5))
-            }
-            .stroke(color.opacity(0.85), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-            .frame(width: 26, height: 26)
-
-            // Chrome Capsule Body
-            RoundedRectangle(cornerRadius: 4.5)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            .white.opacity(0.95),
-                            color.opacity(0.85),
-                            color.opacity(0.65)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 11, height: 15)
-                .offset(y: -2.5)
-
-            // Horizontal Chrome Grille Slits / Ribs
-            VStack(spacing: 1.5) {
-                ForEach(0..<4, id: \.self) { _ in
-                    Rectangle()
-                        .fill(VoiceStationTokens.navy.opacity(0.95))
-                        .frame(width: 9, height: 1.2)
+                if isRecording {
+                    Text("ESC ✕")
+                        .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                        .foregroundColor(Color.white.opacity(0.6))
                 }
             }
-            .offset(y: -2.5)
+
+            // Row 2: 12-bar equalizer / processing wave (fills width evenly)
+            HStack(spacing: 2.0) {
+                ForEach(0..<12) { i in
+                    RoundedRectangle(cornerRadius: 1.0)
+                        .fill(barColor(for: i))
+                        .frame(width: 6.0, height: 3.6)
+                }
+            }
+
+            // Row 3: Telemetry details
+            HStack(alignment: .center, spacing: 3.0) {
+                telemetryLeftView
+                Spacer(minLength: 0)
+                telemetryRightView
+            }
         }
-        .frame(width: 26, height: 26)
+    }
+
+    private var statusLampView: some View {
+        Circle()
+            .fill(ledColor)
+            .frame(width: 5.0, height: 5.0)
+            .shadow(color: ledColor, radius: 2.5)
+    }
+
+    private var statusTitleText: String {
+        switch viewModel.mode {
+        case .recording:
+            return "ON AIR"
+        case .processing:
+            return "PROCESSING"
+        case .completed(let didAutoPaste, _, _):
+            return didAutoPaste ? "PASTED" : "COPIED"
+        case .actionExecuted:
+            return "ACTION"
+        case .failed:
+            return "ERROR"
+        case .cancelled:
+            return "CANCELLED"
+        case .modeChanged:
+            return "MODE"
+        }
+    }
+
+    private var statusTitleColor: Color {
+        switch viewModel.mode {
+        case .recording:
+            return VoiceStationTokens.onAir
+        case .processing:
+            return VoiceStationTokens.inputCream
+        case .completed:
+            return VoiceStationTokens.okOnDark
+        case .actionExecuted:
+            return VoiceStationTokens.gold
+        case .failed:
+            return VoiceStationTokens.onAir
+        case .cancelled:
+            return VoiceStationTokens.rec
+        case .modeChanged:
+            return VoiceStationTokens.gold
+        }
+    }
+
+    private func barColor(for index: Int) -> Color {
+        let defaultColor: Color
+        if index < 7 {
+            defaultColor = VoiceStationTokens.dotBlue
+        } else if index < 10 {
+            defaultColor = VoiceStationTokens.gold
+        } else {
+            defaultColor = VoiceStationTokens.onAir
+        }
+
+        switch viewModel.mode {
+        case .recording:
+            let litCount = max(1, Int(viewModel.audioLevel * 12.0))
+            return index < litCount ? defaultColor : Color.white.opacity(0.12)
+        case .processing:
+            let waveCenter = (viewModel.processingStep % 16) - 2
+            let dist = abs(index - waveCenter)
+            return dist <= 2 ? VoiceStationTokens.dotBlue : Color.white.opacity(0.12)
+        case .completed, .actionExecuted:
+            return defaultColor
+        case .failed, .cancelled, .modeChanged:
+            return Color.white.opacity(0.12)
+        }
+    }
+
+    @ViewBuilder
+    private var telemetryLeftView: some View {
+        switch viewModel.mode {
+        case .recording:
+            Text("⚡ LIVE")
+                .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                .foregroundColor(VoiceStationTokens.gold)
+        case .processing:
+            let stage: String = {
+                switch viewModel.processingMode {
+                case .clean: return "CLEANING"
+                case .translate: return "TRANSLATING"
+                case .meeting: return "STRUCTURING"
+                case .actions: return "PARSING ACTION"
+                }
+            }()
+            Text(stage)
+                .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                .foregroundColor(VoiceStationTokens.dotBlue)
+        case .completed:
+            HStack(spacing: 2) {
+                if let wpm = viewModel.measuredWPM {
+                    Text("⚡ \(wpm) WPM")
+                        .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                        .foregroundColor(VoiceStationTokens.gold)
+                }
+                if let lat = viewModel.latencySeconds {
+                    Text("· \(String(format: "%.1fs", lat))")
+                        .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                        .foregroundColor(VoiceStationTokens.dotBlue)
+                }
+            }
+        case .actionExecuted:
+            Text("⚡ DONE")
+                .font(VoiceStationTokens.mono(size: 3.8, weight: .heavy))
+                .foregroundColor(VoiceStationTokens.gold)
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var telemetryRightView: some View {
+        switch viewModel.mode {
+        case .recording:
+            Text("• \(viewModel.speechLabel) · LOCAL")
+                .font(VoiceStationTokens.mono(size: 3.8, weight: .bold))
+                .foregroundColor(Color.white.opacity(0.6))
+        case .processing:
+            let privacy = viewModel.runsModel ? "CLOUD" : "LOCAL"
+            Text("• \(viewModel.cleanerName.uppercased()) · \(privacy)")
+                .font(VoiceStationTokens.mono(size: 3.8, weight: .bold))
+                .foregroundColor(Color.white.opacity(0.6))
+        case .completed:
+            let model = viewModel.answeredModel ?? viewModel.cleanerName.uppercased()
+            let privacy = viewModel.runsModel ? "CLOUD" : "LOCAL"
+            Text("• \(model) · \(privacy)")
+                .font(VoiceStationTokens.mono(size: 3.8, weight: .bold))
+                .foregroundColor(Color.white.opacity(0.6))
+        case .actionExecuted(let desc):
+            Text(desc)
+                .font(VoiceStationTokens.mono(size: 3.6, weight: .heavy))
+                .foregroundColor(Color.white.opacity(0.7))
+                .lineLimit(1)
+        default:
+            EmptyView()
+        }
     }
 }

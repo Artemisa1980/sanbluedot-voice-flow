@@ -57,6 +57,8 @@ final class FloatingHUDController {
     func showRecording(
         cleanerName: String,
         mode: ProcessingMode = .clean,
+        speechLabel: String = "WHISPER",
+        runsModel: Bool = true,
         context: AppContext? = nil,
         levelProvider: @escaping () -> Float
     ) {
@@ -67,7 +69,10 @@ final class FloatingHUDController {
         processingTimer = nil
 
         viewModel.mode = .recording
+        announceState()
         viewModel.cleanerName = cleanerName
+        viewModel.speechLabel = speechLabel
+        viewModel.runsModel = runsModel
         viewModel.processingMode = mode
         viewModel.targetContext = context
         viewModel.audioLevel = 0.0
@@ -90,6 +95,9 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.mode = .processing
+        announceState()
+        // Shown even if it was hidden: these assumed a visible capsule (D-173).
+        if !panel.isVisible { positionPanel(); showAtFullOpacity() }
         viewModel.processingStep = 0
 
         processingTimer?.invalidate()
@@ -126,6 +134,9 @@ final class FloatingHUDController {
             usedFallback: usedFallback,
             unrecognizedCommand: unrecognizedCommand
         )
+        announceState()
+        // Shown even if it was hidden: these assumed a visible capsule (D-173).
+        if !panel.isVisible { positionPanel(); showAtFullOpacity() }
 
         // Two reasons to hold the capsule, and the longer one wins. Telemetry needs time
         // to be read; a notice needs longer than a confirmation the speaker already
@@ -154,6 +165,9 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.mode = .actionExecuted(description: description)
+        announceState()
+        // Shown even if it was hidden: these assumed a visible capsule (D-173).
+        if !panel.isVisible { positionPanel(); showAtFullOpacity() }
 
         let work = DispatchWorkItem { [weak self] in
             self?.fadeOut()
@@ -178,6 +192,7 @@ final class FloatingHUDController {
 
         viewModel.processingMode = mode
         viewModel.mode = .modeChanged(mode)
+        announceState()
 
         positionPanel()
         showAtFullOpacity()
@@ -201,6 +216,7 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.mode = .cancelled
+        announceState()
         positionPanel()
         showAtFullOpacity()
 
@@ -224,6 +240,7 @@ final class FloatingHUDController {
         dismissWorkItem = nil
 
         viewModel.mode = .failed(message)
+        announceState()
         positionPanel()
         showAtFullOpacity()
 
@@ -243,6 +260,19 @@ final class FloatingHUDController {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
         panel.orderOut(nil)
+    }
+
+    /// Read the new state aloud: the capsule appears over another app, where nothing
+    /// else tells a VoiceOver user what happened (D-139).
+    private func announceState() {
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: viewModel.mode.accessibilityStatus,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ]
+        )
     }
 
     /// Bring the panel back to full opacity, cancelling a fade that is still running.
@@ -281,9 +311,9 @@ final class FloatingHUDController {
         let panelWidth = HUDLayout.panelWidth
         let panelHeight = HUDLayout.panelHeight
 
-        // Position at bottom center of the screen, floating nicely above the dock
-        let x = screenRect.midX - (panelWidth / 2.0)
-        let y = screenRect.minY + 60.0
+        // Position at bottom left of the screen, unobtrusive and clear of the dock
+        let x = screenRect.minX + 24.0
+        let y = screenRect.minY + 24.0
         
         panel.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
     }
