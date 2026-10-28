@@ -14,7 +14,13 @@ from .cleaners.prompt import (
     TRANSLATE_EN_SYSTEM_PROMPT,
 )
 from .errors import VoiceFlowError
-from .memory import DEFAULT_DIRECTORY, exclusive_file_lock, preserve_skipped
+from .memory import (
+    DEFAULT_DIRECTORY,
+    _flush_to_disk,
+    exclusive_file_lock,
+    preserve_skipped,
+    write_text_atomically,
+)
 
 DEFAULT_DISTILL_STORE = DEFAULT_DIRECTORY / "distill_pairs.local.jsonl"
 DEFAULT_BASE_MODEL = "qwen2.5:3b"
@@ -83,9 +89,13 @@ class DistillationStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.path):
             with self.path.open("a", encoding="utf-8") as f:
+                try:
+                    os.chmod(self.path, 0o600)
+                except OSError:
+                    pass
                 f.write(json.dumps(pair.to_dict(), ensure_ascii=False) + "\n")
                 f.flush()
-                os.fsync(f.fileno())
+                _flush_to_disk(f.fileno())
         return pair
 
     def load_all(self, mode: str | None = None) -> list[DistillationPair]:
@@ -129,6 +139,16 @@ class DistillationStore:
             counts[p.mode] = counts.get(p.mode, 0) + 1
         return counts
 
+    def recent_examples(self, mode: str = "clean", limit: int = 2) -> list[tuple[str, str]]:
+        """Return up to `limit` recent (raw_text, cleaned_text) pairs for `mode`."""
+        if limit <= 0 or not self.path.exists():
+            return []
+        try:
+            pairs = self.load_all(mode=mode)
+        except OSError:
+            return []
+        return [(p.raw_text, p.cleaned_text) for p in pairs[-limit:]]
+
     def clear(self) -> int:
         """Delete every stored pair and the store file, and say how many were held.
 
@@ -159,11 +179,9 @@ class DistillationStore:
                 "writing over the store would delete every pair outside --mode."
             )
         pairs = self.load_all(mode=mode)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(json.dumps(p.to_dict(), ensure_ascii=False) + "\n" for p in pairs)
         with exclusive_file_lock(dest):
-            with dest.open("w", encoding="utf-8") as f:
-                for p in pairs:
-                    f.write(json.dumps(p.to_dict(), ensure_ascii=False) + "\n")
+            write_text_atomically(dest, payload)
         return len(pairs)
 
 
@@ -244,8 +262,7 @@ def write_modelfile(
     pairs: Sequence[DistillationPair] = (),
 ) -> Path:
     content = build_modelfile(base_model=base_model, mode=mode, pairs=pairs)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(content, encoding="utf-8")
+    write_text_atomically(output_path, content)
     return output_path
 
 

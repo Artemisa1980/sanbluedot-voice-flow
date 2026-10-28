@@ -20,10 +20,22 @@ from collections.abc import Callable
 TAKE_BACK_PHRASES = (
     # Spanish
     "borra eso",
+    "borrar eso",
     "borralo",
     "borra lo anterior",
+    "borrar lo anterior",
+    "borra esto",
+    "borrar esto",
     "tacha eso",
     "olvida eso",
+    "olvidalo",
+    "olvida lo anterior",
+    "elimina eso",
+    "eliminar eso",
+    "quita eso",
+    "quitar eso",
+    "cancela eso",
+    "cancelar eso",
     "me equivoque",
     "me confundi",
     "quise decir",
@@ -35,13 +47,25 @@ TAKE_BACK_PHRASES = (
     "no espera",
     "espera no",
     "o sea no",
+    "en realidad no",
+    "digo no",
+    "no digo",
     "corrijo",
     "rectifico",
     # English
     "scratch that",
-    "scratch the",
+    "scratch the last",
+    "scratch the first",
     "strike that",
     "forget that",
+    "forget it",
+    "delete that",
+    "erase that",
+    "remove that",
+    "cancel that",
+    "never mind",
+    "nevermind",
+    "take that back",
     "actually no",
     "no actually",
     "no wait",
@@ -66,6 +90,40 @@ def _normalized(text: str) -> str:
 
 _PHRASES = tuple(f" {_normalized(phrase)} " for phrase in TAKE_BACK_PHRASES)
 
+EXPLICIT_WIPE_PHRASES = (
+    "borra eso",
+    "borrar eso",
+    "borralo",
+    "borra lo anterior",
+    "borrar lo anterior",
+    "borra esto",
+    "borrar esto",
+    "tacha eso",
+    "olvida eso",
+    "olvidalo",
+    "olvida lo anterior",
+    "elimina eso",
+    "eliminar eso",
+    "quita eso",
+    "quitar eso",
+    "cancela eso",
+    "cancelar eso",
+    "scratch that",
+    "scratch the last",
+    "scratch the first",
+    "strike that",
+    "forget that",
+    "forget it",
+    "delete that",
+    "erase that",
+    "remove that",
+    "cancel that",
+    "never mind",
+    "nevermind",
+    "take that back",
+)
+_EXPLICIT_WIPE_PHRASES = tuple(f" {_normalized(phrase)} " for phrase in EXPLICIT_WIPE_PHRASES)
+
 
 def has_take_back(text: str) -> bool:
     """Whether the text contains a spoken take-back cue, as whole words."""
@@ -73,10 +131,18 @@ def has_take_back(text: str) -> bool:
     return any(phrase in padded for phrase in _PHRASES)
 
 
+def has_explicit_wipe_take_back(text: str) -> bool:
+    """Whether the text contains an explicit spoken wipe command (e.g. 'borrar eso', 'scratch that')."""
+    padded = f" {_normalized(text)} "
+    return any(phrase in padded for phrase in _EXPLICIT_WIPE_PHRASES)
+
+
 # How far a take-back reaches. Withdrawn words sit just before the cue — "a las 4, no,
 # mejor no, a las 5" — and a deletion further away is the model erasing the dictation:
 # on 2026-09-27 "borra eso" came back as the last sentence alone, 64 words gone.
-REACH_BEFORE = 10
+# Eighteen words covers a full spoken clause before "borrar eso" or "scratch that" while
+# still refusing paragraph-wide erasures.
+REACH_BEFORE = 18
 REACH_AFTER = 3
 
 
@@ -85,8 +151,9 @@ REACH_AFTER = 3
 # let a "no" anywhere be deleted and the sentence inverted: "el cliente no aprobó"
 # accepted as "el cliente aprobó" (D-39).
 _ANCHOR_WORDS = frozenset((
-    "no", "digo", "mejor", "perdon", "espera", "borra", "wait", "actually", "sorry",
-    "scratch", "strike",
+    "no", "digo", "mejor", "perdon", "espera", "borra", "borrar", "elimina", "eliminar",
+    "quita", "quitar", "cancela", "cancelar", "wait", "actually", "sorry",
+    "scratch", "strike", "delete", "erase", "remove", "cancel",
 ))
 
 
@@ -151,3 +218,165 @@ def deletable(
         ):
             return True
     return False
+
+
+_WORD_RE = re.compile(r"\w+(?:['’]\w+)*", re.UNICODE)
+
+
+def _resolve_single_take_back(text: str) -> str:
+    """Resolve the latest spoken take-back in `text` without crossing sentence boundaries."""
+    matches = list(_WORD_RE.finditer(text))
+    if not matches:
+        return text
+
+    normalized = [_normalized(m.group(0)) for m in matches]
+    raw_spans: list[tuple[int, int]] = []
+    for cue in (_normalized(phrase).split() for phrase in TAKE_BACK_PHRASES):
+        size = len(cue)
+        for start in range(len(normalized) - size + 1):
+            if normalized[start : start + size] == cue:
+                raw_spans.append((start, start + size - 1))
+
+    if not raw_spans:
+        return text
+
+    raw_spans.sort()
+    # Merge overlapping or adjacent cue phrases separated only by anchor words
+    # (e.g. "No, mejor no. Borra eso." -> one combined cue span).
+    merged: list[tuple[int, int]] = []
+    for start, end in raw_spans:
+        while start > 0 and normalized[start - 1] in _ANCHOR_WORDS:
+            start -= 1
+        if merged and start <= merged[-1][1] + 2 and all(
+            normalized[i] in _ANCHOR_WORDS for i in range(merged[-1][1] + 1, start)
+        ):
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    cue_start, cue_end = merged[-1]
+    floor = max(0, cue_start - REACH_BEFORE)
+    if cue_start <= floor:
+        return text
+
+    # Find the nearest sentence boundary mark before cue_start
+    boundary_before_cue: int | None = None
+    for idx in range(cue_start - 1, floor - 1, -1):
+        gap = text[matches[idx].end() : matches[idx + 1].start()] if idx + 1 < len(matches) else ""
+        if any(mark in gap for mark in ".!?;:"):
+            boundary_before_cue = idx + 1
+            break
+
+    # If all words between the sentence boundary and cue_start are anchor words
+    # (e.g. "Meeting a las 4. No, mejor no. Borra eso."), the target sentence is the one before that boundary.
+    if boundary_before_cue is not None and all(
+        normalized[i] in _ANCHOR_WORDS for i in range(boundary_before_cue, cue_start)
+    ):
+        sentence_floor = floor
+        for idx in range(boundary_before_cue - 2, floor - 1, -1):
+            gap = text[matches[idx].end() : matches[idx + 1].start()]
+            if any(mark in gap for mark in ".!?;:"):
+                sentence_floor = idx + 1
+                break
+    else:
+        sentence_floor = boundary_before_cue if boundary_before_cue is not None else floor
+
+    cue_phrase = " ".join(normalized[cue_start : cue_end + 1])
+    is_explicit = any(phrase in cue_phrase for phrase in EXPLICIT_WIPE_PHRASES)
+
+    after_idx = cue_end + 1
+    withdraw_start: int | None = None
+
+    # 1. Parallel replacement anchor within current sentence: if the phrase after the cue
+    # starts with the same word(s) as the withdrawn phrase before the cue.
+    if after_idx < len(matches):
+        after_first = normalized[after_idx]
+        after_second = normalized[after_idx + 1] if after_idx + 1 < len(matches) else None
+        if after_second is not None:
+            for idx in range(cue_start - 1, sentence_floor - 1, -1):
+                if (
+                    idx + 1 < cue_start
+                    and normalized[idx] == after_first
+                    and normalized[idx + 1] == after_second
+                ):
+                    withdraw_start = idx
+                    break
+        if withdraw_start is None:
+            for idx in range(cue_start - 1, sentence_floor - 1, -1):
+                if normalized[idx] == after_first:
+                    withdraw_start = idx
+                    break
+
+    # 2. Clause or slip-of-the-tongue wipe within sentence boundaries
+    if withdraw_start is None:
+        if is_explicit:
+            for idx in range(cue_start - 1, sentence_floor, -1):
+                gap = text[matches[idx - 1].end() : matches[idx].start()]
+                if "," in gap:
+                    withdraw_start = idx
+                    break
+            if withdraw_start is None:
+                withdraw_start = sentence_floor
+        else:
+            withdraw_start = max(sentence_floor, cue_start - 1)
+
+    if withdraw_start is None or withdraw_start >= cue_start:
+        return text
+
+    cut_start = matches[withdraw_start].start()
+    cut_end = matches[cue_end].end()
+    while cut_end < len(text) and text[cut_end] in " \t,.;:!?”’\"'":
+        cut_end += 1
+
+    prefix = text[:cut_start]
+    suffix = text[cut_end:].lstrip()
+
+    if suffix:
+        # Preserve capitalization if the withdrawn segment started a sentence.
+        withdrawn_word = matches[withdraw_start].group(0)
+        if (
+            withdrawn_word[:1].isupper()
+            and suffix[:1].islower()
+            and (not prefix.strip() or prefix.rstrip()[-1:] in ".!?")
+        ):
+            suffix = suffix[:1].upper() + suffix[1:]
+        result = prefix + suffix
+    else:
+        result = prefix.rstrip(" ,;:")
+        if result and result[-1] not in ".!?":
+            result += "."
+
+    return result.strip()
+
+
+def resolve_take_back_locally(text: str) -> str:
+    """Deterministically resolve spoken take-backs within REACH_BEFORE words.
+
+    Used by the local fast-path (Parakeet / fallback) when no LLM is called or when
+    an LLM's fix is rejected by the guard. Every result is verified through
+    `guard_fix_cleanup` so no word outside `REACH_BEFORE` can ever be erased and no
+    word not spoken can ever be introduced.
+    """
+    if not text or not has_take_back(text):
+        return text
+
+    candidate = text
+    # Iteratively resolve cues from right to left so each step operates on actual string offsets
+    for _ in range(5):
+        next_candidate = _resolve_single_take_back(candidate)
+        if next_candidate == candidate or not has_take_back(next_candidate):
+            candidate = next_candidate
+            break
+        candidate = next_candidate
+
+    candidate = candidate.strip()
+    if not candidate or candidate == text:
+        return text
+
+    from .output_guard import guard_fix_cleanup
+    from .errors import CleanupError
+
+    try:
+        return guard_fix_cleanup(text, candidate)
+    except CleanupError:
+        return text

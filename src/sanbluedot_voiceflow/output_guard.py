@@ -26,7 +26,11 @@ _PROTECTED_PREFIXES = ("http://", "https://", "www.")
 _ACUTE_ACCENT = "\u0301"
 _IGNORABLE_TERMINAL_MARKS = frozenset(".!?")
 _CLOSING_MARKS = frozenset("\"'”’)]}»")
-_OPENING_MARKS = frozenset("¿¡")
+_OPENING_MARKS = frozenset("¿¡«([{")
+_ALLOWED_PRECEDING_OPENERS = frozenset("«\"'“([{")
+_DIACRITICAL_MONOSYLLABLES = frozenset(
+    {"si", "sí", "el", "él", "mas", "más", "de", "dé", "se", "sé", "te", "té"}
+)
 # Keep this deliberately narrow. Words such as "like", "este", or "pues" can be
 # content in ordinary English or Spanish and are therefore not safe to erase.
 #
@@ -53,8 +57,14 @@ def _is_ignorable_presentation_mark(text: str, index: int) -> bool:
     # them was refused whole and the speaker got the raw transcript (D-28). Only as an
     # opener: at the start of a word, attached to it.
     if text[index] in _OPENING_MARKS:
+        prev = text[index - 1] if index > 0 else ""
         return (
-            (index == 0 or text[index - 1].isspace() or text[index - 1] in _OPENING_MARKS)
+            (
+                index == 0
+                or prev.isspace()
+                or prev in _OPENING_MARKS
+                or prev in _ALLOWED_PRECEDING_OPENERS
+            )
             and index + 1 < len(text)
             and not text[index + 1].isspace()
         )
@@ -66,12 +76,23 @@ def _is_ignorable_presentation_mark(text: str, index: int) -> bool:
         prev_index = index - 1
         while prev_index >= 0 and text[prev_index] in _CLOSING_MARKS:
             prev_index -= 1
-        if prev_index < 0 or text[prev_index] not in _IGNORABLE_TERMINAL_MARKS:
-            return False
+        has_preceding_terminal = (
+            prev_index >= 0 and text[prev_index] in _IGNORABLE_TERMINAL_MARKS
+        )
         next_index = index + 1
         while next_index < len(text) and text[next_index] in _CLOSING_MARKS:
             next_index += 1
-        return next_index == len(text) or text[next_index].isspace()
+        has_succeeding_boundary = (
+            next_index == len(text)
+            or text[next_index].isspace()
+            or text[next_index] in _IGNORABLE_TERMINAL_MARKS
+            or text[next_index] == ","
+        )
+        return (has_preceding_terminal and has_succeeding_boundary) or (
+            prev_index >= 0
+            and not text[prev_index].isspace()
+            and has_succeeding_boundary
+        )
     if text[index] not in _IGNORABLE_TERMINAL_MARKS:
         return False
     # A run of terminal marks is one piece of presentation, not several tokens.
@@ -102,8 +123,13 @@ def _fold(token: str) -> str:
 
     The typographic apostrophe is the straight one: `don’t` and `don't` are one word,
     and a cleaner that wrote the curly form was refused whole (D-59).
+    Monosyllabic pairs with distinct grammatical meanings (si/sí, el/él, mas/más) preserve
+    their written accent to prevent semantic inversions.
     """
-    decomposed = unicodedata.normalize("NFD", token.casefold().replace("’", "'"))
+    lowered = token.casefold().replace("’", "'")
+    if lowered in _DIACRITICAL_MONOSYLLABLES:
+        return unicodedata.normalize("NFC", lowered)
+    decomposed = unicodedata.normalize("NFD", lowered)
     return unicodedata.normalize(
         "NFC", "".join(ch for ch in decomposed if ch != _ACUTE_ACCENT)
     )

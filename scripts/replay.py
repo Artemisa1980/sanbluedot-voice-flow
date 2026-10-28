@@ -35,7 +35,9 @@ from sanbluedot_voiceflow.memory import (
 )
 from sanbluedot_voiceflow.pipeline import DictationPipeline
 from sanbluedot_voiceflow.transcribers import ParakeetTranscriber, WhisperCppTranscriber
-from sanbluedot_voiceflow.transcribers.parakeet import DEFAULT_MODEL_DIR as PARAKEET_MODELS
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PARAKEET_MODELS = REPO_ROOT / "models/fluidaudio/parakeet-ultra"
 
 
 def load_samples(
@@ -125,10 +127,11 @@ def load_samples(
 
 def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
     corrections = () if (args.no_memory or args.no_corrections) else tuple(CorrectionStore().load())
+    raw_vocab = () if (args.no_memory or args.no_vocab_prompt) else tuple(load_vocabulary())
     prompt = (
         ""
         if (args.no_memory or args.no_vocab_prompt)
-        else build_initial_prompt(load_vocabulary(), args.prompt_budget)
+        else build_initial_prompt(raw_vocab, args.prompt_budget)
     )
     cleaner = build_cleaner(
         args.cleaner,
@@ -138,7 +141,12 @@ def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
     if getattr(args, "transcriber", "whisper") == "parakeet":
         # The same helper the application runs; Parakeet reads no vocabulary prompt.
         transcriber = ParakeetTranscriber(model_dir=args.parakeet_models, binary=args.parakeet_bin)
-        return DictationPipeline(transcriber=transcriber, cleaner=cleaner, corrections=corrections)
+        return DictationPipeline(
+            transcriber=transcriber,
+            cleaner=cleaner,
+            corrections=corrections,
+            vocabulary=raw_vocab,
+        )
     transcriber = WhisperCppTranscriber(
         model_path=args.whisper_model,
         binary=args.whisper_bin,
@@ -147,7 +155,12 @@ def build_pipeline(args: argparse.Namespace) -> DictationPipeline:
         threads=args.threads,
         beam_size=args.beam_size,
     )
-    return DictationPipeline(transcriber=transcriber, cleaner=cleaner, corrections=corrections)
+    return DictationPipeline(
+        transcriber=transcriber,
+        cleaner=cleaner,
+        corrections=corrections,
+        vocabulary=raw_vocab,
+    )
 
 
 def parse_args() -> argparse.Namespace:

@@ -393,6 +393,10 @@ def record(
             "No audio was captured. Grant this terminal Microphone access in "
             "System Settings, then try again."
         )
+    try:
+        os.chmod(destination, 0o600)
+    except OSError:
+        pass
     return destination
 
 
@@ -508,6 +512,10 @@ class PracticeStore:
 
     def next_audio_path(self) -> Path:
         self.directory.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self.directory, 0o700)
+        except OSError:
+            pass
         with exclusive_file_lock(self.index):
             used = {int(item["id"]) for item in self.load()}
             used.update(
@@ -519,7 +527,11 @@ class PracticeStore:
             while True:
                 destination = self.directory / f"{session_id:03d}.wav"
                 try:
-                    destination.touch(exist_ok=False)
+                    destination.touch(mode=0o600, exist_ok=False)
+                    try:
+                        os.chmod(destination, 0o600)
+                    except OSError:
+                        pass
                     return destination
                 except FileExistsError:
                     session_id += 1

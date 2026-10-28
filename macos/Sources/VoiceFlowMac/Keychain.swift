@@ -17,19 +17,50 @@ enum Keychain {
     /// address the same item rather than each keeping their own copy.
     static let service = "sanblue.voiceflow"
 
+    /// In-memory session cache so repeated dictations and status checks avoid synchronous
+    /// `securityd` IPC overhead (~40–120ms per call). Updated/cleared on store or delete.
+    private static let cacheLock = NSLock()
+    private static var cachedSecrets: [String: String] = [:]
+    private static var cachedStatuses: [String: Status] = [:]
+
     static func read(account: String) -> String? {
+        cacheLock.lock()
+        if let cached = cachedSecrets[account] {
+            cacheLock.unlock()
+            return cached
+        }
+        if cachedStatuses[account] == .absent {
+            cacheLock.unlock()
+            return nil
+        }
+        cacheLock.unlock()
+
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+        let copyStatus = SecItemCopyMatching(query as CFDictionary, &item)
+        guard copyStatus == errSecSuccess,
               let data = item as? Data,
               let secret = String(data: data, encoding: .utf8) else {
+            if copyStatus == errSecItemNotFound {
+                cacheLock.lock()
+                cachedStatuses[account] = .absent
+                cachedSecrets.removeValue(forKey: account)
+                cacheLock.unlock()
+            }
             return nil
         }
         let trimmed = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        cacheLock.lock()
+        cachedSecrets[account] = trimmed
+        cachedStatuses[account] = .present
+        cacheLock.unlock()
+        return trimmed
     }
 
     enum Status {
@@ -42,15 +73,29 @@ enum Keychain {
     /// Whether a key exists, asked by attributes only: fetching the secret itself on the
     /// main thread could block the window on an access prompt (D-170).
     static func status(account: String) -> Status {
+        cacheLock.lock()
+        if let cached = cachedStatuses[account], cached != .unavailable {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
         var query = baseQuery(account: account)
         query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
+        let resolved: Status
         switch SecItemCopyMatching(query as CFDictionary, &item) {
-        case errSecSuccess: return .present
-        case errSecItemNotFound: return .absent
-        default: return .unavailable
+        case errSecSuccess: resolved = .present
+        case errSecItemNotFound: resolved = .absent
+        default: resolved = .unavailable
         }
+        if resolved != .unavailable {
+            cacheLock.lock()
+            cachedStatuses[account] = resolved
+            cacheLock.unlock()
+        }
+        return resolved
     }
 
     static func hasKey(account: String) -> Bool {
@@ -68,6 +113,10 @@ enum Keychain {
         let update = [kSecValueData as String: data]
         let updated = SecItemUpdate(query as CFDictionary, update as CFDictionary)
         if updated == errSecSuccess {
+            cacheLock.lock()
+            cachedSecrets[account] = trimmed
+            cachedStatuses[account] = .present
+            cacheLock.unlock()
             return true
         }
         guard updated == errSecItemNotFound else {
@@ -80,15 +129,30 @@ enum Keychain {
         // The key is needed only while the speaker is using this Mac, and it must never
         // travel to another device inside a keychain sync.
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        let added = SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        if added {
+            cacheLock.lock()
+            cachedSecrets[account] = trimmed
+            cachedStatuses[account] = .present
+            cacheLock.unlock()
+        }
+        return added
     }
 
     static func delete(account: String) -> KeychainDeleteResult {
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         switch status {
         case errSecSuccess:
+            cacheLock.lock()
+            cachedSecrets.removeValue(forKey: account)
+            cachedStatuses[account] = .absent
+            cacheLock.unlock()
             return .removed
         case errSecItemNotFound:
+            cacheLock.lock()
+            cachedSecrets.removeValue(forKey: account)
+            cachedStatuses[account] = .absent
+            cacheLock.unlock()
             return .notFound
         default:
             return .failed(status)

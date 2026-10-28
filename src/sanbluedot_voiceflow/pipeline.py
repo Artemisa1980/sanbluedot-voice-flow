@@ -5,10 +5,10 @@ from pathlib import Path
 from .cleaners.fillers import remove_fillers
 from .contracts import Cleaner, PipelineResult, Transcriber
 from .errors import CleanupFailed
-from .memory import Correction, apply_corrections
+from .memory import Correction, align_vocabulary, apply_corrections
 from .output_guard import guard_conservative_cleanup, guard_fix_cleanup
 from .snippets import Snippet, expand_snippets
-from .take_back import has_take_back
+from .take_back import has_explicit_wipe_take_back, has_take_back, resolve_take_back_locally
 
 
 class DictationPipeline:
@@ -21,6 +21,7 @@ class DictationPipeline:
         app_name: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         model_only_for_take_back: bool = False,
+        vocabulary: Sequence[str] = (),
     ) -> None:
         self._transcriber = transcriber
         self._cleaner = cleaner
@@ -34,6 +35,7 @@ class DictationPipeline:
         # then asks no model: the guard's fillers are deleted by rule. A spoken take-back
         # still goes to the model, because deciding what was withdrawn takes one.
         self._model_only_for_take_back = model_only_for_take_back
+        self._vocabulary = tuple(vocabulary)
 
     def process(self, audio_path: Path) -> PipelineResult:
         started = self._monotonic()
@@ -138,8 +140,13 @@ class DictationPipeline:
         cleanup_started: float,
         **_: object,
     ) -> tuple[str, float, str]:
-        """The `clean` a punctuating engine needs: fillers out by rule, snippets expanded."""
-        cleaned = remove_fillers(personalized_text)
+        """The `clean` a punctuating engine needs: take-backs & fillers out by rule, snippets expanded."""
+        resolved = (
+            resolve_take_back_locally(personalized_text)
+            if has_explicit_wipe_take_back(personalized_text)
+            else personalized_text
+        )
+        cleaned = remove_fillers(resolved)
         final_text = expand_snippets(cleaned, self._snippets, app_name=self._app_name)
         return final_text, self._monotonic() - cleanup_started, cleaned
 
@@ -161,13 +168,23 @@ class DictationPipeline:
         recognition happened, so the interface must show nothing rather than a zero.
         """
         # Confirmed corrections are deterministic personal memory, not model cleanup.
-        # Keep both layers so the engine transcript remains independently recoverable.
-        personalized_text = apply_corrections(raw_text, self._corrections)
+        # Align vocabulary first, then apply confirmed corrections so explicit user
+        # corrections take precedence over automatic vocabulary alignment.
+        base_text = align_vocabulary(raw_text, self._vocabulary) if self._vocabulary else raw_text
+        personalized_text = apply_corrections(base_text, self._corrections)
 
         # Stripped because it is delivered text: the engine's leading segment space stays
         # in `raw_text` and `personalized_text`, never at the speaker's cursor.
+        # If the speaker uttered an explicit wipe cue ("borrar eso", "scratch that"),
+        # resolve it on the fallback path too so a provider failure or guard rejection
+        # still removes the withdrawn clause instead of pasting "borrar eso" at the cursor.
+        fallback_source = (
+            resolve_take_back_locally(personalized_text.strip())
+            if has_explicit_wipe_take_back(personalized_text)
+            else personalized_text.strip()
+        )
         fallback = expand_snippets(
-            personalized_text.strip(), self._snippets, app_name=self._app_name
+            fallback_source, self._snippets, app_name=self._app_name
         )
 
         cleanup_started = self._monotonic()

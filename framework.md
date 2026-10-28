@@ -30,6 +30,16 @@ Provide personal, low-friction dictation on macOS. A configurable push-to-talk s
 - The application exposes recording, processing, success, and failure states.
 - This specification governs the macOS implementation. A second platform is adapted, gated and measured on the machine it targets, and is not specified, audited or planned from here, except where a rule names the Windows adapter explicitly — its trigger above, and the Ollama cleaner the shared engine keeps for it (R6).
 
+### R1b — Desktop companion and HUD
+
+- A persistent, non-activating desktop companion mascot (Microduck) rests unobtrusively on screen in a borderless floating panel (`FloatingHUDPanel`). It never steals keyboard focus or activates over other applications (`canBecomeKey = false`, `canBecomeMain = false`).
+- In its idle state, Microduck defaults to a relaxed seated posture (`sittingFront`), swinging its feet rhythmically, gently breathing, and glancing smoothly toward the cursor via distance-decayed eye and head tracking.
+- The user can toggle posture between sitting and standing by left-clicking the duck or selecting the posture action in its context menu. Standing posture features walking cycles, hops, and upright resting sway. Posture preference persists across application launches.
+- Microduck can be repositioned freely across displays via click-and-drag. Screen position coordinates persist across restarts and clamp safely inside visible screen bounds.
+- During active voice capture and processing, a thought-bubble status capsule opens adjacent to Microduck's head to display live VU audio metering, active cleaner model, transcription status, and action feedback.
+- Left-clicking the duck toggles posture; right-clicking or Control-clicking opens an Apple HIG-compliant companion context menu providing mode selection, cleaner switching, model choice, speech engine toggle, posture control, station access, and a hide option.
+- During system sleep or display lock, animation loops pause automatically to eliminate idle battery consumption.
+
 ### R2 — Speech recognition
 
 - Speech recognition works locally by default.
@@ -64,7 +74,7 @@ written. When the fix guard refuses, the dictation gets the ordinary cleanup ins
 the bare transcript. A cue only decides that the model is asked, so the list leans
 wide; a bare "no" or "digo" stays out because nearly every sentence would then pay for a
 second call. A take-back withdraws the words just before it, never the dictation: the fix
-guard lets a deletion stand only within ten words before a cue or three after it, as one
+guard lets a deletion stand only within eighteen words before a cue or three after it, as one
 unbroken run up to the cue, and it
 matches from the end, because the corrected version is the one said last. On long
 dictations Apple and Ollama erased most of the text in fix mode, and this is what

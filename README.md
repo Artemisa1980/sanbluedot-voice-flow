@@ -37,7 +37,7 @@ The native macOS runner can:
 - capture the microphone while a configurable global shortcut is held;
 - send the recording through the local Python engine on release;
 - expose ready, recording, processing, copied, and failure states;
-- show a floating retro microphone HUD with a live VU meter, the active mode, and the
+- show a persistent, draggable Microduck companion mascot and thought-bubble HUD with a live VU meter, the active mode, and the
   result, without taking focus from the application being dictated into;
 - copy the deterministic personalized transcript by default;
 - paste at the active cursor when Accessibility is granted, re-checking the focused

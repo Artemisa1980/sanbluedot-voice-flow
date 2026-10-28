@@ -145,7 +145,8 @@ ids = {name: uid("object", name) for name in (
 # target the on-device model needs. The team is not written here: the project file is
 # tracked and the team identifies the owner's Apple account, so `build-macos-app.sh`
 # reads it from the installed certificate and passes it to `xcodebuild`.
-target_settings = f'''\t\t\t\tCODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.entitlements";
+target_settings = f'''\t\t\t\tARCHS = "arm64";
+\t\t\t\tCODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.entitlements";
 \t\t\t\tCODE_SIGN_IDENTITY = "Apple Development";
 \t\t\t\tCODE_SIGN_STYLE = Manual;
 \t\t\t\tCOMBINE_HIDPI_IMAGES = YES;
@@ -156,6 +157,7 @@ target_settings = f'''\t\t\t\tCODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.e
 \t\t\t\tMACOSX_DEPLOYMENT_TARGET = 14.0;
 \t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "{BUNDLE_ID}";
 \t\t\t\tPRODUCT_NAME = "{APP_NAME}";
+\t\t\t\tVALID_ARCHS = "arm64";
 \t\t\t\t// The bundle is named for the brand and the binary is not. `Info.plist`
 \t\t\t\t// declares CFBundleExecutable = VoiceFlowMac, and codesign refuses a bundle
 \t\t\t\t// whose declared main executable is not the file that is there.

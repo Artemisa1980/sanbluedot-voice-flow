@@ -5,6 +5,8 @@ caller that offers a `--cleaner` flag builds it here, so adding a provider does 
 finding every `if cleaner ==` in the codebase and hoping none was missed.
 """
 
+from collections.abc import Sequence
+
 from ..contracts import Cleaner
 from .apple import DEFAULT_BINARY as DEFAULT_APPLE_BINARY
 from .apple import AppleCleaner
@@ -40,11 +42,16 @@ def build_cleaner(
     mode: str = "clean",
     gemini_model: str = DEFAULT_GEMINI_MODEL,
     apple_binary: str = DEFAULT_APPLE_BINARY,
+    apple_examples: Sequence[tuple[str, str]] = (),
     ollama_model: str = "qwen3:4b",
     ollama_url: str = "http://127.0.0.1:11434",
 ) -> Cleaner:
     if name == "apple":
-        return AppleCleaner(binary=apple_binary, mode=mode)
+        return AppleCleaner(
+            binary=apple_binary,
+            mode=mode,
+            few_shot_examples=apple_examples,
+        )
     if name == "ollama":
         return OllamaCleaner(model=ollama_model, base_url=ollama_url, mode=mode)
     if name == "gemini":

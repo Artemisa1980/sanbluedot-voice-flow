@@ -11,7 +11,8 @@ preview_root=$(mktemp -d "$project_root/dist/previews/focus-home.XXXXXX")
 preview_app="$preview_root/Focus Home Preview.app"
 
 swift build --package-path "$package_dir"
-binary_dir=$(swift build --package-path "$package_dir" --show-bin-path)
+binary_dir="$package_dir/.build/out/Products/Debug"
+[[ -f "$binary_dir/VoiceFlowMac" ]] || binary_dir=$(swift build --package-path "$package_dir" --show-bin-path)
 mkdir -p "$preview_app/Contents/MacOS" "$preview_app/Contents/Resources/Fonts"
 install -m 755 "$binary_dir/VoiceFlowMac" "$preview_app/Contents/MacOS/VoiceFlowMac"
 install -m 644 "$package_dir/Resources/Info.plist" "$preview_app/Contents/Info.plist"

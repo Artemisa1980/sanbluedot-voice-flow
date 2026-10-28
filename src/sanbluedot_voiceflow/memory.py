@@ -6,16 +6,26 @@ Corrections are reparative: a confirmed pair rewrites what the engine still gets
 wrong. Neither layer trains a model; both are plain local files the user owns.
 """
 
+import difflib
 import json
 import os
 import re
 import sys
+import unicodedata
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _set_private_mode(path: Path, mode: int = 0o600) -> None:
+    """Restrict a personal store or export file to the owner (I-25)."""
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
 
 
 def write_text_atomically(path: Path, text: str) -> None:
@@ -34,6 +44,7 @@ def write_text_atomically(path: Path, text: str) -> None:
             handle.write(text)
             handle.flush()
             _flush_to_disk(handle.fileno())
+        _set_private_mode(temporary, 0o600)
         os.replace(temporary, path)
         directory = os.open(path.parent, os.O_RDONLY)
         try:
@@ -64,6 +75,7 @@ def exclusive_file_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f".{path.name}.lock")
     with lock_path.open("a+b") as handle:
+        _set_private_mode(lock_path, 0o600)
         if os.name == "nt":
             import msvcrt
 
@@ -464,6 +476,113 @@ def apply_corrections(text: str, corrections: Sequence[Correction]) -> str:
         return matched if intended is None else _match_case(matched, intended)
 
     return combined.sub(replace, text)
+
+
+def _fold_vocab_token(token: str) -> str:
+    decomposed = unicodedata.normalize("NFD", token.casefold())
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+
+def _phonetic_vocab_token(token: str) -> str:
+    """Normalize bilingual Spanish/English phonetic equivalents for fuzzy term alignment."""
+    folded = _fold_vocab_token(token)
+    for src, dst in (("qu", "k"), ("ck", "k"), ("ee", "e"), ("oo", "u"), ("ph", "f"), ("ll", "y")):
+        folded = folded.replace(src, dst)
+    return folded
+
+
+_URL_PATH_EMAIL_RE = re.compile(
+    r"(https?://[^\s]+|/[a-zA-Z0-9_\.\-]+/[^\s]*|[a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+)",
+    re.UNICODE,
+)
+_VERB_ENDINGS = ("ar", "er", "ir", "ando", "endo", "ado", "ido", "ing", "ed")
+
+
+def align_vocabulary(text: str, vocabulary: Sequence[str]) -> str:
+    """Align spoken tokens to canonical terms from vocabulary.local.txt.
+
+    Parakeet Ultra accepts no initial prompt before recognition. Post-transcription
+    vocabulary alignment gives Parakeet (and Whisper) the speaker's canonical casing,
+    accents, and high-precision phonetic alignment for distinctive terms (>= 6 chars).
+    URLs, file paths, email addresses, plurals, and grammatical verb inflections are
+    strictly protected from phonetic substitution.
+    """
+    if not text or not vocabulary:
+        return text
+
+    clean_terms = [t.strip() for t in vocabulary if t and t.strip()]
+    if not clean_terms:
+        return text
+
+    # Split by URLs/paths/emails to avoid mutating technical identifiers
+    segments = _URL_PATH_EMAIL_RE.split(text)
+
+    # 1. Exact case-folded / phrase-level canonical casing & orthography alignment
+    synthetic_corrections = [
+        Correction(heard=term, intended=term, confirmed_at="", source="")
+        for term in clean_terms
+        if any(c.isupper() for c in term) or not term.isascii()
+    ]
+
+    # 2. High-precision single-word phonetic/fuzzy alignment for distinctive terms (>= 6 chars)
+    single_terms = [
+        (term, _fold_vocab_token(term), _phonetic_vocab_token(term))
+        for term in clean_terms
+        if " " not in term and len(term) >= 6
+    ]
+
+    exact_folded = {folded for _, folded, _ in single_terms}
+    word_re = re.compile(r"\b\w+\b", re.UNICODE)
+
+    def replace_token(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if len(word) < 6:
+            return word
+        folded_word = _fold_vocab_token(word)
+        if folded_word in exact_folded:
+            for canonical, folded_term, _ in single_terms:
+                if folded_term == folded_word:
+                    return _match_case(word, canonical)
+            return word
+
+        phonetic_word = _phonetic_vocab_token(word)
+        best_canonical: str | None = None
+        best_ratio = 0.90
+        for canonical, folded_term, phonetic_term in single_terms:
+            if phonetic_word[:1] != phonetic_term[:1]:
+                continue
+            if abs(len(phonetic_word) - len(phonetic_term)) > 1:
+                continue
+            # Plural protection
+            if folded_word.endswith("s") != folded_term.endswith("s"):
+                continue
+            # Morphological inflection protection (e.g. Spanish verb "terminar" vs "terminal")
+            if folded_word.endswith(_VERB_ENDINGS) and not folded_term.endswith(_VERB_ENDINGS):
+                continue
+
+            ratio = max(
+                difflib.SequenceMatcher(None, folded_word, folded_term).ratio(),
+                difflib.SequenceMatcher(None, phonetic_word, phonetic_term).ratio(),
+            )
+            if ratio >= best_ratio:
+                best_ratio = ratio
+                best_canonical = canonical
+        if best_canonical is not None:
+            return _match_case(word, best_canonical)
+        return word
+
+    processed_segments: list[str] = []
+    for i, seg in enumerate(segments):
+        if i % 2 == 1:
+            # Matched URL, path or email token -> deliver unchanged
+            processed_segments.append(seg)
+        else:
+            aligned = apply_corrections(seg, synthetic_corrections) if synthetic_corrections else seg
+            if single_terms:
+                aligned = word_re.sub(replace_token, aligned)
+            processed_segments.append(aligned)
+
+    return "".join(processed_segments)
 
 
 def correction_needs_global_confirmation(heard: str) -> bool:

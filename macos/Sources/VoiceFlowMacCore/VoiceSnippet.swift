@@ -172,10 +172,12 @@ public final class VoiceSnippetStore: @unchecked Sendable {
         let lockURL = Self.lockURL(for: fileURL)
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
         )
-        let descriptor = open(lockURL.path, O_RDWR | O_CREAT, 0o644)
+        let descriptor = open(lockURL.path, O_RDWR | O_CREAT, 0o600)
         guard descriptor >= 0 else { return body() }
+        fchmod(descriptor, 0o600)
         defer { close(descriptor) }
         guard flock(descriptor, LOCK_EX) == 0 else { return body() }
         defer { flock(descriptor, LOCK_UN) }
@@ -222,9 +224,18 @@ public final class VoiceSnippetStore: @unchecked Sendable {
         let temporary = directory.appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp")
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else { return false }
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            guard FileManager.default.createFile(
+                atPath: temporary.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600]
+            ) else { return false }
             let handle = try FileHandle(forWritingTo: temporary)
+            fchmod(handle.fileDescriptor, 0o600)
             try handle.write(contentsOf: data)
             if fcntl(handle.fileDescriptor, F_FULLFSYNC) != 0 { fsync(handle.fileDescriptor) }
             try handle.close()

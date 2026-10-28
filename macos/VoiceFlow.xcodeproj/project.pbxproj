@@ -279,6 +279,7 @@
 		8093BB7B7FED665006DD8AB2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "arm64";
 				CODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
@@ -290,6 +291,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "dot.sanblue.voiceflow";
 				PRODUCT_NAME = "sanblueᵈᵒᵗ VoiceFlow";
+				VALID_ARCHS = "arm64";
 				// The bundle is named for the brand and the binary is not. `Info.plist`
 				// declares CFBundleExecutable = VoiceFlowMac, and codesign refuses a bundle
 				// whose declared main executable is not the file that is there.
@@ -301,6 +303,7 @@
 		988E7EC572CBA0B39B982BB9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "arm64";
 				CODE_SIGN_ENTITLEMENTS = "Resources/VoiceFlowMac.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
@@ -312,6 +315,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "dot.sanblue.voiceflow";
 				PRODUCT_NAME = "sanblueᵈᵒᵗ VoiceFlow";
+				VALID_ARCHS = "arm64";
 				// The bundle is named for the brand and the binary is not. `Info.plist`
 				// declares CFBundleExecutable = VoiceFlowMac, and codesign refuses a bundle
 				// whose declared main executable is not the file that is there.

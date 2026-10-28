@@ -157,3 +157,17 @@ class StrayOutputTests(unittest.TestCase):
     def test_trailing_diagnostics_do_not_break_the_cleanup(self) -> None:
         recorder = Recorder(stdout="init log\n" + answer("Hola.") + "\nMetal API validation disabled.\n")
         self.assertEqual(build(recorder).clean("hola"), "Hola.")
+
+    def test_distillation_few_shot_examples_are_included_in_prompt(self) -> None:
+        recorder = Recorder(stdout=answer("Vamos a las cinco."))
+        cleaner = AppleCleaner(
+            binary="/usr/bin/true",
+            mode="clean",
+            runner=recorder,
+            few_shot_examples=[("el lunes borrar eso el martes", "El martes.")],
+        )
+        self.assertEqual(cleaner.clean("vamos a las cuatro borrar eso a las cinco", language_hint="es"), "Vamos a las cinco.")
+        sent = json.loads(recorder.inputs[0])
+        self.assertEqual(sent["instructions"], CONSERVATIVE_SYSTEM_PROMPT)
+        self.assertIn("Recent user examples:", sent["prompt"])
+        self.assertIn("el lunes borrar eso el martes", sent["prompt"])

@@ -27,6 +27,22 @@ public struct VoiceAction: Equatable, Sendable {
         self.queryOrTarget = queryOrTarget
         self.originalSpeech = originalSpeech
     }
+
+    /// Privacy-safe description for on-screen console logging (D-82 / R7).
+    public var logSummary: String {
+        switch type {
+        case .openApp:
+            return "open app"
+        case .googleSearch:
+            return "google search"
+        case .youtubeSearch:
+            return "youtube search"
+        case .githubSearch:
+            return "github search"
+        case .openURL:
+            return "open url"
+        }
+    }
 }
 
 /// The search pages a spoken search opens.

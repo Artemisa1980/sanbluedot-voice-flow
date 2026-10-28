@@ -206,6 +206,7 @@ final class VoiceFlowController {
         case .recording:
             break
         }
+        AppleModelWarmer.finishBeforeProcessing()
         capWorkItem?.cancel()
         capWorkItem = nil
         state = .idle
@@ -246,6 +247,7 @@ final class VoiceFlowController {
             return
         }
         guard state == .recording else { return }
+        AppleModelWarmer.finishBeforeProcessing()
         capWorkItem?.cancel()
         capWorkItem = nil
 
@@ -277,10 +279,12 @@ final class VoiceFlowController {
         recordingMode = nil
         recordingGeminiModel = nil
         recordingSpeechEngine = nil
-        let apiKey = cleaner.isCloud ? Keychain.read(account: cleaner.rawValue) : nil
+        let isCloud = cleaner.isCloud
+        let cleanerRaw = cleaner.rawValue
         let recordDistillationPair = recordDistillationPairs
 
         processingQueue.async { [self] in
+            let apiKey = isCloud ? Keychain.read(account: cleanerRaw) : nil
             do {
                 let result = try self.engineRunner.process(
                     audioURL: audioURL,
@@ -434,7 +438,22 @@ final class VoiceFlowController {
 /// itself; the system keeps the model, not the process. Nothing waits for it and nothing
 /// depends on it: if it fails, the cleanup is only as slow as it was before.
 enum AppleModelWarmer {
+    private static let lock = NSLock()
+    private static var lastPrewarmAt: Date?
+    private static var activeProcess: Process?
+    /// Once loaded, the system daemon keeps the model warm across back-to-back dictations.
+    private static let cooldownSeconds: TimeInterval = 120.0
+
     static func prewarm() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let active = activeProcess, active.isRunning {
+            return
+        }
+        if let last = lastPrewarmAt, Date().timeIntervalSince(last) < cooldownSeconds {
+            return
+        }
         guard let helper = EngineRunner.appleCleanerURL else { return }
         let process = Process()
         process.executableURL = helper
@@ -442,6 +461,37 @@ enum AppleModelWarmer {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        try? process.run()
+        process.terminationHandler = { proc in
+            AppleModelWarmer.lock.lock()
+            if proc.terminationStatus == 0 {
+                AppleModelWarmer.lastPrewarmAt = Date()
+            }
+            if AppleModelWarmer.activeProcess === proc {
+                AppleModelWarmer.activeProcess = nil
+            }
+            AppleModelWarmer.lock.unlock()
+        }
+        do {
+            try process.run()
+            activeProcess = process
+        } catch {
+            activeProcess = nil
+        }
+    }
+
+    /// Ensures any in-flight `--prewarm` subprocess exits before the real transcription or
+    /// cleanup helper starts, preventing dual-session contention on short dictations.
+    static func finishBeforeProcessing() {
+        lock.lock()
+        let process = activeProcess
+        activeProcess = nil
+        lock.unlock()
+
+        if let process, process.isRunning {
+            process.terminate()
+            DispatchQueue.global(qos: .userInitiated).async {
+                process.waitUntilExit()
+            }
+        }
     }
 }

@@ -11,7 +11,7 @@ credential, so `CLOUD_CLEANER_NAMES` does not list it.
 
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from ..errors import CleanupError
 from ..transcribers.whisper_cpp import resolve_binary
@@ -20,6 +20,7 @@ from .prompt import (
     FIX_SYSTEM_PROMPT,
     MEETING_NOTES_SYSTEM_PROMPT,
     TRANSLATE_EN_SYSTEM_PROMPT,
+    strip_enclosing_markdown_fences,
 )
 
 
@@ -42,11 +43,13 @@ class AppleCleaner:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         mode: str = "clean",
         runner: Runner = subprocess.run,
+        few_shot_examples: Sequence[tuple[str, str]] = (),
     ) -> None:
         self.binary = binary
         self.timeout_seconds = timeout_seconds
         self.mode = mode
         self._runner = runner
+        self.few_shot_examples = tuple(few_shot_examples)
 
     def clean(
         self,
@@ -77,10 +80,17 @@ class AppleCleaner:
             )
 
         hint = language_hint or "auto-detected"
+        examples_block = ""
+        if self.few_shot_examples:
+            formatted = [
+                f"Example input: {raw}\nExample output: {json.dumps({'cleaned_text': cleaned}, ensure_ascii=False)}"
+                for raw, cleaned in self.few_shot_examples
+            ]
+            examples_block = "Recent user examples:\n" + "\n".join(formatted) + "\n\n"
         request = json.dumps(
             {
                 "instructions": system_instruction,
-                "prompt": f"Language hint: {hint}\n\nTranscript:\n{text}",
+                "prompt": f"Language hint: {hint}\n\n{examples_block}Transcript:\n{text}",
             },
             ensure_ascii=False,
         )
@@ -129,4 +139,4 @@ class AppleCleaner:
         cleaned = str(data["cleaned_text"])
         if not cleaned.strip():
             raise CleanupError("Apple cleanup returned empty text.")
-        return cleaned.strip()
+        return strip_enclosing_markdown_fences(cleaned.strip())

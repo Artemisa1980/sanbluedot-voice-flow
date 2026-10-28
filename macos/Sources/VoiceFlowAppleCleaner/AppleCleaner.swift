@@ -122,9 +122,9 @@ func prewarmOnDeviceModel() async {
         exit(ExitStatus.modelUnavailable.rawValue)
     }
     LanguageModelSession().prewarm()
-    // `prewarm` returns before the load finishes; leaving at once could drop the request
-    // with the process. Two seconds is shorter than any dictation it runs beside.
-    try? await Task.sleep(nanoseconds: 2_000_000_000)
+    // `prewarm` returns before the load finishes; a brief 500ms hold lets the XPC request
+    // cross into the system daemon without lingering into short dictations.
+    try? await Task.sleep(nanoseconds: 500_000_000)
     exit(ExitStatus.delivered.rawValue)
 }
 

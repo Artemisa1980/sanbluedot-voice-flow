@@ -634,27 +634,35 @@ def _process(args: argparse.Namespace) -> int:
 
     corrections = () if args.no_memory else tuple(CorrectionStore().load())
     snippets = () if args.no_memory else tuple(SnippetStore().load())
+    use_vocab = not args.no_vocab_prompt and not args.no_memory
+    vocab_terms = tuple(load_vocabulary()) if use_vocab else ()
 
     if speech == "parakeet":
-        # Parakeet takes no vocabulary prompt; confirmed corrections still apply after it.
+        # Parakeet takes no vocabulary prompt; confirmed corrections and post-transcription
+        # vocabulary alignment apply after it.
         transcriber = ParakeetTranscriber(
             model_dir=getattr(args, "parakeet_models", DEFAULT_PARAKEET_MODEL_DIR),
             binary=getattr(args, "parakeet_bin", DEFAULT_PARAKEET_BINARY),
         )
     else:
-        use_prompt = not args.no_vocab_prompt and not args.no_memory
-        initial_prompt = build_initial_prompt(load_vocabulary()) if use_prompt else ""
+        initial_prompt = build_initial_prompt(vocab_terms) if use_vocab else ""
         transcriber = WhisperCppTranscriber(
             model_path=args.whisper_model,
             binary=args.whisper_bin,
             language=args.language,
             initial_prompt=initial_prompt,
         )
+    apple_examples = (
+        tuple(DistillationStore().recent_examples(mode=mode, limit=2))
+        if args.cleaner == "apple" and not args.no_memory
+        else ()
+    )
     cleaner = build_cleaner(
         args.cleaner,
         mode=mode,
         gemini_model=args.gemini_model,
         apple_binary=getattr(args, "apple_bin", DEFAULT_APPLE_BINARY),
+        apple_examples=apple_examples,
         ollama_model=getattr(args, "ollama_model", "qwen3:4b"),
         ollama_url=getattr(args, "ollama_url", "http://127.0.0.1:11434"),
     )
@@ -666,6 +674,7 @@ def _process(args: argparse.Namespace) -> int:
         app_name=getattr(args, "app_name", None),
         # Parakeet punctuates, so an ordinary `clean` dictation asks no model.
         model_only_for_take_back=speech == "parakeet",
+        vocabulary=vocab_terms,
     )
 
     try:
@@ -796,6 +805,7 @@ def _clean(args: argparse.Namespace) -> int:
 
     corrections = () if args.no_memory else tuple(CorrectionStore().load())
     snippets = () if args.no_memory else tuple(SnippetStore().load())
+    vocabulary = () if args.no_memory else tuple(load_vocabulary())
     cleaner = build_cleaner(
         args.cleaner,
         mode=mode,
@@ -810,6 +820,7 @@ def _clean(args: argparse.Namespace) -> int:
         corrections=corrections,
         snippets=snippets,
         app_name=args.app_name,
+        vocabulary=vocabulary,
     )
 
     try:

@@ -99,6 +99,7 @@ sanblueᵈᵒᵗ voice-flow/
 │   ├── cleaners/              # Text cleanup implementations
 │   │   ├── fillers.py         # Rule-based filler removal and punctuation
 │   │   ├── apple.py           # Apple Intelligence Writing Tools cleaner
+│   │   ├── prompt.py          # LLM cleanup prompts and token budget formatting
 │   │   └── gemini.py          # Gemini API cleaner (single-model / argon)
 │   └── transcribers/          # Speech-to-text adapters
 │       ├── parakeet.py        # NVIDIA Parakeet CoreML runner
@@ -115,9 +116,12 @@ sanblueᵈᵒᵗ voice-flow/
 │   │   │   ├── Words.swift             # Vocabulary and correction diffing logic
 │   │   │   ├── AppContext.swift        # Active application resolution and categories
 │   │   │   ├── PasteTarget.swift       # Terminal safety checks and flattening
-│   │   │   └── CleanerFacts.swift      # Factual provider capabilities and timing
+│   │   │   ├── CleanerFacts.swift      # Factual provider capabilities and timing
+│   │   │   ├── VoiceAction.swift       # Voice command parsing and execution
+│   │   │   └── HUDLayout.swift         # Fixed dimension contracts for companion and HUD
 │   │   ├── VoiceFlowMac/      # Main Application UI & Logic
 │   │   │   ├── AppDelegate.swift       # App lifecycle and store coordination
+│   │   │   ├── ControlWindowController.swift # Main VoiceFlow Station window controller
 │   │   │   ├── VoiceFlowController.swift # Capture and event handling
 │   │   │   ├── EngineRunner.swift      # Subprocess runner with watchdog
 │   │   │   ├── HotkeyMonitor.swift     # CGEventTap global hotkey listener
@@ -126,6 +130,7 @@ sanblueᵈᵒᵗ voice-flow/
 │   │   │   ├── Keychain.swift          # Security framework wrapper
 │   │   │   ├── VoiceStationWindowView.swift # Main window UI and tokens
 │   │   │   ├── FocusHomeView.swift     # Multi-panel station and settings view
+│   │   │   ├── FocusHomePreviewDelegate.swift # Isolated preview test harness
 │   │   │   ├── MicroduckView.swift     # Articulated mascot HUD (30 FPS TimelineView, kinematics)
 │   │   │   ├── RetroMicHUDView.swift   # On-screen HUD pill and level meter
 │   │   │   └── FloatingHUDController.swift # Borderless floating HUD window
@@ -136,6 +141,10 @@ sanblueᵈᵒᵗ voice-flow/
 │
 ├── docs/                      # Technical Documentation & Visual References
 │   ├── WalkthroughHierarchy.md # This guide
+│   ├── MicroduckCompanionDesign.md # Persistent mascot companion design & kinematics spec
+│   ├── microduck-sitting-mockup.html # Canonical seated companion mockup (splayed feet, Zzz, quack, gaze)
+│   ├── microduck-standing-mockup.html # Biped standing mascot mockup (Newton kinematics, 22s loop)
+│   ├── microduck-zzz-quack-mockup.html # Dedicated expressions mockup (pure text quack, subtle Zzz, 45-60s)
 │   ├── proposals/             # Historical proposal documents
 │   │   ├── phase-5-proposal.md
 │   │   └── competitive-evolution-proposal.md
@@ -178,6 +187,15 @@ sanblueᵈᵒᵗ voice-flow/
 8. **Conservative Output Guard**: `output_guard.py` enforces Rule R4. If the cleanup changed lexical meaning, altered numbers, or added unsupported words, the cleanup is rejected and the safe transcript is used.
 9. **Delivery**: `AutoPaste.swift` posts a synthetic `Cmd+V`. If pasting into a terminal, text is sanitized to a single line to prevent accidental execution.
 10. **Storage & Feedback**: The dictation record is appended to `DictationHistoryStore`, and `FloatingHUDController` displays completion latency and words-per-minute.
+
+### B. Persistent Microduck Companion Lifecycle & State Machine
+1. **Window Management**: `FloatingHUDPanel` is an AppKit floating panel configured with `canBecomeKey = false` and `canBecomeMain = false`. It remains on top without stealing application focus.
+2. **Hit-Testing Isolation**: `MicroduckHUDHostingView` restricts click intercepts exclusively to the mascot bounds and the active thought bubble. Clicks in empty surrounding space pass directly through to background applications.
+3. **Ambient Kinematics**: Driven by a 30 FPS SwiftUI `TimelineView`. The duck defaults to a seated resting posture (`sittingFront`), swinging its feet rhythmically, breathing gently, and smoothly orienting its head and gaze toward the cursor via distance-decayed tracking.
+4. **Interactive Posture Control**: A single click on the duck toggles between seated and standing postures. Standing mode runs a 22-second ambient kinematics cycle featuring sine-eased walk steps, joy hops, and alert upright idling. Posture preference persists in `UserDefaults` (`microduck.userPrefersStanding`).
+5. **Drag Repositioning**: Click-and-drag repositions the duck anywhere across active displays. Coordinates clamp within `screen.visibleFrame` and persist across launches (`microduck.screenPosition.x` and `microduck.screenPosition.y`).
+6. **Sleep & Resource Guarding**: System notifications (`screensDidSleepNotification` / `screensDidWakeNotification`) pause the `TimelineView` while the display is locked or asleep, eliminating background CPU and battery draw.
+7. **Context Menu**: Right-click or Control-click on Microduck summons an Apple HIG Title Cased contextual menu to switch voice modes, AI cleaners, cloud models, speech engines, toggle posture, or summon the full VoiceFlow Station.
 
 ---
 

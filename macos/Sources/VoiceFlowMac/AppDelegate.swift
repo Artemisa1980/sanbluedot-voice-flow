@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         forKey: AppDelegate.distillationDefaultsKey
     )
     private var distillationMenuItem: NSMenuItem!
+    private var companionMenuItem: NSMenuItem!
     private var retryPermissionsAvailable = true
     private let floatingHUD = FloatingHUDController()
     private static let historyLoad = DictationHistoryStore.loadReporting()
@@ -110,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the provider shown in the window identical to the provider that will run.
         configureWindow()
         configureStatusMenu()
+        floatingHUD.menuProvider = { [weak self] in self?.makeCompanionContextMenu() }
 
         if let launchError {
             updateStatus(.failed(launchError.localizedDescription))
@@ -120,6 +122,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             authorizeAndStart()
             refreshWords()
         }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // If the user went to System Settings to grant Input Monitoring or Accessibility,
+        // retry starting the global hotkey tap if it was unavailable and update live badges.
+        if !globalHotkeyAvailable, let configuration {
+            if CGPreflightListenEventAccess() {
+                let monitor = HotkeyMonitor(
+                    shortcut: configuration.shortcut,
+                    modeShortcut: configuration.modeShortcut,
+                    onPressed: { [weak controller] in controller?.shortcutPressed() },
+                    onReleased: { [weak controller] in controller?.shortcutReleased() },
+                    onModeCycle: { [weak self] in
+                        DispatchQueue.main.async { self?.cycleProcessingMode() }
+                    },
+                    onCancel: { [weak controller] in controller?.cancelRecording() }
+                )
+                do {
+                    try monitor.start()
+                    hotkeyMonitor = monitor
+                    globalHotkeyAvailable = true
+                } catch {
+                    globalHotkeyAvailable = false
+                }
+            }
+        }
+        refreshPermissionStatuses()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -211,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApplication.shared.hide(nil)
             AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste, _ in
                 let action = didAutoPaste ? "re-pasted" : "copied"
-                self?.controlWindow?.addLog("\(action) from history: \"\(record.menuPreview())\"", isHighlight: true)
+                self?.controlWindow?.addLog("\(action) from history [\(record.shortTimeString)]", isHighlight: true)
             }
         }
         controlWindow.onRefreshWords = { [weak self] in
@@ -236,24 +265,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                old.lowercased() != first.heard.lowercased() {
                 commands.append(.forget(heard: old))
             }
-            let learned = request.pairs
-                .map { "\"\($0.heard)\" → \"\($0.intended)\"" }
-                .joined(separator: ", ")
-            self.runWords(commands, success: "learned: \(learned)") { [weak self] in
+            let count = request.pairs.count
+            self.runWords(commands, success: "learned \(count) correction\(count == 1 ? "" : "s")") { [weak self] in
                 self?.applyLearnedFix(request)
                 self?.controlWindow.clearTeachForm()
             }
         }
         controlWindow.onForgetCorrection = { [weak self] heard in
-            self?.runWords([.forget(heard: heard)], success: "deleted: \"\(heard)\"")
+            self?.runWords([.forget(heard: heard)], success: "deleted 1 correction")
         }
         controlWindow.onAddWord = { [weak self] term in
-            self?.runWords([.addWord(term)], success: "added to vocabulary: \"\(term)\"") { [weak self] in
+            self?.runWords([.addWord(term)], success: "added 1 vocabulary term") { [weak self] in
                 self?.controlWindow.clearNewWord()
             }
         }
         controlWindow.onRemoveWord = { [weak self] term in
-            self?.runWords([.removeWord(term)], success: "removed from vocabulary: \"\(term)\"")
+            self?.runWords([.removeWord(term)], success: "removed 1 vocabulary term")
         }
         controlWindow.onClearHistory = { [weak self] in
             self?.clearDictationHistory()
@@ -485,6 +512,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMenuItem.target = self
         menu.addItem(showMenuItem)
 
+        companionMenuItem = NSMenuItem(
+            title: "Microduck Desktop Companion",
+            action: #selector(toggleDesktopCompanion),
+            keyEquivalent: ""
+        )
+        companionMenuItem.target = self
+        let isCompanionOn = UserDefaults.standard.object(forKey: "microduck.companionVisible") as? Bool ?? true
+        companionMenuItem.state = isCompanionOn ? .on : .off
+        menu.addItem(companionMenuItem)
+
         distillationMenuItem = NSMenuItem(
             title: "Keep Distillation Pairs",
             action: #selector(toggleDistillationRecording),
@@ -595,7 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pasteboard.clearContents()
         pasteboard.setString(record.currentText, forType: .string)
         playCompletionSound()
-        controlWindow?.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
+        controlWindow?.addLog("copied from history [\(record.shortTimeString)]", isHighlight: true)
     }
 
     @objc private func copyHistoryRawText(_ sender: NSMenuItem) {
@@ -623,7 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playCompletionSound()
         AutoPaste.paste(after: 0.15) { [weak self] didAutoPaste, _ in
             let action = didAutoPaste ? "re-pasted" : "copied"
-            self?.controlWindow?.addLog("\(action) from history: \"\(record.menuPreview())\"", isHighlight: true)
+            self?.controlWindow?.addLog("\(action) from history [\(record.shortTimeString)]", isHighlight: true)
         }
     }
 
@@ -908,6 +945,358 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateShowMenuItemTitle()
     }
 
+    @objc private func toggleDesktopCompanion() {
+        let currentlyVisible = UserDefaults.standard.object(forKey: "microduck.companionVisible") as? Bool ?? true
+        let newValue = !currentlyVisible
+        floatingHUD.setCompanionVisible(newValue)
+        companionMenuItem?.state = newValue ? .on : .off
+    }
+
+enum MicroduckMenuIcon {
+    static func createIcon(size: CGFloat = 20.0) -> NSImage {
+        let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            let s = size / 24.0
+
+            let cream = NSColor(VoiceStationTokens.inputCream).cgColor
+            let visor = NSColor(VoiceStationTokens.panelHeader.opacity(0.45)).cgColor
+            let navy = NSColor(VoiceStationTokens.navy).cgColor
+            let gold = NSColor(VoiceStationTokens.gold).cgColor
+            let orange = NSColor(VoiceStationTokens.duckOrange).cgColor
+            let cyan = NSColor(VoiceStationTokens.dotBlue).cgColor
+            let white = NSColor.white.cgColor
+
+            // 1. Visor helmet hood (cream shell)
+            let helmetPath = CGMutablePath()
+            helmetPath.addRoundedRect(
+                in: CGRect(x: 3.5 * s, y: 5.5 * s, width: 17 * s, height: 16.5 * s),
+                cornerWidth: 4.5 * s, cornerHeight: 4.5 * s
+            )
+            ctx.setFillColor(cream)
+            ctx.addPath(helmetPath)
+            ctx.fillPath()
+
+            // 2. Ear antenna brackets
+            ctx.setFillColor(orange)
+            ctx.fill(CGRect(x: 1.6 * s, y: 10.5 * s, width: 2.2 * s, height: 6.5 * s))
+            ctx.fill(CGRect(x: 20.2 * s, y: 10.5 * s, width: 2.2 * s, height: 6.5 * s))
+
+            // 3. Dark visor glass
+            let visorPath = CGMutablePath()
+            visorPath.addRoundedRect(
+                in: CGRect(x: 5.0 * s, y: 8.5 * s, width: 14 * s, height: 11 * s),
+                cornerWidth: 3.0 * s, cornerHeight: 3.0 * s
+            )
+            ctx.setFillColor(visor)
+            ctx.addPath(visorPath)
+            ctx.fillPath()
+
+            // 4. Gold Camera Eye
+            ctx.setFillColor(gold)
+            ctx.fillEllipse(in: CGRect(x: 8.0 * s, y: 9.8 * s, width: 8.0 * s, height: 8.0 * s))
+
+            // 5. Dark Lens
+            ctx.setFillColor(navy)
+            ctx.fillEllipse(in: CGRect(x: 9.3 * s, y: 11.1 * s, width: 5.4 * s, height: 5.4 * s))
+
+            // 6. Cyan Pupil & Reflection
+            ctx.setFillColor(cyan)
+            ctx.fillEllipse(in: CGRect(x: 10.7 * s, y: 12.5 * s, width: 2.6 * s, height: 2.6 * s))
+            ctx.setFillColor(white)
+            ctx.fillEllipse(in: CGRect(x: 12.2 * s, y: 14.0 * s, width: 1.2 * s, height: 1.2 * s))
+
+            // 7. Orange Articulated Bill (bottom)
+            let billPath = CGMutablePath()
+            billPath.addRoundedRect(
+                in: CGRect(x: 4.2 * s, y: 2.0 * s, width: 15.6 * s, height: 4.2 * s),
+                cornerWidth: 2.0 * s, cornerHeight: 2.0 * s
+            )
+            ctx.setFillColor(orange)
+            ctx.addPath(billPath)
+            ctx.fillPath()
+
+            return true
+        }
+        img.isTemplate = false
+        return img
+    }
+}
+
+    private func makeCompanionContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Microduck Companion")
+
+        let header = NSMenuItem(title: "Microduck Companion", action: nil, keyEquivalent: "")
+        header.image = MicroduckMenuIcon.createIcon(size: 20)
+        header.isEnabled = false
+        menu.addItem(header)
+        menu.addItem(.separator())
+
+        // 1. Processing Modes (Clean, Translate, Notes, Actions)
+        let modeSubmenu = NSMenu(title: "Voice Mode")
+        for mode in ProcessingMode.allCases {
+            let label: String
+            switch mode {
+            case .clean: label = "Clean Dictation"
+            case .translate: label = "Translate to English"
+            case .meeting: label = "Actionable Checklist"
+            case .actions: label = "Voice Actions"
+            }
+            let item = NSMenuItem(
+                title: label,
+                action: #selector(companionSelectMode(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = mode.rawValue
+            if mode == selectedMode {
+                item.state = .on
+            }
+            modeSubmenu.addItem(item)
+        }
+        let modeTitle: String
+        switch selectedMode {
+        case .clean: modeTitle = "Clean"
+        case .translate: modeTitle = "Translate"
+        case .meeting: modeTitle = "Notes"
+        case .actions: modeTitle = "Actions"
+        }
+        let modeItem = NSMenuItem(title: "Voice Mode: \(modeTitle)", action: nil, keyEquivalent: "")
+        modeItem.image = NSImage(systemSymbolName: "waveform.circle.fill", accessibilityDescription: nil)
+        modeItem.submenu = modeSubmenu
+        menu.addItem(modeItem)
+
+        // 2. AI Cleaners (Literal, Apple, Gemini)
+        let cleanerSubmenu = NSMenu(title: "AI Cleaner")
+        for cleaner in CleanerMode.allCases {
+            let label: String
+            switch cleaner {
+            case .gemini: label = "Gemini Cloud"
+            case .apple: label = "Apple On-Device"
+            case .literal: label = "Literal Verbatim"
+            }
+            let item = NSMenuItem(
+                title: label,
+                action: #selector(companionSelectCleaner(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = cleaner.rawValue
+            if cleaner == selectedCleaner {
+                item.state = .on
+            }
+            cleanerSubmenu.addItem(item)
+        }
+        let cleanerItem = NSMenuItem(title: "AI Cleaner: \(selectedCleaner.shortName)", action: nil, keyEquivalent: "")
+        cleanerItem.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        cleanerItem.submenu = cleanerSubmenu
+        menu.addItem(cleanerItem)
+
+        // 3. Gemini Models
+        let modelSubmenu = NSMenu(title: "Cloud Model")
+        for model in GeminiModel.allCases {
+            let label: String
+            switch model {
+            case .flash38: label = "Gemini 3.8 Flash"
+            case .argon4: label = "Gemini 4 Argon"
+            }
+            let item = NSMenuItem(
+                title: label,
+                action: #selector(companionSelectGeminiModel(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = model.rawValue
+            if model == selectedGeminiModel {
+                item.state = .on
+            }
+            modelSubmenu.addItem(item)
+        }
+        let modelTitle: String
+        switch selectedGeminiModel {
+        case .flash38: modelTitle = "3.8 Flash"
+        case .argon4: modelTitle = "4 Argon"
+        }
+        let modelItem = NSMenuItem(title: "Cloud Model: \(modelTitle)", action: nil, keyEquivalent: "")
+        modelItem.image = NSImage(systemSymbolName: "cpu", accessibilityDescription: nil)
+        modelItem.submenu = modelSubmenu
+        menu.addItem(modelItem)
+
+        // 4. Speech Engines (Whisper / Parakeet)
+        let speechSubmenu = NSMenu(title: "Speech Engine")
+        for engine in SpeechEngine.allCases {
+            let label: String
+            switch engine {
+            case .whisper: label = "Whisper Turbo"
+            case .parakeet: label = "Parakeet Ultra"
+            }
+            let item = NSMenuItem(
+                title: label,
+                action: #selector(companionSelectSpeechEngine(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = engine.rawValue
+            if engine == selectedSpeechEngine {
+                item.state = .on
+            }
+            speechSubmenu.addItem(item)
+        }
+        let speechTitle: String
+        switch selectedSpeechEngine {
+        case .whisper: speechTitle = "Whisper"
+        case .parakeet: speechTitle = "Parakeet"
+        }
+        let speechItem = NSMenuItem(title: "Speech Engine: \(speechTitle)", action: nil, keyEquivalent: "")
+        speechItem.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)
+        speechItem.submenu = speechSubmenu
+        menu.addItem(speechItem)
+
+        let isIdle = controller?.isIdle ?? true
+        modeItem.isEnabled = isIdle
+        cleanerItem.isEnabled = isIdle
+        modelItem.isEnabled = isIdle
+        speechItem.isEnabled = isIdle
+
+        menu.addItem(.separator())
+
+        // 5. Posture toggle (Sitting / Standing)
+        let isStanding = floatingHUD.isStanding
+        let postureTitle = isStanding ? "Sit Down" : "Stand Up"
+        let postureIcon = isStanding
+            ? NSImage(systemSymbolName: "figure.seated.side", accessibilityDescription: nil)
+            : NSImage(systemSymbolName: "figure.walk", accessibilityDescription: nil)
+        let postureItem = NSMenuItem(
+            title: postureTitle,
+            action: #selector(companionTogglePosture),
+            keyEquivalent: ""
+        )
+        postureItem.image = postureIcon
+        postureItem.target = self
+        postureItem.isEnabled = isIdle
+        menu.addItem(postureItem)
+
+        // 5b. Sleep toggle (Take a Nap / Wake Up)
+        let isSleeping = floatingHUD.isSleeping
+        let sleepTitle = isSleeping ? "Wake Up" : "Take a Nap"
+        let sleepIcon = isSleeping
+            ? NSImage(systemSymbolName: "sun.max.fill", accessibilityDescription: nil)
+            : NSImage(systemSymbolName: "moon.zzz.fill", accessibilityDescription: nil)
+        let sleepItem = NSMenuItem(
+            title: sleepTitle,
+            action: #selector(companionToggleSleep),
+            keyEquivalent: ""
+        )
+        sleepItem.image = sleepIcon
+        sleepItem.target = self
+        sleepItem.isEnabled = isIdle
+        menu.addItem(sleepItem)
+
+        // 5c. Companion Edition (MD-01 Fusion vs Classic Reserve)
+        let editionSubmenu = NSMenu(title: "Companion Style")
+        let currentEdition = floatingHUD.edition
+        for edition in MicroduckEdition.allCases {
+            let item = NSMenuItem(
+                title: edition.displayName,
+                action: #selector(companionSelectEdition(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = edition.rawValue
+            if edition == currentEdition {
+                item.state = .on
+            }
+            editionSubmenu.addItem(item)
+        }
+        let editionShortTitle = currentEdition == .md01Fusion ? "MD-01 Fusion" : "Classic Reserve"
+        let editionItem = NSMenuItem(title: "Style: \(editionShortTitle)", action: nil, keyEquivalent: "")
+        editionItem.image = NSImage(systemSymbolName: "cube.transparent", accessibilityDescription: nil)
+        editionItem.submenu = editionSubmenu
+        editionItem.isEnabled = isIdle
+        menu.addItem(editionItem)
+
+        menu.addItem(.separator())
+
+        // 6. VoiceFlow Station Window
+        let winItem = NSMenuItem(
+            title: "Open VoiceFlow Station",
+            action: #selector(showControlWindow),
+            keyEquivalent: ""
+        )
+        winItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
+        winItem.target = self
+        menu.addItem(winItem)
+
+        // 7. Hide companion
+        let hideItem = NSMenuItem(
+            title: "Hide Microduck",
+            action: #selector(toggleDesktopCompanion),
+            keyEquivalent: ""
+        )
+        hideItem.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: nil)
+        hideItem.target = self
+        menu.addItem(hideItem)
+
+        return menu
+    }
+
+    @objc private func companionSelectMode(_ sender: NSMenuItem) {
+        guard controller?.isIdle ?? true else { return }
+        guard let raw = sender.representedObject as? String,
+              let mode = ProcessingMode(rawValue: raw) else { return }
+        applyProcessingMode(mode, confirmInHUD: true, syncWindow: true)
+    }
+
+    @objc private func companionSelectCleaner(_ sender: NSMenuItem) {
+        guard controller?.isIdle ?? true else { return }
+        guard let raw = sender.representedObject as? String,
+              let cleaner = CleanerMode(rawValue: raw) else { return }
+        selectedCleaner = cleaner
+        controller?.selectCleaner(cleaner)
+        refreshProvider(cleaner)
+        UserDefaults.standard.set(cleaner.rawValue, forKey: AppDelegate.cleanerDefaultsKey)
+        controlWindow?.configureProviders(selected: cleaner)
+        controlWindow?.addLog("cleaner: \(cleaner.displayName)", isHighlight: true)
+    }
+
+    @objc private func companionSelectGeminiModel(_ sender: NSMenuItem) {
+        guard controller?.isIdle ?? true else { return }
+        guard let raw = sender.representedObject as? String,
+              let model = GeminiModel(rawValue: raw) else { return }
+        selectedGeminiModel = model
+        controller?.selectGeminiModel(model)
+        UserDefaults.standard.set(model.rawValue, forKey: AppDelegate.geminiModelDefaultsKey)
+        controlWindow?.configureGeminiModel(selected: model)
+        controlWindow?.addLog("cloud model: \(model.rawValue)", isHighlight: true)
+    }
+
+    @objc private func companionSelectSpeechEngine(_ sender: NSMenuItem) {
+        guard controller?.isIdle ?? true else { return }
+        guard let raw = sender.representedObject as? String,
+              let engine = SpeechEngine(rawValue: raw) else { return }
+        selectedSpeechEngine = engine
+        controller?.selectSpeechEngine(engine)
+        UserDefaults.standard.set(engine.rawValue, forKey: AppDelegate.speechEngineDefaultsKey)
+        controlWindow?.configureSpeechEngine(selected: engine)
+        controlWindow?.addLog("speech: \(engine.shortName)", isHighlight: true)
+    }
+
+    @objc private func companionTogglePosture() {
+        floatingHUD.toggleStanding()
+    }
+
+    @objc private func companionToggleSleep() {
+        guard controller?.isIdle ?? true else { return }
+        floatingHUD.toggleSleep()
+    }
+
+    @objc private func companionSelectEdition(_ sender: NSMenuItem) {
+        guard controller?.isIdle ?? true else { return }
+        guard let raw = sender.representedObject as? String,
+              let edition = MicroduckEdition(rawValue: raw) else { return }
+        floatingHUD.setEdition(edition)
+        controlWindow?.addLog("companion style: \(edition.displayName)", isHighlight: true)
+    }
+
     private func updateShowMenuItemTitle() {
         guard let showMenuItem else { return }
         if controlWindow?.window?.isVisible == true {
@@ -1016,7 +1405,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
 
+    private func refreshPermissionStatuses() {
+        let hasInputMonitoring = globalHotkeyAvailable
+        let hasAccessibility = AXIsProcessTrusted()
+        controlWindow?.updatePermissions(
+            globalHotkeyAvailable: globalHotkeyAvailable,
+            needsInputMonitoring: !hasInputMonitoring,
+            needsAccessibility: !hasAccessibility
+        )
+    }
+
     private func openInputMonitoringSettings() {
+        refreshPermissionStatuses()
         guard let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
         ) else { return }
@@ -1026,6 +1426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openAccessibilitySettings() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+        refreshPermissionStatuses()
         guard let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         ) else { return }
@@ -1048,6 +1449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyMonitor = nil
         controller = nil
         globalHotkeyAvailable = false
+        refreshPermissionStatuses()
         controlWindow.setRecordingEnabled(false)
 
         statusMenuItem.title = "Waiting for microphone permission…"
@@ -1106,9 +1508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onModeCycle: { [weak self] in
                     DispatchQueue.main.async { self?.cycleProcessingMode() }
                 },
-                onCancel: { [weak controller] in
-                    DispatchQueue.main.async { controller?.cancelRecording() }
-                }
+                onCancel: { [weak controller] in controller?.cancelRecording() }
             )
             do {
                 try monitor.start()
@@ -1120,6 +1520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             _ = CGRequestListenEventAccess()
         }
+        refreshPermissionStatuses()
         updateStatus(.idle)
     }
 
@@ -1128,6 +1529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatus(_ status: VoiceFlowStatus) {
         statusIconTask?.cancel()
         statusIconTask = nil
+        refreshPermissionStatuses()
         switch status {
         case .idle:
             setRetryPermissionsAvailable(true)
@@ -1242,15 +1644,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Speech recognition did half the work and left no trace: the MIC/STT filter
-            // read zero however much was dictated. One line per run, naming the language
-            // the engine chose and what it returned, so the filter has something to show
-            // and a misheard word can be found where it happened.
-            let heardPreview = result.rawText.count > 90
-                ? String(result.rawText.prefix(90)) + "…"
-                : result.rawText
+            // read zero however much was dictated. One line per run, naming the engine
+            // and word/character count rather than raw dictated sentences (R7, D-80, D-82).
+            let spokenWordCount = result.rawText.split(whereSeparator: \.isWhitespace).count
             controlWindow.addLog(
-                // The engine that listened, not always Whisper (D-80).
-                "\(selectedSpeechEngine == .parakeet ? "parakeet" : "whisper") heard: \"\(heardPreview)\"",
+                "\(selectedSpeechEngine == .parakeet ? "parakeet" : "whisper") heard \(spokenWordCount) word\(spokenWordCount == 1 ? "" : "s") (\(result.rawText.count) chars)",
                 category: .stt
             )
 
@@ -1296,14 +1694,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                     let resultMsg = "⚡ action: \(performed)"
                     self.statusMenuItem.title = String(format: "%@ · in %.1f seconds", resultMsg, elapsed)
-                    self.controlWindow.addLog("\(resultMsg) (from: \"\(result.finalText)\")", isHighlight: true)
+                    self.controlWindow.addLog(resultMsg, isHighlight: true)
                     self.controlWindow.update(
                         title: "Executed: \(performed)",
-                        detail: String(format: "Matched \"\(result.finalText)\" · %.1fs", elapsed)
+                        detail: String(format: "Voice command executed · %.1fs", elapsed)
                     )
                     return
                 }
-                self.controlWindow.addLog("action not executed: \(action.displayDescription) · continuing dictation")
+                self.controlWindow.addLog("action not executed: \(action.logSummary) · continuing dictation")
                 // The controller left the clipboard alone for a command; a command that
                 // did not run is dictation again, so its text is copied now (D-50).
                 NSPasteboard.general.clearContents()
@@ -1315,8 +1713,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // got the same result as every other mode, with nothing saying why.
             let unrecognizedCommand = runMode.parsesVoiceActions && detectedAction == nil
             if unrecognizedCommand {
+                let deliveredWordCount = result.finalText.split(whereSeparator: \.isWhitespace).count
                 self.controlWindow.addLog(
-                    "no action recognized · dictated instead: \"\(result.finalText)\"",
+                    "no action recognized · dictated instead (\(deliveredWordCount) word\(deliveredWordCount == 1 ? "" : "s"))",
                     isHighlight: true
                 )
             }

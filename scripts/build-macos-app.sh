@@ -71,7 +71,28 @@ fi
 # Verified before installation, not after: a bundle that fails here must not replace the
 # one the speaker is using. macOS binds Input Monitoring to the code identity, so an app
 # that arrives unsigned or ad-hoc loses the global Fn/Globe trigger silently.
-codesign --verify --deep --strict "$built"
+verify_bundle_security() {
+    local target="$1"
+    codesign --verify --deep --strict "$target"
+    local cs_info
+    cs_info=$(codesign -d --verbose=2 "$target" 2>&1)
+    if ! echo "$cs_info" | grep -q "Authority=Apple Development"; then
+        echo "The build is not signed with Apple Development identity; refusing ad-hoc build: $target" >&2
+        exit 1
+    fi
+    if ! echo "$cs_info" | grep -q "(runtime)"; then
+        echo "The build lacks hardened runtime flag; refusing build: $target" >&2
+        exit 1
+    fi
+    local ents
+    ents=$(codesign -d --entitlements - "$target" 2>&1)
+    if ! echo "$ents" | grep -q "com.apple.security.device.audio-input"; then
+        echo "The build lacks audio-input entitlement; refusing build: $target" >&2
+        exit 1
+    fi
+}
+
+verify_bundle_security "$built"
 
 # App Intents are the reason this build exists. If the metadata is missing the build
 # succeeded and the product is still the lesser one, so it is refused here rather than
@@ -89,12 +110,12 @@ previous="${app_dir}.previous"
 mkdir -p "${app_dir:h}"
 rm -rf "$staged"
 cp -R "$built" "$staged"
-codesign --verify --deep --strict "$staged"
+verify_bundle_security "$staged"
 rm -rf "$previous"
 if [[ -d "$app_dir" ]]; then
     mv "$app_dir" "$previous"
 fi
 mv "$staged" "$app_dir"
-codesign --verify --deep --strict "$app_dir"
+verify_bundle_security "$app_dir"
 
 echo "$app_dir"

@@ -208,6 +208,20 @@ class TypographicMarkTests(unittest.TestCase):
         with self.assertRaises(CleanupError):
             guard_conservative_cleanup("como estas", "¿ cómo estás")
 
+    def test_spanish_angle_quotes_are_accepted(self) -> None:
+        source = "dijo hola mundo"
+        candidate = "Dijo «hola mundo»."
+        self.assertEqual(guard_conservative_cleanup(source, candidate), candidate)
+
+    def test_opening_question_mark_after_parenthesis(self) -> None:
+        source = "como estas seguro"
+        candidate = "¿Cómo estás? (¿seguro?)."
+        self.assertEqual(guard_conservative_cleanup(source, candidate), candidate)
+
+    def test_diacritical_monosyllable_mutation_is_rejected(self) -> None:
+        with self.assertRaises(CleanupError):
+            guard_conservative_cleanup("si lo apruebo", "Sí, lo apruebo.")
+
 
 class CleanupPromptTests(unittest.TestCase):
     def test_every_example_in_the_cleanup_prompt_passes_this_guard(self) -> None:
@@ -355,11 +369,15 @@ class PromptShapeTests(unittest.TestCase):
     def test_the_meeting_example_is_valid_json(self) -> None:
         from sanbluedot_voiceflow.cleaners.prompt import MEETING_NOTES_SYSTEM_PROMPT
 
-        line = next(
+        example_lines = [
             l for l in MEETING_NOTES_SYSTEM_PROMPT.splitlines()
             if l.startswith("Example output:")
-        )
-        self.assertIn("Action Items", json.loads(line.split(":", 1)[1])["cleaned_text"])
+        ]
+        self.assertGreaterEqual(len(example_lines), 3)
+        for line in example_lines:
+            payload = json.loads(line.split(":", 1)[1])
+            self.assertIn("cleaned_text", payload)
+            self.assertIn("- [ ]", payload["cleaned_text"])
 
     def test_translation_and_notes_treat_the_transcript_as_data(self) -> None:
         from sanbluedot_voiceflow.cleaners.prompt import (

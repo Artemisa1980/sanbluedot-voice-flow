@@ -445,6 +445,13 @@ struct FocusHomeView: View {
                 }
                 Spacer(minLength: 8)
                 wordsButton("LEARN", primary: true) {
+                    if let oneWordPair = pairs.first(where: \.isOneWord), !viewModel.teachEverywhere {
+                        NSSound.beep()
+                        viewModel.wordsNotice = "\"\(oneWordPair.heard)\" is one word, so it will be replaced "
+                            + "wherever it is heard. Tick \"A one-word change: replace that word wherever it "
+                            + "is heard\" to confirm, then LEARN."
+                        return
+                    }
                     viewModel.onLearnCorrection?(
                         WordsLearnRequest(
                             pairs: pairs,
@@ -560,6 +567,11 @@ struct FocusHomeView: View {
                 Text(day).font(T.mono(size: 10)).foregroundColor(T.textMuted)
             }
             wordsButton("EDIT") {
+                guard viewModel.teachContext == nil else {
+                    NSSound.beep()
+                    viewModel.wordsNotice = "Finish or CANCEL the History FIX above before editing another correction."
+                    return
+                }
                 viewModel.teachHeard = pair.heard
                 viewModel.teachIntended = pair.intended
                 viewModel.teachEverywhere = pair.everywhere
@@ -624,6 +636,11 @@ struct FocusHomeView: View {
                                 .disabled(viewModel.isWordsBusy)
                                 .opacity(viewModel.isWordsBusy ? 0.5 : 1)
                             wordsButton("TO CORRECTION") {
+                                guard viewModel.teachContext == nil else {
+                                    NSSound.beep()
+                                    viewModel.wordsNotice = "Finish or CANCEL the History FIX above before starting another correction."
+                                    return
+                                }
                                 viewModel.teachHeard = ""
                                 viewModel.teachIntended = term
                                 viewModel.teachEverywhere = false
@@ -1128,21 +1145,33 @@ struct FocusHomeView: View {
     }
 
     private var permissionActions: some View {
-        HStack(spacing: 8) {
-            action("INPUT MONITORING", fill: T.inputCream) {
+        let inputStatus = viewModel.needsInputMonitoring ? "NEEDED" : "GRANTED"
+        let accessStatus = viewModel.needsAccessibility ? "NEEDED" : "GRANTED"
+        return HStack(spacing: 8) {
+            action(
+                "INPUT MONITORING · \(inputStatus)",
+                fill: viewModel.needsInputMonitoring ? T.gold : T.inputCream
+            ) {
                 guard viewModel.isSelectionEnabled else {
                     viewModel.reportRefusal("permission settings cannot open during active dictation")
                     return
                 }
                 viewModel.onOpenInputMonitoring?()
             }
-            action("ACCESSIBILITY", fill: T.inputCream) {
+            .accessibilityValue(viewModel.needsInputMonitoring ? "Needed" : "Granted")
+
+            action(
+                "ACCESSIBILITY · \(accessStatus)",
+                fill: viewModel.needsAccessibility ? T.gold : T.inputCream
+            ) {
                 guard viewModel.isSelectionEnabled else {
                     viewModel.reportRefusal("permission settings cannot open during active dictation")
                     return
                 }
                 viewModel.onOpenAccessibility?()
             }
+            .accessibilityValue(viewModel.needsAccessibility ? "Needed" : "Granted")
+
             action("RECHECK") {
                 guard viewModel.isSelectionEnabled else {
                     viewModel.reportRefusal("permissions cannot be rechecked during active dictation")

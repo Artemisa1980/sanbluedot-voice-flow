@@ -18,7 +18,7 @@ enum AutoPaste {
     /// not known until the deferred work runs, so a synchronous `Bool` could only ever
     /// be a guess. `completion` is always called exactly once, on the main queue.
     static func paste(
-        after delay: TimeInterval = 0.04,
+        after delay: TimeInterval = 0.015,
         frontmostApplication: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         },
@@ -72,7 +72,7 @@ enum AutoPaste {
             }
 
             keyDown.post(tap: .cghidEventTap)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.015) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.010) {
                 keyUp.post(tap: .cghidEventTap)
                 completion(true, delivered)
             }

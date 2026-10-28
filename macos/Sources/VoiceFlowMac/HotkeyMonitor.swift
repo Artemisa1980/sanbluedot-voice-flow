@@ -81,6 +81,7 @@ final class HotkeyMonitor {
         }
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
+            CFMachPortInvalidate(eventTap)
         }
         runLoopSource = nil
         eventTap = nil
@@ -111,6 +112,7 @@ final class HotkeyMonitor {
         }
 
         if type == .keyDown, cancelRequested(event) {
+            keyIsDown = false
             onCancel()
             return Unmanaged.passUnretained(event)
         }

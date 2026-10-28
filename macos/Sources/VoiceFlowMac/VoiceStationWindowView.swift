@@ -30,6 +30,7 @@ public enum VoiceStationTokens {
     public static let okOnDark = Color(red: 0x9C / 255.0, green: 0xB3 / 255.0, blue: 0x86 / 255.0) // #9CB386 Sage-light
     public static let working = Color(red: 0xD9 / 255.0, green: 0x8A / 255.0, blue: 0x2B / 255.0) // #D98A2B Amber-deep
     public static let rec = Color(red: 0xFF / 255.0, green: 0x7B / 255.0, blue: 0x6B / 255.0) // #FF7B6B Coral
+    public static let sleepRed = Color(red: 0xFF / 255.0, green: 0x6B / 255.0, blue: 0x6B / 255.0) // #FF6B6B Coral sleep
     public static let duckOrange = Color(red: 0xF2 / 255.0, green: 0x6B / 255.0, blue: 0x1D / 255.0) // #F26B1D Duck bill and feet
     public static let duckOrangeDeep = Color(red: 0xC9 / 255.0, green: 0x56 / 255.0, blue: 0x1A / 255.0) // #C9561A Duck lower jaw
 
@@ -259,6 +260,17 @@ public struct WordsLearnRequest: Equatable, Sendable {
     public let dictation: UUID?
 }
 
+/// Dedicated observable object for the 20Hz live microphone level (I-20).
+///
+/// Keeping the rapidly changing audio level out of `VoiceStationViewModel`'s `@Published`
+/// stream prevents 20Hz full-window SwiftUI invalidations across Words (`CorrectionDiff`),
+/// History, Snippets, and Settings while recording.
+@MainActor
+public final class AudioLevelState: ObservableObject {
+    @Published public var level: Double = 0.0
+    public init() {}
+}
+
 // On the view model, where it belongs; it sat on the `WordsTab` enum (D-110).
 @MainActor
 public final class VoiceStationViewModel: ObservableObject {
@@ -310,7 +322,15 @@ public final class VoiceStationViewModel: ObservableObject {
     @Published public var needsAccessibility: Bool = false
     @Published public var activeRightTab: RightCardTab = .activityLog
     @Published public var selectedFilter: ConsoleFilterMode = .all
-    @Published public var audioLevel: Double = 0.0
+    public let audioMeter = AudioLevelState()
+    public var audioLevel: Double {
+        get { audioMeter.level }
+        set {
+            if abs(audioMeter.level - newValue) > 0.0005 {
+                audioMeter.level = newValue
+            }
+        }
+    }
     /// False while the window is minimised or fully covered. The idle animations read
     /// this and stop: a meter nobody can see should not keep waking the CPU.
     @Published public var isWindowVisible: Bool = true
@@ -351,6 +371,12 @@ public final class VoiceStationViewModel: ObservableObject {
     /// A page the next view update should open; cleared by the view that honours it.
     @Published public var pageRequest: StationPageRequest?
     @Published public var snippets: [VoiceSnippet] = []
+    /// Persisted across sidebar page switches so an in-progress snippet draft or an
+    /// expanded ORIGINAL layer in History is not lost when navigating away (D-182).
+    @Published public var snippetDraftTrigger: String = ""
+    @Published public var snippetDraftExpansion: String = ""
+    @Published public var snippetDraftDescription: String = ""
+    @Published public var expandedOriginalHistoryIDs: Set<UUID> = []
     // One neutral line: the seed claimed Whisper and the Fn trigger were ready before
     // anything was checked (D-49). Real readiness lines follow from the delegate.
     @Published public var activityLogs: [ActivityLogItem] = [
@@ -630,70 +656,13 @@ public struct VoiceStationWindowView: View {
     /// same swell is driven by the measured input level, so what moves is the speaker's
     /// own voice rather than a timer. R9 applies to motion as much as to figures.
     private var micCapsule: some View {
-        TimelineView(
-            .animation(minimumInterval: 1.0 / 30.0, paused: !viewModel.isWindowVisible)
-        ) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            let ambient = (sin(time * 1.9) + 1) / 2
-            // While recording the swell is the measured level. The ambient floor under
-            // it is deliberately small: a microphone that is open and hearing silence
-            // should look powered, not stopped, and the floor is far below anything a
-            // voice produces, so it can never be mistaken for a reading.
-            let level = min(max(viewModel.audioLevel, 0), 1)
-            let drive = viewModel.isRecording
-                ? max(level, ambient * 0.12)
-                : ambient * 0.55
-
-            ZStack {
-                // The bass ring: it opens with the level and fades as it goes.
-                Circle()
-                    .stroke(
-                        viewModel.isRecording
-                            ? VoiceStationTokens.onAir
-                            : VoiceStationTokens.gold,
-                        lineWidth: 3
-                    )
-                    .frame(width: 118, height: 118)
-                    .scaleEffect(1 + drive * 0.16)
-                    .opacity(0.62 * (1 - drive * 0.8))
-
-                // Bezel, with the dial notches around its rim.
-                Circle()
-                    .fill(VoiceStationTokens.panelBg)
-                    .frame(width: 118, height: 118)
-                    .overlay(Circle().stroke(VoiceStationTokens.navy.opacity(0.18), lineWidth: 1))
-                    .overlay(dialNotches)
-                    // The bezel pushes with the cone rather than standing still while a
-                    // ring travels past it.
-                    .scaleEffect(1 + drive * 0.03)
-                    .background(
-                        Circle()
-                            .fill(VoiceStationTokens.navy)
-                            .frame(width: 118, height: 118)
-                            .offset(x: 4, y: 5)
-                    )
-
-                // The face the capsule stands on.
-                Circle()
-                    .fill(VoiceStationTokens.inputCream)
-                    .frame(width: 88, height: 88)
-                    .overlay(Circle().stroke(VoiceStationTokens.navy, lineWidth: 2.5))
-                    .overlay(
-                        // The weighted base of the dial, as a thick arc along the floor.
-                        Circle()
-                            .trim(from: 0.08, to: 0.42)
-                            .stroke(
-                                VoiceStationTokens.navy,
-                                style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                            )
-                            .frame(width: 80, height: 80)
-                    )
-
-                ribbonCapsule
-                    .scaleEffect(1 + drive * 0.09)
-            }
-            .frame(width: 138, height: 138)
-        }
+        StationMicCapsuleView(
+            audioMeter: viewModel.audioMeter,
+            isRecording: viewModel.isRecording,
+            isWindowVisible: viewModel.isWindowVisible,
+            dialNotches: AnyView(dialNotches),
+            ribbonCapsule: AnyView(ribbonCapsule)
+        )
     }
 
     private var snippetsPaperPanel: some View {
@@ -833,43 +802,13 @@ public struct VoiceStationWindowView: View {
     /// so what you see is your own voice. The wave keeps its per-bar phase in both
     /// states, so the meter never looks frozen the way it did before.
     private var liveMeter: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !viewModel.isWindowVisible)) { context in
-            let time = context.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .bottom, spacing: 5) {
-                ForEach(0..<12, id: \.self) { index in
-                    // The phase offset per bar is what makes one bar rise while its
-                    // neighbour falls, so the row reads as a wave travelling across it
-                    // rather than twelve bars breathing together.
-                    let wave = (sin(time * 2.0 + Double(index) * 0.85) + 1) / 2
-                    let level = viewModel.isRecording
-                        ? 0.30 + min(viewModel.audioLevel, 1.0) * 0.95
-                        : 0.42
-                    // How much of the height the wave owns. At rest it owns most of it:
-                    // nothing is being measured, so the movement is decoration and may
-                    // be broad. While recording it owns almost none, because the height
-                    // is a reading of the speaker's voice and a wave large enough to see
-                    // would be a wave large enough to lie.
-                    let waveShare = viewModel.isRecording ? 0.22 : 0.65
-                    // Clamped: a loud take drives `level` to 1.25, which put the tallest
-                    // bar at 47.5 against the 40 ceiling and drew it into the row above.
-                    let height = min(
-                        meterCeiling,
-                        meterFloor
-                            + (meterCeiling - meterFloor)
-                            * barProfile(index)
-                            * level
-                            * (1 - waveShare + waveShare * wave)
-                    )
-
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(meterColor(at: index))
-                        .opacity(viewModel.isRecording ? 1 : 0.78)
-                        .frame(width: 20, height: height)
-                }
-            }
-            .frame(height: meterCeiling, alignment: .bottom)
-        }
-        .frame(height: meterCeiling)
+        StationLiveMeterView(
+            audioMeter: viewModel.audioMeter,
+            isRecording: viewModel.isRecording,
+            isWindowVisible: viewModel.isWindowVisible,
+            meterFloor: meterFloor,
+            meterCeiling: meterCeiling
+        )
     }
 
     private var meterFloor: CGFloat { 10 }
@@ -1978,7 +1917,18 @@ private struct HistoryEntryRow: View {
     @ObservedObject var viewModel: VoiceStationViewModel
     let palette: ConsolePalette
     let scale: HistoryTypeScale
-    @State private var showsOriginal = false
+
+    private var showsOriginal: Bool {
+        viewModel.expandedOriginalHistoryIDs.contains(record.id)
+    }
+
+    private func toggleOriginal() {
+        if viewModel.expandedOriginalHistoryIDs.contains(record.id) {
+            viewModel.expandedOriginalHistoryIDs.remove(record.id)
+        } else {
+            viewModel.expandedOriginalHistoryIDs.insert(record.id)
+        }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -2062,7 +2012,7 @@ private struct HistoryEntryRow: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Button(action: { showsOriginal.toggle() }) {
+            Button(action: { toggleOriginal() }) {
                 Text(showsOriginal ? "▾ ORIGINAL" : "▸ ORIGINAL")
                     .font(VoiceStationTokens.mono(size: scale.control, weight: .bold))
                     .tracking(1.0)
@@ -2075,7 +2025,7 @@ private struct HistoryEntryRow: View {
 
             actionButton("COPY", primary: true) {
                 viewModel.onCopyHistoryRecord?(record)
-                viewModel.addLog("copied from history: \"\(record.menuPreview())\"", isHighlight: true)
+                viewModel.addLog("copied from history [\(record.shortTimeString)]", isHighlight: true)
             }
             if record.rawText != record.finalText && !record.rawText.isEmpty {
                 actionButton("RAW") {
@@ -2261,24 +2211,30 @@ private struct VoiceSnippetsTabView: View {
     @ObservedObject var viewModel: VoiceStationViewModel
     var palette: ConsolePalette = .terminal
     var metrics: SnippetMetrics = .compact
-    @State private var newTrigger: String = ""
-    @State private var newExpansion: String = ""
-    @State private var newDescription: String = ""
     @State private var snippetToDelete: VoiceSnippet? = nil
 
-    private func snippetField(_ placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .textFieldStyle(.plain)
-            .font(VoiceStationTokens.mono(size: metrics.field))
-            .padding(.horizontal, metrics.fieldPadH)
-            .padding(.vertical, metrics.fieldPadV)
-            .background(VoiceStationTokens.inputCream)
-            .foregroundColor(VoiceStationTokens.navy)
-            .clipShape(RoundedRectangle(cornerRadius: metrics.fieldCorner))
-            .overlay(
-                RoundedRectangle(cornerRadius: metrics.fieldCorner)
-                    .stroke(palette.fieldStroke, lineWidth: metrics.fieldStroke)
-            )
+    private static let supportedMacros = ["{date}", "{time}", "{datetime}", "{year}", "{month}", "{day}", "{uuid}", "{app}"]
+
+    private func snippetField(_ placeholder: String, text: Binding<String>, multiline: Bool = false) -> some View {
+        Group {
+            if multiline {
+                TextField(placeholder, text: text, axis: .vertical)
+                    .lineLimit(2...5)
+            } else {
+                TextField(placeholder, text: text)
+            }
+        }
+        .textFieldStyle(.plain)
+        .font(VoiceStationTokens.mono(size: metrics.field))
+        .padding(.horizontal, metrics.fieldPadH)
+        .padding(.vertical, metrics.fieldPadV)
+        .background(VoiceStationTokens.inputCream)
+        .foregroundColor(VoiceStationTokens.navy)
+        .clipShape(RoundedRectangle(cornerRadius: metrics.fieldCorner))
+        .overlay(
+            RoundedRectangle(cornerRadius: metrics.fieldCorner)
+                .stroke(palette.fieldStroke, lineWidth: metrics.fieldStroke)
+        )
     }
 
     var body: some View {
@@ -2291,28 +2247,32 @@ private struct VoiceSnippetsTabView: View {
                     .foregroundColor(palette.label)
 
                 HStack(spacing: metrics.spacing) {
-                    snippetField("Spoken trigger (e.g. mi linkedin)", text: $newTrigger)
-                    snippetField("Description (optional)", text: $newDescription)
+                    snippetField("Spoken trigger (e.g. mi linkedin)", text: $viewModel.snippetDraftTrigger)
+                    snippetField("Description (optional)", text: $viewModel.snippetDraftDescription)
                 }
 
-                HStack(spacing: metrics.spacing) {
-                    snippetField("Replacement text or template", text: $newExpansion)
+                HStack(alignment: .bottom, spacing: metrics.spacing) {
+                    snippetField(
+                        "Replacement text or multi-line template",
+                        text: $viewModel.snippetDraftExpansion,
+                        multiline: true
+                    )
 
-                    let isAddDisabled = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newExpansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let isAddDisabled = viewModel.snippetDraftTrigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.snippetDraftExpansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
                     Button(action: {
-                        let trig = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let exp = newExpansion.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let desc = newDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trig = viewModel.snippetDraftTrigger.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let exp = viewModel.snippetDraftExpansion.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let desc = viewModel.snippetDraftDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trig.isEmpty, !exp.isEmpty else { return }
                         // Cleared only after a write: a failed save used to empty the
                         // form, and what the speaker typed was gone (D-133).
                         guard viewModel.onAddSnippet?(trig, exp, desc.isEmpty ? nil : desc) == true else {
                             return
                         }
-                        newTrigger = ""
-                        newExpansion = ""
-                        newDescription = ""
+                        viewModel.snippetDraftTrigger = ""
+                        viewModel.snippetDraftExpansion = ""
+                        viewModel.snippetDraftDescription = ""
                     }) {
                         Text("+ ADD")
                             .font(VoiceStationTokens.mono(size: metrics.button, weight: .bold))
@@ -2329,6 +2289,36 @@ private struct VoiceSnippetsTabView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAddDisabled)
+                }
+
+                HStack(spacing: 5) {
+                    Text("MACROS:")
+                        .font(VoiceStationTokens.mono(size: metrics.rowDim, weight: .bold))
+                        .foregroundColor(palette.inkDim)
+
+                    ForEach(Self.supportedMacros, id: \.self) { macro in
+                        Button(action: {
+                            if viewModel.snippetDraftExpansion.isEmpty || viewModel.snippetDraftExpansion.hasSuffix(" ") || viewModel.snippetDraftExpansion.hasSuffix("\n") {
+                                viewModel.snippetDraftExpansion += macro
+                            } else {
+                                viewModel.snippetDraftExpansion += " " + macro
+                            }
+                        }) {
+                            Text(macro)
+                                .font(VoiceStationTokens.mono(size: metrics.rowDim, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(VoiceStationTokens.inputCream.opacity(0.9))
+                                .foregroundColor(VoiceStationTokens.navy)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .stroke(palette.rule, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Insert \(macro) macro")
+                    }
                 }
             }
             .padding(metrics.cardPad)
@@ -2382,7 +2372,7 @@ private struct VoiceSnippetsTabView: View {
                                     Text(snippet.expansion)
                                         .font(VoiceStationTokens.mono(size: metrics.rowBody))
                                         .foregroundColor(palette.ink)
-                                        .lineLimit(2)
+                                        .lineLimit(4)
                                 }
 
                                 Spacer()
@@ -2831,5 +2821,128 @@ private struct LogEntryRowView: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+}
+
+// MARK: - Isolated 20Hz Audio Level Views (I-20 & D-132)
+
+private struct StationMicCapsuleView: View {
+    @ObservedObject var audioMeter: AudioLevelState
+    let isRecording: Bool
+    let isWindowVisible: Bool
+    let dialNotches: AnyView
+    let ribbonCapsule: AnyView
+
+    var body: some View {
+        TimelineView(
+            .animation(minimumInterval: 1.0 / 30.0, paused: !isWindowVisible)
+        ) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            let ambient = (sin(time * 1.9) + 1) / 2
+            let level = min(max(audioMeter.level, 0), 1)
+            let drive = isRecording
+                ? max(level, ambient * 0.12)
+                : ambient * 0.55
+
+            ZStack {
+                Circle()
+                    .stroke(
+                        isRecording
+                            ? VoiceStationTokens.onAir
+                            : VoiceStationTokens.gold,
+                        lineWidth: 3
+                    )
+                    .frame(width: 118, height: 118)
+                    .scaleEffect(1 + drive * 0.16)
+                    .opacity(0.62 * (1 - drive * 0.8))
+
+                Circle()
+                    .fill(VoiceStationTokens.panelBg)
+                    .frame(width: 118, height: 118)
+                    .overlay(Circle().stroke(VoiceStationTokens.navy.opacity(0.18), lineWidth: 1))
+                    .overlay(dialNotches)
+                    .scaleEffect(1 + drive * 0.03)
+                    .background(
+                        Circle()
+                            .fill(VoiceStationTokens.navy)
+                            .frame(width: 118, height: 118)
+                            .offset(x: 4, y: 5)
+                    )
+
+                Circle()
+                    .fill(VoiceStationTokens.inputCream)
+                    .frame(width: 88, height: 88)
+                    .overlay(Circle().stroke(VoiceStationTokens.navy, lineWidth: 2.5))
+                    .overlay(
+                        Circle()
+                            .trim(from: 0.08, to: 0.42)
+                            .stroke(
+                                VoiceStationTokens.navy,
+                                style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                            )
+                            .frame(width: 80, height: 80)
+                    )
+
+                ribbonCapsule
+                    .scaleEffect(1 + drive * 0.09)
+            }
+            .frame(width: 138, height: 138)
+        }
+    }
+}
+
+private struct StationLiveMeterView: View {
+    @ObservedObject var audioMeter: AudioLevelState
+    let isRecording: Bool
+    let isWindowVisible: Bool
+    let meterFloor: CGFloat
+    let meterCeiling: CGFloat
+
+    private func barProfile(_ index: Int) -> CGFloat {
+        let profile: [CGFloat] = [0.40, 0.52, 0.66, 0.80, 0.92, 1.00,
+                                  0.96, 0.86, 0.74, 0.62, 0.50, 0.40]
+        return profile[index % profile.count]
+    }
+
+    private func meterColor(at index: Int) -> Color {
+        switch index {
+        case 0...6: return VoiceStationTokens.dotBlue
+        case 7...9: return VoiceStationTokens.gold
+        default: return VoiceStationTokens.onAir
+        }
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isWindowVisible)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .bottom, spacing: 5) {
+                ForEach(0..<12, id: \.self) { index in
+                    let wave = (sin(time * 2.0 + Double(index) * 0.85) + 1) / 2
+                    // Bounded in [0.30, 1.00] while recording so bars never exceed meterCeiling (D-132).
+                    let level = isRecording
+                        ? 0.30 + min(max(audioMeter.level, 0.0), 1.0) * 0.70
+                        : 0.42
+                    let waveShare = isRecording ? 0.22 : 0.65
+                    let height = min(
+                        meterCeiling,
+                        max(
+                            meterFloor,
+                            meterFloor
+                                + (meterCeiling - meterFloor)
+                                * barProfile(index)
+                                * level
+                                * (1 - waveShare + waveShare * wave)
+                        )
+                    )
+
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(meterColor(at: index))
+                        .opacity(isRecording ? 1 : 0.78)
+                        .frame(width: 20, height: height)
+                }
+            }
+            .frame(height: meterCeiling, alignment: .bottom)
+        }
+        .frame(height: meterCeiling)
     }
 }

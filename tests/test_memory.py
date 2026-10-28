@@ -442,3 +442,80 @@ class SkippedEntryTests(unittest.TestCase):
             copies = list(Path(directory).glob("*.skipped-*"))
             self.assertEqual(len(copies), 1)
             self.assertEqual(errors.getvalue().count("unreadable"), 1)
+
+
+class VocabularyAlignmentTests(unittest.TestCase):
+    """Cross-model vocabulary alignment for Parakeet and Whisper."""
+
+    def test_restores_canonical_casing_and_fuzzy_matches_distinctive_terms(self) -> None:
+        from sanbluedot_voiceflow.memory import align_vocabulary
+
+        vocab = ["UTEL", "iPhone", "Parakeet", "Microduck", "Quintero"]
+        text = "estoy en utel probando paraquet y microduk desde mi iphone con quintero"
+        aligned = align_vocabulary(text, vocab)
+        self.assertEqual(
+            aligned,
+            "estoy en UTEL probando Parakeet y Microduck desde mi iPhone con Quintero",
+        )
+
+    def test_short_ordinary_words_are_never_fuzzy_mutated(self) -> None:
+        from sanbluedot_voiceflow.memory import align_vocabulary
+
+        vocab = ["Parakeet", "Microduck"]
+        self.assertEqual(
+            align_vocabulary("para que el pato camine", vocab),
+            "para que el pato camine",
+        )
+
+    def test_inflections_urls_and_plurals_are_protected_from_phonetic_mutation(self) -> None:
+        from sanbluedot_voiceflow.memory import align_vocabulary
+
+        vocab = ["Terminal", "Parakeet"]
+        # Spanish verb ending in -ar must not mutate to "Terminal"
+        self.assertEqual(
+            align_vocabulary("Voy a terminar el reporte.", vocab),
+            "Voy a terminar el reporte.",
+        )
+        # URLs must not be mutated
+        self.assertEqual(
+            align_vocabulary("Visita https://github.com/sanbluedot/terminal para ver el codigo.", vocab),
+            "Visita https://github.com/sanbluedot/terminal para ver el codigo.",
+        )
+        # Plural words must not strip plural -s
+        self.assertEqual(
+            align_vocabulary("Tengo tres terminals abiertos.", vocab),
+            "Tengo tres terminals abiertos.",
+        )
+        # Exact noun casing still aligns
+        self.assertEqual(
+            align_vocabulary("Abre la terminal por favor.", vocab),
+            "Abre la Terminal por favor.",
+        )
+
+
+class PrivateFilePermissionsTests(unittest.TestCase):
+    """I-25: personal stores and exports are written with 0600 permissions."""
+
+    def test_personal_stores_and_distill_pairs_use_0600_mode(self) -> None:
+        import os
+        import stat
+        from sanbluedot_voiceflow.distill import DistillationStore
+        from sanbluedot_voiceflow.memory import CorrectionStore, add_vocabulary_term
+
+        if os.name == "nt":
+            self.skipTest("POSIX permissions check applies to macOS/POSIX.")
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            vocab_path = base / "vocabulary.local.txt"
+            corr_path = base / "corrections.local.json"
+            distill_path = base / "distill_pairs.local.jsonl"
+
+            add_vocabulary_term("Microduck", vocab_path)
+            CorrectionStore(corr_path).add("oyama", "Ollama")
+            DistillationStore(distill_path).record("hola mundo", "Hola mundo.")
+
+            for p in (vocab_path, corr_path, distill_path):
+                mode = stat.S_IMODE(p.stat().st_mode)
+                self.assertEqual(mode, 0o600, f"Expected 0600 for {p.name}, got {oct(mode)}")
+

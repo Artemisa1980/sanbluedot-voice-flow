@@ -1833,6 +1833,130 @@ do {
         "GeminiModel.fallbackOrder must match MODEL_CHAIN in cleaners/gemini.py."
     )
 
+    // D-167: build-focus-home-preview.sh matches FocusHomePreviewDelegate.bundleIdentifier
+    let previewScriptPath = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("scripts/build-focus-home-preview.sh")
+    guard let previewScriptContent = try? String(contentsOf: previewScriptPath, encoding: .utf8) else {
+        throw CheckFailure.failed("Unable to read scripts/build-focus-home-preview.sh.")
+    }
+    try check(
+        previewScriptContent.contains("CFBundleIdentifier -string dot.sanblue.voiceflow.focus-home-preview"),
+        "build-focus-home-preview.sh must set CFBundleIdentifier to match FocusHomePreviewDelegate.bundleIdentifier."
+    )
+
+    // Microduck Bloque 1 guard: MD-01 Fusion (Parado A + Sentado 2), Classic Reserve preserved,
+    // 0.60x canonical smoothness, delicate Zzz, and backgroundless floating quack particles.
+    let microduckSourcePath = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("VoiceFlowMac/MicroduckView.swift")
+    let hudSourcePath = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("VoiceFlowMac/RetroMicHUDView.swift")
+    if let microduckBody = try? String(contentsOf: microduckSourcePath, encoding: .utf8),
+       let hudBody = try? String(contentsOf: hudSourcePath, encoding: .utf8) {
+        try check(
+            microduckBody.contains("canonicalSmoothness: Double = 0.60")
+                && microduckBody.contains("drawMD01StandingDuck")
+                && microduckBody.contains("drawMD01SittingDuck")
+                && microduckBody.contains("drawClassicStandingDuck")
+                && microduckBody.contains("drawClassicSittingDuck"),
+            "MicroduckView must provide both MD-01 Fusion (Parado A + Sentado 2) and Classic Reserve at 0.60x smoothness."
+        )
+        try check(
+            hudBody.contains("MicroduckKinematics.canonicalSmoothness")
+                && !hudBody.contains("quack quack!"),
+            "RetroMicHUDView must scale animations by canonicalSmoothness (0.60x) and render backgroundless quack particles."
+        )
+    }
+
+    // Bloque 4 guard: I-20 (AudioLevelState isolation), D-132 (meter ceiling clamp),
+    // D-182 (snippet draft & ORIGINAL toggle persistence on viewModel), D-112 & D-114 (Words FIX guards).
+    let stationViewPath = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("VoiceFlowMac/VoiceStationWindowView.swift")
+    let focusHomePath = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("VoiceFlowMac/FocusHomeView.swift")
+    if let stationBody = try? String(contentsOf: stationViewPath, encoding: .utf8),
+       let focusHomeBody = try? String(contentsOf: focusHomePath, encoding: .utf8) {
+        try check(
+            stationBody.contains("public final class AudioLevelState: ObservableObject")
+                && stationBody.contains("StationMicCapsuleView")
+                && stationBody.contains("StationLiveMeterView")
+                && !stationBody.contains("@Published public var audioLevel"),
+            "I-20: audioLevel must be isolated in AudioLevelState so 20Hz microphone ticks do not invalidate the whole window."
+        )
+        try check(
+            stationBody.contains("snippetDraftTrigger")
+                && stationBody.contains("expandedOriginalHistoryIDs"),
+            "D-182: snippet draft fields and History ORIGINAL toggles must persist on VoiceStationViewModel across page switches."
+        )
+        try check(
+            focusHomeBody.contains("pairs.first(where: \\.isOneWord)")
+                && focusHomeBody.contains("Finish or CANCEL the History FIX above"),
+            "D-112 & D-114: Words view must pre-check unticked one-word FIX pairs and guard active History FIX sessions."
+        )
+
+        // Bloque 5 guard: D-90 (multi-line snippet field + macro bar), D-111 (permission status badges),
+        // D-82 (redacted raw transcript in on-screen console logs), I-25 (0600 file permissions).
+        try check(
+            stationBody.contains("axis: .vertical")
+                && stationBody.contains("supportedMacros = [\"{date}\", \"{time}\", \"{datetime}\", \"{year}\", \"{month}\", \"{day}\", \"{uuid}\", \"{app}\"]"),
+            "D-90: VoiceSnippetsTabView must support multi-line expansion and interactive R5b macro chips."
+        )
+        try check(
+            focusHomeBody.contains("INPUT MONITORING · \\(inputStatus)")
+                && focusHomeBody.contains("ACCESSIBILITY · \\(accessStatus)"),
+            "D-111: Settings permission buttons must display live GRANTED / NEEDED status indicators."
+        )
+    }
+
+    let appDelegatePath = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("VoiceFlowMac/AppDelegate.swift")
+    if let appDelegateBody = try? String(contentsOf: appDelegatePath, encoding: .utf8) {
+        try check(
+            !appDelegateBody.contains("heard: \"\\(heardPreview)\"")
+                && !appDelegateBody.contains("from history: \"\\(record.menuPreview())\"")
+                && appDelegateBody.contains("refreshPermissionStatuses()"),
+            "D-82 & D-111: AppDelegate must redact raw dictated sentences from on-screen console logs and refresh permission statuses."
+        )
+    }
+
+    // I-25 runtime check: VoiceSnippetStore and DictationHistoryStore write 0600 files.
+    do {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent("vf-i25-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        let snipFile = tempDir.appendingPathComponent("snippets.local.json")
+        let histFile = tempDir.appendingPathComponent("history.local.json")
+        let snipStore = VoiceSnippetStore(snippets: [VoiceSnippet(trigger: "sig", expansion: "Line 1\nLine 2")])
+        snipStore.save(to: snipFile)
+        var histStore = DictationHistoryStore()
+        histStore.append(
+            DictationRecord(
+                rawText: "hola",
+                personalizedText: "hola",
+                finalText: "Hola.",
+                cleaner: "apple",
+                mode: "clean",
+                latencySeconds: 0.4
+            )
+        )
+        _ = histStore.save(to: histFile)
+
+        for file in [snipFile, histFile] {
+            let attrs = try fm.attributesOfItem(atPath: file.path)
+            let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? 0
+            try check(
+                perms == 0o600,
+                "I-25: expected 0600 permissions for \(file.lastPathComponent), got \(String(perms, radix: 8))."
+            )
+        }
+    }
+
     print("VoiceFlowMacCore checks passed.")
 } catch {
     FileHandle.standardError.write(Data("Check failed: \(error.localizedDescription)\n".utf8))

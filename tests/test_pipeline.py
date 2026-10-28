@@ -91,13 +91,13 @@ class DictationPipelineTests(unittest.TestCase):
         self.assertEqual(result.final_text, "Hello world, this is a live test.")
 
     def test_meeting_mode_allows_markdown_structure(self) -> None:
-        cleaner = FakeCleaner(result="### Meeting Summary\n- [ ] Deploy v0.5.0\n- [ ] Review architecture")
+        cleaner = FakeCleaner(result="- Se acordó el despliegue del sprint.\n- [ ] Deploy v0.5.0\n- [ ] Review architecture")
         cleaner.mode = "meeting"
         pipeline = DictationPipeline(FakeTranscriber("hay que desplegar la versión 0.5 y revisar arquitectura", "es"), cleaner)
 
         result = pipeline.process(Path("unused.wav"))
 
-        self.assertEqual(result.final_text, "### Meeting Summary\n- [ ] Deploy v0.5.0\n- [ ] Review architecture")
+        self.assertEqual(result.final_text, "- Se acordó el despliegue del sprint.\n- [ ] Deploy v0.5.0\n- [ ] Review architecture")
 
     def test_clean_mode_allows_multi_sentence_periods(self) -> None:
         cleaner = FakeCleaner(result="We will deploy today. It is ready.")

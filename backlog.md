@@ -4,16 +4,16 @@ The single task list for this project: every known defect with its fix, and ever
 improvement with the reason it is worth building. `gates/` holds the evidence behind each
 row and is never a task list; this file is.
 
-## Executive Status & Quick Index — 2026-10-26
+## Executive Status & Quick Index — 2026-10-27
 
 | Category | Total Cataloged | Done (Closed) | Open (Pending) | Status |
 |---|---:|---:|---:|---|
 | **Defects — High** (§A) | 33 | 33 | **0** | **100% Cleared ✓** |
 | **Defects — Medium** (§A) | 90 | 85 | **5** | 94% Cleared |
 | **Defects — Low** (§A) | 88 | 73 | **15** | 83% Cleared |
-| **Improvements — Roadmap** (§B) | 33 | 8 | **25** | Active backlog |
+| **Improvements — Roadmap** (§B) | 30 | 5 | **25** | Active backlog |
 | **Improvements — Maintenance** (§B) | 46 | 4 | **42** | Technical proposals |
-| **Total** | **290** | **203 (70%)** | **87 (30%)** | **Stable floor** |
+| **Total** | **287** | **200 (70%)** | **87 (30%)** | **Stable floor** |
 
 ### Quick Index: The 20 Open Defects (Zero High)
 - **Medium (5 items):**
@@ -670,9 +670,10 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
   **Fix:** drop control characters for terminal targets. `AutoPaste.swift:58` ·
   `02-security` F-2
   Done 2026-10-25 — `PasteTarget.terminalSafe` also drops control characters · check.
-- [ ] **D-82** The on-screen console shows dictated text, against R7. **Fix:** log counts
+- [x] **D-82** The on-screen console shows dictated text, against R7. **Fix:** log counts
   and language, or amend R7 to exempt the on-screen log. `AppDelegate.swift:1105` ·
   `02-security` F-3
+  Done 2026-10-28 — on-screen console logs word/character counts and timestamps instead of raw dictated sentences · `VoiceFlowMacCoreChecks`.
 - [x] **D-83** `.gitignore` lacks `Modelfile*`, `*.wav`, `*.m4a`, `*.safetensors`,
   `*.onnx`, `*.mlpackage`. **Fix:** add them. `.gitignore` · `02-security` F-4
   Done 2026-10-02 — audio, model and export patterns added · `git check-ignore`
@@ -699,9 +700,10 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
 - [x] **D-89** A vocabulary term starting with `#` is reported added but never loads.
   **Fix:** refuse it. `memory.py:141` · `02-cli` 6
   Done 2026-10-25 — a term starting with `#` is refused · `VocabularyTermShapeTests`.
-- [ ] **D-90** The snippet editor takes one line and shows no macros, so a multi-line
+- [x] **D-90** The snippet editor takes one line and shows no macros, so a multi-line
   signature cannot be written in the window. **Fix:** a vertical field and a macro hint.
   `VoiceStationWindowView.swift:2212` · `02-ui`, executed 2026-10-02
+  Done 2026-10-28 — expansion field uses `axis: .vertical` (`.lineLimit(2...5)`) with clickable R5b macro chips (`{date}`, `{time}`, `{clipboard}`, `{app}`) · `VoiceFlowMacCoreChecks`.
 - [x] **D-91** A double press on LEARN learns twice and overwrites the success notice.
   **Fix:** disable Words actions until the read-back returns. `AppDelegate.swift:609` ·
   `02-ui`
@@ -780,18 +782,21 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
 - [x] **D-110** `@MainActor` sits on the `WordsTab` enum instead of the view model.
   **Fix:** move it to the class. `VoiceStationWindowView.swift:206` · `02-ui`
   Done 2026-10-25 — `@MainActor` moved from `WordsTab` to the view model · build.
-- [ ] **D-111** Settings never shows whether a permission is granted; the three flags
+- [x] **D-111** Settings never shows whether a permission is granted; the three flags
   are never set; four views are dead. **Fix:** feed the flags from `AppDelegate` and show
   them; delete the dead views. `FocusHomeView.swift:909`,
   `VoiceStationWindowView.swift:273` · `02-ui`
-- [ ] **D-112** A one-word FIX pair is sent unticked and refused by the engine, where
+  Done 2026-10-28 — `AppDelegate.refreshPermissionStatuses()` feeds `ControlWindowController.updatePermissions(...)` and `FocusHomeView` renders live `GRANTED` / `NEEDED` indicators · `VoiceFlowMacCoreChecks`.
+- [x] **D-112** A one-word FIX pair is sent unticked and refused by the engine, where
   the typed form explains first. **Fix:** the same pre-check. `FocusHomeView.swift:386`
   · `02-ui`
+  Done 2026-10-28 — `sentenceFix` pre-checks unticked one-word pairs and shows the confirmation notice before calling the engine · `VoiceFlowMacCoreChecks`.
 - [x] **D-113** The "you are holding the capsule" refusal shows for hotkey recordings.
   **Fix:** refuse only for button recordings. `FocusHomeView.swift:1085` · `02-ui`
   Done 2026-10-25 — the refusal applies only while the capsule is held · build.
-- [ ] **D-114** EDIT on a Words row discards a FIX sentence in progress. **Fix:** refuse
+- [x] **D-114** EDIT on a Words row discards a FIX sentence in progress. **Fix:** refuse
   with a notice while a FIX is open. `FocusHomeView.swift:541` · `02-ui`
+  Done 2026-10-28 — `EDIT` and `TO CORRECTION` refuse with a clear notice while `teachContext != nil` · `VoiceFlowMacCoreChecks`.
 - [x] **D-115** The key and permission buttons refuse in silence during a run.
   **Fix:** the shared refusal notice. `FocusHomeView.swift:1038` · `02-ui`
   Done 2026-10-25 — permission and key buttons stay interactive and report loud refusal notices via viewModel.reportRefusal during active dictation · build.
@@ -1051,8 +1056,9 @@ identifiers (E-, C-, S-, A-, U-, P-) in `gates/full-code-audit-03-summary.local.
 - [x] **D-181** The vocabulary list uses `\.offset` identity. **Fix:** identify rows by
   the term. `FocusHomeView.swift:590` · `03-ui` U-23 · reported
   Done 2026-10-25 — vocabulary rows are identified by the term · build.
-- [ ] **D-182** `switch page` unmounts each page and loses its state: the snippet form,
+- [x] **D-182** `switch page` unmounts each page and loses its state: the snippet form,
   the ORIGINAL toggles. `FocusHomeView.swift:53` · `03-ui` U-24 · reported
+  Done 2026-10-28 — `snippetDraftTrigger`, `snippetDraftExpansion`, `snippetDraftDescription` and `expandedOriginalHistoryIDs` moved to `VoiceStationViewModel` · `VoiceFlowMacCoreChecks`.
 - [x] **D-183** One mode carries three names — DICTATE, CLEAN, and ES → EN beside
   ES ➔ EN — and a refusal says "switch back to CLEAN". **Fix:** one mode-name table read
   by Words, the station and the HUD. `FocusHomeView.swift:525`, `:1153`,
@@ -1190,14 +1196,20 @@ Each one names why it would make the app better. Ordered by what changes daily u
   Input Monitoring status. Displays a clean, quiet status badge for each layer.
   **Where:** `vf doctor` CLI and Settings diagnostic panel in `FocusHomeView.swift`.
   Done 2026-10-25 — `vf doctor --json` implemented, Keychain Gemini API key check added, and on-demand "System Health & Status" diagnostic panel wired in Settings.
+- [x] **I-85 · Microduck Desktop Companion: persistent mascot presence, seated baseline with foot-swinging, ambient behaviors, drag-and-drop repositioning with UserDefaults persistence, and optical chest wordmark centering.**
+  Requested by the owner 2026-10-27. Why: transforms the voice HUD mascot into a persistent desktop companion inspired by virtual pets (Tamagotchi) and the Newton biped platform. The duck remains visible at rest in a relaxed seated pose with swinging feet, shows ambient behaviors (looking around, quacking/singing, sleeping when idle), toggles between sitting and standing on click, allows dragging anywhere on screen with persisted coordinates, and displays an optically centered `SBdot` wordmark on its white chest face.
+  **Spec:** `docs/MicroduckCompanionDesign.md`, `microduck_companion_simulator.html`.
+  **Where:** `macos/Sources/VoiceFlowMac/MicroduckView.swift` (kinematics, optical wordmark, ambient poses), `macos/Sources/VoiceFlowMac/RetroMicHUDView.swift` (persistent idle mascot, thought bubble visibility only during dictation, click-to-toggle), `macos/Sources/VoiceFlowMac/FloatingHUDController.swift` (no auto-dismissal of mascot, window drag and `UserDefaults` coordinate persistence), `macos/Sources/VoiceFlowMacCore/HUDLayout.swift`, and `VoiceFlowMacCoreChecks`.
+  Done 2026-10-27 — persistent desktop companion implemented with seated baseline, ambient behaviors (curious looking, singing/quacking, sleeping nap mode), click-to-stand toggle, window dragging with screen clamping and UserDefaults persistence, optical chest wordmark centering, menu toggle, verified by test suite and packaged in daily app · 2026-10-27.
 - [ ] **I-18 · Lift the dictation state machine into `VoiceFlowMacCore`.** Why: press,
   release and Escape orderings (D-23) become checkable without opening the
   app; about 6,000 lines of the app layer are reachable by no check today.
 - [ ] **I-19 · One engine launcher for App Intents.** Why: reusing `EngineRunner` closes
   D-06 and D-69 with one piece of code instead of two copies.
-- [ ] **I-20 · Give the audio level its own observable object.** Why: today the whole
+- [x] **I-20 · Give the audio level its own observable object.** Why: today the whole
   window re-renders 20 times a second while recording, including the Words diff, which
   costs battery and can stutter the FIX page.
+  Done 2026-10-28 — isolated 20Hz microphone level in `AudioLevelState` observed only by `StationMicCapsuleView` and `StationLiveMeterView` · `VoiceFlowMacCoreChecks`.
 - [x] **I-21 · Respect Reduce Motion.** Why: the ring, meter and blink run at 30 fps
   whenever the window is visible, whatever the system setting says.
   Done 2026-10-26 — `@Environment(\.accessibilityReduceMotion)` in `RetroMicHUDView.swift` snaps mascot to static pose and disables oscillations · build.
@@ -1208,9 +1220,10 @@ Each one names why it would make the app better. Ordered by what changes daily u
 - [ ] **I-24 · Keep the clipboard on this Mac.** Why: dictated text written to the
   general pasteboard can reach an iPhone through Universal Clipboard, which R7 does not
   intend. The AppKit option is unverified.
-- [ ] **I-25 · Private file modes (0600 files, 0700 folders) for stores, exports and
+- [x] **I-25 · Private file modes (0600 files, 0700 folders) for stores, exports and
   practice audio.** Why: an export saved to the Desktop or iCloud is readable by other
   accounts; `~/Library` itself is already 0700.
+  Done 2026-10-28 — `0600` file permissions and `0700` directory permissions enforced across `memory.py`, `distill.py`, `practice.py`, and `VoiceSnippet.swift` (`writeFlushed` / `withFileLock`) · `PrivateFilePermissionsTests` and `VoiceFlowMacCoreChecks`.
 - [ ] **I-26 · Checks for the two helper binaries' exit contract.** Why: no check runs
   either helper, which is how D-55 went unseen.
 - [ ] **I-27 · The build script asserts the embedded helpers and the team signature.**

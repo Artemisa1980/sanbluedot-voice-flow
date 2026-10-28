@@ -199,9 +199,20 @@ class TransmissionGuardTests(unittest.TestCase):
         self.assertIn("hola mundo", content_text)
         self.assertIn("es", content_text)
         self.assertEqual(payload["generationConfig"]["responseMimeType"], "application/json")
+        self.assertEqual(
+            payload["generationConfig"].get("thinkingConfig"),
+            {"thinkingBudget": 0},
+        )
         self.assertIn("cleaned_text", payload["generationConfig"]["responseSchema"]["properties"])
         self.assertIn("Edit a voice transcript", payload["systemInstruction"]["parts"][0]["text"])
         self.assertEqual(opener.timeouts, [DEFAULT_TIMEOUT_SECONDS])
+
+    def test_reasoning_models_omit_zero_thinking_budget_and_keep_reasoning_tokens(self) -> None:
+        opener = Recorder(reply("Hola."))
+        build(opener, model="gemini-4-argon").clean("hola mundo", language_hint="es")
+        payload = json.loads(opener.requests[0].data.decode("utf-8"))
+        self.assertNotIn("thinkingConfig", payload["generationConfig"])
+        self.assertGreaterEqual(payload["generationConfig"]["maxOutputTokens"], 4096)
 
     def test_translate_mode_uses_translation_system_prompt_and_announcement(self) -> None:
         announced: list[str] = []

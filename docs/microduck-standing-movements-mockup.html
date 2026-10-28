@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Microduck Parado A — Estudio de Movimientos Tiernos (MD-01 Choreography Lab)</title>
+<style>
+  :root {
+    --navy: #16213E;
+    --navyDeep: #0F172A;
+    --panelBg: #1A233A;
+    --cardBg: #1E2942;
+    --borderTeal: #385A6C;
+    --dotBlue: #5BC0EB;
+    --gold: #F6D04D;
+    --goldSole: #FACC15;
+    --duckOrange: #F4743B;
+    --duckOrangeDeep: #D9531E;
+    --inputCream: #F5F2EB;
+    --metalChampagne: #C4C1B6;
+    --okGreen: #34D399;
+    --textLight: #F8FAFC;
+    --textMuted: #94A3B8;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background: radial-gradient(circle at 50% 0%, #1E2D4A 0%, #0D1322 100%);
+    color: var(--textLight);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+    min-height: 100vh;
+    padding: 24px 24px 60px;
+    line-height: 1.5;
+  }
+
+  .container {
+    max-width: 1220px;
+    margin: 0 auto;
+  }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(91, 192, 235, 0.25);
+    margin-bottom: 22px;
+  }
+
+  .brand-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: rgba(246, 208, 77, 0.12);
+    border: 1px solid rgba(246, 208, 77, 0.35);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 8px;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--inputCream);
+  }
+
+  .subtitle {
+    color: var(--textMuted);
+    font-size: 13.5px;
+    max-width: 780px;
+    margin-top: 4px;
+  }
+
+  /* Main Studio Layout */
+  .studio-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 22px;
+    margin-bottom: 28px;
+  }
+
+  @media (max-width: 940px) {
+    .studio-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .stage-card {
+    background: var(--cardBg);
+    border: 2px solid var(--gold);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stage-header {
+    padding: 14px 20px;
+    background: rgba(15, 23, 42, 0.65);
+    border-bottom: 1px solid rgba(56, 90, 108, 0.5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .active-move-badge {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--navy);
+    background: var(--gold);
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+
+  .main-stage {
+    position: relative;
+    height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 36px;
+    background:
+      radial-gradient(circle at 42% 60%, rgba(91, 192, 235, 0.12) 0%, transparent 65%),
+      linear-gradient(180deg, #131C31 0%, #0D1424 100%);
+    cursor: crosshair;
+    overflow: hidden;
+  }
+
+  .main-stage.light-bg {
+    background:
+      radial-gradient(circle at 45% 60%, rgba(255, 255, 255, 0.65) 0%, transparent 70%),
+      linear-gradient(135deg, #CBD5E1 0%, #94A3B8 100%);
+  }
+
+  .stage-grid-lines {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 24px 24px;
+    pointer-events: none;
+  }
+
+  .hud-preview-box {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(91, 192, 235, 0.3);
+    border-radius: 14px;
+    padding: 12px 14px;
+    backdrop-filter: blur(8px);
+  }
+
+  .hud-preview-label {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--dotBlue);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .stage-footer {
+    padding: 14px 20px;
+    background: rgba(15, 23, 42, 0.75);
+    border-top: 1px solid rgba(56, 90, 108, 0.5);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 11.5px;
+    color: var(--inputCream);
+  }
+
+  input[type="range"] {
+    accent-color: var(--gold);
+    width: 130px;
+    cursor: pointer;
+  }
+
+  /* Right Column: Choreography Selector Cards */
+  .moves-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .move-btn {
+    text-align: left;
+    background: var(--cardBg);
+    border: 1px solid var(--borderTeal);
+    border-radius: 12px;
+    padding: 12px 15px;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .move-btn:hover {
+    border-color: var(--dotBlue);
+    background: rgba(91, 192, 235, 0.08);
+    transform: translateX(2px);
+  }
+
+  .move-btn.active {
+    border: 2px solid var(--gold);
+    background: rgba(246, 208, 77, 0.10);
+    box-shadow: 0 6px 20px rgba(246, 208, 77, 0.15);
+  }
+
+  .move-btn-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .move-name {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--inputCream);
+  }
+
+  .move-btn.active .move-name {
+    color: var(--gold);
+  }
+
+  .move-tag {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--dotBlue);
+    background: rgba(91, 192, 235, 0.12);
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+
+  .move-desc {
+    font-size: 12px;
+    color: var(--textMuted);
+    line-height: 1.4;
+  }
+
+  .small-btn {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--inputCream);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 6px 11px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+
+  .small-btn.active {
+    background: var(--dotBlue);
+    color: var(--navy);
+    border-color: var(--dotBlue);
+  }
+
+  /* Bottom Grid: All 6 Moves Simultaneously */
+  .section-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--gold);
+    margin: 10px 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mini-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .mini-card {
+    background: var(--cardBg);
+    border: 1px solid var(--borderTeal);
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+
+  .mini-card:hover {
+    border-color: var(--gold);
+  }
+
+  .mini-card-head {
+    padding: 9px 14px;
+    background: rgba(15, 23, 42, 0.55);
+    border-bottom: 1px solid rgba(56, 90, 108, 0.4);
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--inputCream);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .mini-stage {
+    height: 185px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #131C31 0%, #0E1525 100%);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <div class="brand-pill">PARADO A • ESTUDIO DE MOVIMIENTOS DELICADOS</div>
+      <h1>Coreografía de «Parado A» (MD-01 Fusión SBᵈᵒᵗ)</h1>
+      <p class="subtitle">
+        Diseñé 6 movimientos suaves y llenos de vida inspirados en cómo se mueve el robot MD-01 en los videos, más una secuencia automática que los combina con naturalidad. Haz clic en cualquiera a la derecha para probarlo en grande y en tamaño real HUD (82pt).
+      </p>
+    </div>
+  </header>
+
+  <div class="studio-grid">
+    <!-- Left: Interactive Dual Stage (Studio Zoom + Real 82pt HUD Scale) -->
+    <div class="stage-card">
+      <div class="stage-header">
+        <div>
+          <span style="font-size: 13px; color: var(--textMuted); margin-right: 8px;">Movimiento Activo:</span>
+          <span class="active-move-badge" id="active-move-label">0. Ciclo Automático Completo</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="small-btn" id="btn-bg" onclick="toggleBg()">Fondo: Oscuro</button>
+        </div>
+      </div>
+
+      <div class="main-stage" id="main-stage">
+        <div class="stage-grid-lines"></div>
+        <!-- Studio Zoom Canvas -->
+        <canvas id="canvas-main" width="300" height="310"></canvas>
+
+        <!-- Real 82pt HUD Size Preview Side-by-Side -->
+        <div class="hud-preview-box">
+          <span class="hud-preview-label">Tamaño Real HUD (60×82pt)</span>
+          <canvas id="canvas-hud-size" width="84" height="96"></canvas>
+        </div>
+      </div>
+
+      <div class="stage-footer">
+        <div class="slider-wrap">
+          <span>Suavidad / Velocidad:</span>
+          <input type="range" id="speed-slider" min="0.4" max="1.4" step="0.05" value="0.60" oninput="updateSpeed(this.value)">
+          <span id="speed-label">0.60x (Muy Suave — Aprobado)</span>
+        </div>
+        <span style="font-size: 12px; color: var(--textMuted);">Mueve el mouse sobre el patito para que te siga con la mirada</span>
+      </div>
+    </div>
+
+    <!-- Right: Clickable Movement Selector -->
+    <div class="moves-panel">
+      <div class="move-btn active" id="move-btn-auto" onclick="selectMove('auto')">
+        <div class="move-btn-top">
+          <span class="move-name">0. Secuencia Automática Natural (Recomendada)</span>
+          <span class="move-tag">Ciclo Vivo</span>
+        </div>
+        <div class="move-desc">Combina respiración curiosa, balanceo tierno de patitas, caminata suave, saltito alegre y quack sin fondo en un ciclo fluido.</div>
+      </div>
+
+      <div class="move-btn" id="move-btn-curious" onclick="selectMove('curious')">
+        <div class="move-btn-top">
+          <span class="move-name">1. Respiración + Ladeado Curioso + Parpadeo</span>
+          <span class="move-tag">Base Delicada</span>
+        </div>
+        <div class="move-desc">Inclinación suave de cabecita de un lado al otro como el MD-01 cuando te mira, con parpadeo natural de su lente dorado y micro-flexión de rodillas.</div>
+      </div>
+
+      <div class="move-btn" id="move-btn-tiptap" onclick="selectMove('tiptap')">
+        <div class="move-btn-top">
+          <span class="move-name">2. Balanceo + «Tippy-Taps» de Botita</span>
+          <span class="move-tag">Súper Tierno</span>
+        </div>
+        <div class="move-desc">Pasa el peso de una patita a otra meciendo la cadera suavemente y da dos pequeños toquecitos alegres con la punta de su botita amarilla.</div>
+      </div>
+
+      <div class="move-btn" id="move-btn-waddle" onclick="selectMove('waddle')">
+        <div class="move-btn-top">
+          <span class="move-name">3. Caminata Suave de Patito MD-01</span>
+          <span class="move-tag">Video NVIDIA</span>
+        </div>
+        <div class="move-desc">Pasitos alternados donde los muslos en diamante (<code>&lt; &gt;</code>) y las botitas suben con suavidad mientras la cabecita acompaña el compás.</div>
+      </div>
+
+      <div class="move-btn" id="move-btn-hop" onclick="selectMove('hop')">
+        <div class="move-btn-top">
+          <span class="move-name">4. Saltito Feliz con Amortiguación</span>
+          <span class="move-tag">Celebración</span>
+        </div>
+        <div class="move-desc">Se agacha doblando sus rodillitas, da un brinco corto abriendo apenas el piquito con alegría y aterriza suave sobre sus suelas amarillas.</div>
+      </div>
+
+      <div class="move-btn" id="move-btn-quack" onclick="selectMove('quack')">
+        <div class="move-btn-top">
+          <span class="move-name">5. Doble «Quack · Quack» sin Fondo</span>
+          <span class="move-tag">Expresión</span>
+        </div>
+        <div class="move-desc">Levanta la cabecita con orgullo, abre su pico inferior en dos tiempos delicados y suelta los dos <code>quack</code> flotantes sin cápsula.</div>
+      </div>
+
+      <div class="move-btn" id="move-btn-sleepy" onclick="selectMove('sleepy')">
+        <div class="move-btn-top">
+          <span class="move-name">6. Cabeceo de Sueñito (Antes de Sentarse)</span>
+          <span class="move-tag">Transición Zzz</span>
+        </div>
+        <div class="move-desc">Su ojito pasa a la línea dorada de sueño, la cabecita da un cabeceo suave hacia abajo mientras salen las <code>z · z · Z</code> delicadas.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simultaneous Mini Gallery of the 6 Individual Moves -->
+  <div class="section-title">
+    <span>Vista Simultánea de los 6 Movimientos Individuales (Haz clic en cualquiera para verlo arriba)</span>
+  </div>
+  <div class="mini-grid">
+    <div class="mini-card" onclick="selectMove('curious')">
+      <div class="mini-card-head"><span>1. Ladeado Curioso + Parpadeo</span><span style="color:var(--dotBlue)">Idle</span></div>
+      <div class="mini-stage"><canvas id="c-mini-curious" width="200" height="180"></canvas></div>
+    </div>
+    <div class="mini-card" onclick="selectMove('tiptap')">
+      <div class="mini-card-head"><span>2. Balanceo + Tippy-Taps</span><span style="color:var(--gold)">Juego</span></div>
+      <div class="mini-stage"><canvas id="c-mini-tiptap" width="200" height="180"></canvas></div>
+    </div>
+    <div class="mini-card" onclick="selectMove('waddle')">
+      <div class="mini-card-head"><span>3. Caminata Suave MD-01</span><span style="color:var(--okGreen)">Walk</span></div>
+      <div class="mini-stage"><canvas id="c-mini-waddle" width="200" height="180"></canvas></div>
+    </div>
+    <div class="mini-card" onclick="selectMove('hop')">
+      <div class="mini-card-head"><span>4. Saltito Feliz</span><span style="color:var(--dotBlue)">Hop</span></div>
+      <div class="mini-stage"><canvas id="c-mini-hop" width="200" height="180"></canvas></div>
+    </div>
+    <div class="mini-card" onclick="selectMove('quack')">
+      <div class="mini-card-head"><span>5. Doble Quack sin Fondo</span><span style="color:var(--gold)">Quack</span></div>
+      <div class="mini-stage"><canvas id="c-mini-quack" width="200" height="180"></canvas></div>
+    </div>
+    <div class="mini-card" onclick="selectMove('sleepy')">
+      <div class="mini-card-head"><span>6. Cabeceo de Sueñito (Zzz)</span><span style="color:var(--dotBlue)">Sleepy</span></div>
+      <div class="mini-stage"><canvas id="c-mini-sleepy" width="200" height="180"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const COLORS = {
+    navy: '#16213E',
+    servoBlack: '#1C222E',
+    visorGlass: 'rgba(118, 134, 148, 0.42)',
+    cream: '#F5F2EB',
+    creamShade: '#D8D2C5',
+    metalChampagne: '#C4C1B6',
+    gold: '#F6D04D',
+    goldSole: '#FACC15',
+    orange: '#F4743B',
+    orangeDeep: '#D9531E',
+    dotBlue: '#5BC0EB',
+    okGreen: '#34D399',
+    sleepRed: '#FF6B6B'
+  };
+
+  let currentMove = 'auto';
+  let speedMult = 0.60;
+  let clock = 0;
+  let gazeX = 0;
+  let gazeY = 0;
+
+  const MOVE_TITLES = {
+    auto: '0. Ciclo Automático Completo',
+    curious: '1. Respiración + Ladeado Curioso',
+    tiptap: '2. Balanceo + Tippy-Taps de Botita',
+    waddle: '3. Caminata Suave de Patito MD-01',
+    hop: '4. Saltito Feliz con Amortiguación',
+    quack: '5. Doble Quack · Quack sin Fondo',
+    sleepy: '6. Cabeceo de Sueñito (Zzz)'
+  };
+
+  const mainStage = document.getElementById('main-stage');
+  mainStage.addEventListener('mousemove', (e) => {
+    const rect = mainStage.getBoundingClientRect();
+    const cx = rect.left + rect.width * 0.38;
+    const cy = rect.top + rect.height * 0.42;
+    gazeX = Math.max(-1, Math.min(1, (e.clientX - cx) / 100));
+    gazeY = Math.max(-1, Math.min(1, (e.clientY - cy) / 80));
+  });
+  mainStage.addEventListener('mouseleave', () => {
+    gazeX = 0;
+    gazeY = 0;
+  });
+
+  function selectMove(move) {
+    currentMove = move;
+    document.querySelectorAll('.move-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('move-btn-' + move);
+    if (btn) btn.classList.add('active');
+    document.getElementById('active-move-label').textContent = MOVE_TITLES[move];
+  }
+
+  function updateSpeed(val) {
+    speedMult = parseFloat(val);
+    const desc = speedMult <= 0.65 ? '(Muy Suave)' : speedMult <= 0.95 ? '(Delicado)' : '(Vivo)';
+    document.getElementById('speed-label').textContent = `${speedMult.toFixed(2)}x ${desc}`;
+  }
+
+  function toggleBg() {
+    mainStage.classList.toggle('light-bg');
+    const isLight = mainStage.classList.contains('light-bg');
+    const btn = document.getElementById('btn-bg');
+    btn.textContent = isLight ? 'Fondo: Claro' : 'Fondo: Oscuro';
+    btn.classList.toggle('active', isLight);
+  }
+
+  function setupCanvas(id) {
+    const canvas = document.getElementById(id);
+    const dpr = window.devicePixelRatio || 2;
+    const w = canvas.width;
+    const h = canvas.height;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    return { ctx, w, h };
+  }
+
+  const cMain = setupCanvas('canvas-main');
+  const cHud = setupCanvas('canvas-hud-size');
+  const cMiniCurious = setupCanvas('c-mini-curious');
+  const cMiniTiptap = setupCanvas('c-mini-tiptap');
+  const cMiniWaddle = setupCanvas('c-mini-waddle');
+  const cMiniHop = setupCanvas('c-mini-hop');
+  const cMiniQuack = setupCanvas('c-mini-quack');
+  const cMiniSleepy = setupCanvas('c-mini-sleepy');
+
+  function rRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  }
+
+  function strokeRRect(ctx, x, y, w, h, r, lw) {
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.stroke();
+  }
+
+  function fillCircle(ctx, x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ============================================================================
+  // CHOREOGRAPHY ENGINE FOR PARADO A (6 DELICATE MOVEMENTS + AUTO TOUR)
+  // ============================================================================
+  function computeChoreography(t, moveType) {
+    // Returns pose parameters for Parado A
+    let activeMove = moveType;
+    let localT = t;
+
+    if (moveType === 'auto') {
+      // 20-second seamless choreography tour:
+      // 0..4.5s: Curious Idle & Blink
+      // 4.5..8.5s: Sway & Toe Tippy-Taps
+      // 8.5..12.5s: Cute Waddle Walk
+      // 12.5..15.5s: Happy Hop
+      // 15.5..20.0s: Double Quack without background
+      const cycle = t % 20.0;
+      if (cycle < 4.5) {
+        activeMove = 'curious';
+        localT = cycle;
+      } else if (cycle < 8.5) {
+        activeMove = 'tiptap';
+        localT = cycle - 4.5;
+      } else if (cycle < 12.5) {
+        activeMove = 'waddle';
+        localT = cycle - 8.5;
+      } else if (cycle < 15.5) {
+        activeMove = 'hop';
+        localT = cycle - 12.5;
+      } else {
+        activeMove = 'quack';
+        localT = cycle - 15.5;
+      }
+    }
+
+    let hipShiftX = 0;
+    let hipDropY = 0;
+    let bodyRoll = 0;
+    let neckLean = 0;
+    let headPitch = -3;
+    let headRoll = 0;
+    let headYaw = 0;
+    let jawOpen = 0;
+    let hopY = 0;
+    let footLiftL = 0, footTiltL = 0;
+    let footLiftR = 0, footTiltR = 0;
+    let kneeSpreadL = 0, kneeSpreadR = 0;
+    let isBlinking = false;
+    let isSleeping = false;
+    let showQuack = false;
+    let quackClock = 0;
+
+    if (activeMove === 'curious') {
+      // 1. Delicate breathing + bird-like head tilt + natural blink
+      const breathe = Math.sin(localT * 2.0);
+      hipDropY = breathe * 0.9;
+      kneeSpreadL = breathe * 0.6;
+      kneeSpreadR = breathe * 0.6;
+      headRoll = Math.sin(localT * 1.35) * 6.5; // adorable head cocking side to side
+      headYaw = Math.sin(localT * 0.85) * 7.5;
+      headPitch = -3.5 + Math.cos(localT * 1.35) * 2.0;
+      // Soft double blink every 3.5 seconds
+      const bMod = localT % 3.5;
+      if ((bMod > 1.8 && bMod < 1.95) || (bMod > 2.1 && bMod < 2.24)) {
+        isBlinking = true;
+      }
+    } else if (activeMove === 'tiptap') {
+      // 2. Weight shift side to side + cute toe tippy-taps!
+      const sway = Math.sin(localT * 2.4);
+      hipShiftX = sway * 3.8;
+      bodyRoll = sway * 2.8;
+      headRoll = -sway * 4.5;
+      headYaw = sway * 5.0;
+      // When weight is on right leg (sway > 0.3), left boot does two quick cute toe taps!
+      if (sway > 0.25) {
+        const tap = Math.abs(Math.sin(localT * 11.0));
+        footTiltL = -tap * 16.0;
+        footLiftL = tap * 2.2;
+      } else if (sway < -0.25) {
+        const tap = Math.abs(Math.sin(localT * 11.0));
+        footTiltR = tap * 16.0;
+        footLiftR = tap * 2.2;
+      }
+    } else if (activeMove === 'waddle') {
+      // 3. Smooth MD-01 Waddle Walk
+      const phase = localT * 3.6;
+      const s = Math.sin(phase);
+      hipShiftX = Math.cos(phase) * 2.5;
+      bodyRoll = s * 3.0;
+      headRoll = -s * 3.5;
+      headPitch = -3 + Math.abs(s) * 2.5;
+      footLiftL = Math.max(0, s) * 6.5;
+      footTiltL = Math.max(0, s) * 10.0;
+      footLiftR = Math.max(0, -s) * 6.5;
+      footTiltR = -Math.max(0, -s) * 10.0;
+      kneeSpreadL = Math.max(0, s) * 2.5;
+      kneeSpreadR = Math.max(0, -s) * 2.5;
+    } else if (activeMove === 'hop') {
+      // 4. Happy Crouch & Joy Hop with soft landing
+      const c = localT % 2.5;
+      if (c < 0.5) {
+        // Gentle crouch anticipation
+        const p = Math.sin((c / 0.5) * Math.PI * 0.5);
+        hipDropY = p * 5.5;
+        kneeSpreadL = kneeSpreadR = p * 3.5;
+        headPitch = -1 + p * 4;
+      } else if (c < 1.35) {
+        // Smooth airborne arc
+        const p = (c - 0.5) / 0.85;
+        const arc = Math.sin(p * Math.PI);
+        hopY = arc * 15.0;
+        footLiftL = footLiftR = arc * 15.0;
+        footTiltL = 12 * arc;
+        footTiltR = -12 * arc;
+        headPitch = -9 * arc - 3;
+        jawOpen = arc * 0.55;
+      } else if (c < 1.85) {
+        // Cushion landing absorption
+        const p = Math.sin(((1.85 - c) / 0.5) * Math.PI * 0.5);
+        hipDropY = p * 4.5;
+        kneeSpreadL = kneeSpreadR = p * 3.0;
+      }
+    } else if (activeMove === 'quack') {
+      // 5. Double Quack · Quack without background
+      showQuack = true;
+      quackClock = localT % 2.6;
+      hipDropY = Math.sin(localT * 2.5) * 0.8;
+      headRoll = -4 + Math.sin(localT * 2.0) * 3.0;
+      if (quackClock > 0.05 && quackClock < 0.45) {
+        const qp = Math.sin(((quackClock - 0.05) / 0.4) * Math.PI);
+        jawOpen = qp * 0.82;
+        headPitch = -4 - qp * 4.5;
+        neckLean = -qp * 2.0;
+      } else if (quackClock > 0.52 && quackClock < 0.98) {
+        const qp = Math.sin(((quackClock - 0.52) / 0.46) * Math.PI);
+        jawOpen = qp * 0.92;
+        headPitch = -5 - qp * 6.0;
+        neckLean = -qp * 3.0;
+      }
+    } else if (activeMove === 'sleepy') {
+      // 6. Sleepy nod / drowsy sway with delicate Zzz
+      isSleeping = true;
+      const nod = Math.sin(localT * 1.4);
+      hipDropY = 1.5 + Math.sin(localT * 1.4) * 1.0;
+      bodyRoll = Math.sin(localT * 0.9) * 1.5;
+      headRoll = 6.5 + Math.sin(localT * 1.1) * 2.0;
+      headPitch = 5.5 + Math.max(0, nod) * 4.5; // gentle sleepy nod forward
+    }
+
+    return {
+      hipShiftX, hipDropY, bodyRoll, neckLean,
+      headPitch, headRoll, headYaw, jawOpen, hopY,
+      footLiftL, footTiltL, footLiftR, footTiltR,
+      kneeSpreadL, kneeSpreadR, isBlinking, isSleeping,
+      showQuack, quackClock
+    };
+  }
+
+  // ============================================================================
+  // RENDERER FOR PARADO A WITH EXPRESSIVE KINEMATICS
+  // ============================================================================
+  function drawParadoA(ctx, cx, groundY, scale, pose, time) {
+    const deg = Math.PI / 180;
+    ctx.save();
+    ctx.translate(cx, groundY);
+    ctx.scale(scale, scale);
+    ctx.translate(-78, -188);
+
+    const gY = 188;
+    const rx = 78 + pose.hipShiftX;
+
+    // 1. Soft Ground Shadow
+    const hopRatio = Math.min(1, pose.hopY / 16);
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.36 - hopRatio * 0.16})`;
+    ctx.beginPath();
+    ctx.ellipse(78 + pose.hipShiftX * 0.5, gY + 2, 42 - hopRatio * 9, 5.2 - hopRatio * 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const hipY = gY - 39 + pose.hipDropY - pose.hopY;
+
+    // 2. Left & Right MD-01 Diamond Legs (< >)
+    drawArticulatedLeg(ctx, rx, hipY, gY - pose.footLiftL, -1, pose.kneeSpreadL, pose.footTiltL);
+    drawArticulatedLeg(ctx, rx, hipY, gY - pose.footLiftR, +1, pose.kneeSpreadR, pose.footTiltR);
+
+    // 3. Pelvis & Torso Assembly
+    ctx.save();
+    ctx.translate(rx, hipY);
+    ctx.rotate(pose.bodyRoll * deg);
+
+    // Central dark pelvis block
+    ctx.fillStyle = COLORS.servoBlack;
+    rRect(ctx, -18, -7, 36, 15, 3.5);
+
+    // Dual Champagne/Silver Horizontal Hip U-Brackets ([∷•] [•∷])
+    [-9.5, 9.5].forEach(bx => {
+      ctx.fillStyle = COLORS.metalChampagne;
+      rRect(ctx, bx - 7.5, -5.5, 15, 10.5, 3.5);
+      ctx.strokeStyle = 'rgba(22, 33, 62, 0.45)';
+      strokeRRect(ctx, bx - 7.5, -5.5, 15, 10.5, 3.5, 0.9);
+
+      ctx.fillStyle = COLORS.navy;
+      fillCircle(ctx, bx, -0.2, 2.0);
+      fillCircle(ctx, bx - 3.6, -2.0, 0.8);
+      fillCircle(ctx, bx - 3.6, 1.6, 0.8);
+      fillCircle(ctx, bx + 3.6, -2.0, 0.8);
+      fillCircle(ctx, bx + 3.6, 1.6, 0.8);
+    });
+
+    // 4. Compact Horizontal Pillow Torso with Centered "SBdot"
+    const torsoW = 42;
+    const torsoH = 23;
+    const torsoTop = -6 - torsoH;
+
+    ctx.fillStyle = COLORS.cream;
+    rRect(ctx, -torsoW / 2, torsoTop, torsoW, torsoH, 8.5);
+    ctx.fillStyle = 'rgba(152, 170, 178, 0.35)';
+    rRect(ctx, torsoW / 2 - 10, torsoTop, 10, torsoH, 5.5);
+
+    // Top black servo neck recess
+    ctx.fillStyle = COLORS.servoBlack;
+    rRect(ctx, -6.5, torsoTop + 0.5, 13, 4.5, 2);
+    ctx.fillStyle = COLORS.navy;
+    fillCircle(ctx, -17.5, torsoTop + 6.5, 1.1);
+
+    // Centered "SBdot" wordmark
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 8.5px ui-monospace, "SF Mono", monospace';
+    ctx.fillStyle = COLORS.navy;
+    ctx.fillText('SB', -9.5, torsoTop + 13.5);
+    ctx.font = '900 4.6px ui-monospace, "SF Mono", monospace';
+    ctx.fillStyle = COLORS.dotBlue;
+    ctx.fillText('dot', 1.5, torsoTop + 10.5);
+    fillCircle(ctx, 10.5, torsoTop + 6.5, 2.1);
+    ctx.restore();
+
+    // 5. Segmented Neck Column + Connectors + Wire Loop
+    const neckH = 16;
+    const neckTop = torsoTop - neckH;
+
+    ctx.save();
+    ctx.translate(0, torsoTop);
+    ctx.rotate(pose.neckLean * deg);
+    ctx.translate(0, -torsoTop);
+
+    // Left servo wire loops
+    ctx.strokeStyle = COLORS.servoBlack;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(-6.5, torsoTop - neckH * 0.45, 5.5, 0.55 * Math.PI, 1.48 * Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-6.0, torsoTop - neckH * 0.35, 4.0, 0.6 * Math.PI, 1.42 * Math.PI);
+    ctx.stroke();
+
+    ctx.fillStyle = COLORS.servoBlack;
+    rRect(ctx, -6.2, neckTop, 12.4, neckH + 3, 2.5);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-6, neckTop + neckH * 0.52);
+    ctx.lineTo(6, neckTop + neckH * 0.52);
+    ctx.stroke();
+
+    ctx.fillStyle = COLORS.metalChampagne;
+    rRect(ctx, -6.2, neckTop + 2, 3.8, neckH - 2, 1.2);
+    ctx.fillStyle = COLORS.cream;
+    rRect(ctx, -2.2, neckTop + 2.8, 2.2, 2.8, 0.6);
+    rRect(ctx, -2.2, neckTop + neckH * 0.58, 2.2, 2.8, 0.6);
+
+    // 6. Head Rig (with headRoll + headPitch + headYaw)
+    ctx.translate(0, neckTop + 2);
+    ctx.rotate((pose.headRoll + pose.headPitch * 0.35) * deg);
+    ctx.scale(1.15, 1.15);
+    ctx.translate(-62, -60 - pose.headPitch * 0.35);
+
+    drawExpressiveHead(ctx, pose);
+
+    ctx.restore(); // end neck/head
+    ctx.restore(); // end torso
+
+    // Floating Zzz or Quack particles
+    if (pose.isSleeping) {
+      drawDelicateZzz(ctx, rx + 16, hipY - torsoH - neckH - 58, time);
+    } else if (pose.showQuack) {
+      drawFloatingQuacks(ctx, rx + 26, hipY - torsoH - neckH - 32, pose.quackClock);
+    }
+
+    ctx.restore();
+  }
+
+  function drawArticulatedLeg(ctx, rx, hipY, footGroundY, side, kneeSpread, footTilt) {
+    const deg = Math.PI / 180;
+    ctx.save();
+
+    const hipX = rx + side * 14;
+    const kneeOutX = rx + side * (25.5 + kneeSpread);
+    const kneeY = hipY + 15.5;
+    const ankleX = rx + side * 16.5;
+    const ankleY = footGroundY - 9.5;
+
+    // 1. Dark lateral hip actuator
+    ctx.fillStyle = COLORS.servoBlack;
+    rRect(ctx, side < 0 ? hipX - 11 : hipX - 1, hipY - 4.5, 12, 10, 3);
+
+    // 2. Inward-angled metallic shin (\ /)
+    ctx.save();
+    const shinDX = ankleX - kneeOutX;
+    const shinDY = ankleY - kneeY;
+    const shinAngle = Math.atan2(shinDY, shinDX) - Math.PI / 2;
+    const shinLen = Math.hypot(shinDX, shinDY);
+
+    ctx.translate(kneeOutX, kneeY);
+    ctx.rotate(shinAngle);
+    ctx.fillStyle = COLORS.metalChampagne;
+    rRect(ctx, -4.5, -1, 9, shinLen + 2, 2.5);
+    ctx.fillStyle = COLORS.servoBlack;
+    rRect(ctx, -5.2, shinLen * 0.22, 10.4, shinLen * 0.68, 2.2);
+    ctx.fillStyle = COLORS.cream;
+    rRect(ctx, -1.5, shinLen * 0.32, 2.0, 2.8, 0.5);
+    ctx.restore();
+
+    // 3. Outward-angled White Thigh Fender Plate (/ \)
+    ctx.save();
+    const thighDX = kneeOutX - (hipX + side * 4);
+    const thighDY = (kneeY + 3) - (hipY - 3);
+    const thighAngle = Math.atan2(thighDY, thighDX) - Math.PI / 2;
+    const thighLen = Math.hypot(thighDX, thighDY) + 5;
+
+    ctx.translate(hipX + side * 5, hipY - 3);
+    ctx.rotate(thighAngle);
+    ctx.fillStyle = COLORS.servoBlack;
+    rRect(ctx, -6, -2, 12, thighLen, 4);
+    ctx.fillStyle = COLORS.cream;
+    rRect(ctx, side < 0 ? -7.5 : -4.5, -2.5, 12, thighLen + 1, 5.5);
+    ctx.fillStyle = 'rgba(152, 170, 178, 0.35)';
+    rRect(ctx, side < 0 ? 1.5 : -4.5, -2.5, 3, thighLen + 1, 2);
+    ctx.fillStyle = COLORS.navy;
+    fillCircle(ctx, side < 0 ? -1.5 : 1.5, thighLen - 4.5, 1.15);
+    ctx.restore();
+
+    // 4. Pyramidal Two-Tone Boot (with toe-tap articulation!)
+    ctx.save();
+    ctx.translate(ankleX, ankleY);
+    ctx.rotate(footTilt * deg);
+
+    ctx.fillStyle = COLORS.orange;
+    ctx.beginPath();
+    ctx.moveTo(-11.5, 6.5);
+    ctx.lineTo(-9.5, 0.5);
+    ctx.quadraticCurveTo(-8.5, -2.5, -4.5, -2.5);
+    ctx.lineTo(4.5, -2.5);
+    ctx.quadraticCurveTo(8.5, -2.5, 9.5, 0.5);
+    ctx.lineTo(11.5, 6.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = COLORS.navy;
+    fillCircle(ctx, 0, 0.2, 0.95);
+    fillCircle(ctx, -3.2, 3.2, 0.95);
+    fillCircle(ctx, 3.2, 3.2, 0.95);
+
+    ctx.fillStyle = COLORS.goldSole;
+    rRect(ctx, -12.5, 5.5, 25, 4.2, 2.1);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  function drawExpressiveHead(ctx, pose) {
+    ctx.save();
+    const totalYaw = Math.max(-14, Math.min(14, pose.headYaw + gazeX * 7));
+    if (totalYaw !== 0) {
+      ctx.translate(totalYaw * 0.15, 0);
+      ctx.translate(62, 44);
+      ctx.rotate(totalYaw * 0.85 * Math.PI / 180);
+      ctx.translate(-62, -44);
+    }
+
+    // Visor Hood
+    ctx.fillStyle = COLORS.cream;
+    ctx.beginPath();
+    ctx.moveTo(31.5, 58);
+    ctx.lineTo(31.5, 35.5);
+    ctx.bezierCurveTo(31.5, 25, 39.5, 19, 50, 19);
+    ctx.lineTo(74, 19);
+    ctx.bezierCurveTo(84.5, 19, 92.5, 25, 92.5, 35.5);
+    ctx.lineTo(92.5, 58);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = COLORS.creamShade;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // Faceplate
+    ctx.fillStyle = COLORS.visorGlass;
+    rRect(ctx, 36.5, 24.5, 51, 29.5, 11);
+
+    // Forehead shine
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(44, 22.5);
+    ctx.bezierCurveTo(50, 21, 58, 20.6, 66, 21.2);
+    ctx.stroke();
+
+    // Side Orange Jaw Hinges with 3 micro-dots
+    ctx.fillStyle = COLORS.orange;
+    rRect(ctx, 29, 45.5, 4.0, 11, 2);
+    rRect(ctx, 91, 45.5, 4.0, 11, 2);
+    ctx.fillStyle = COLORS.navy;
+    [48, 51, 54].forEach(sy => {
+      fillCircle(ctx, 31, sy, 0.8);
+      fillCircle(ctx, 93, sy, 0.8);
+    });
+
+    // Eye Camera (or Golden Sleeping/Blinking Line!)
+    const eyeX = 62, eyeY = 38.8;
+    if (pose.isSleeping || pose.isBlinking) {
+      ctx.fillStyle = COLORS.gold;
+      rRect(ctx, eyeX - 8.5, eyeY - 1.6, 17, 3.2, 1.6);
+      ctx.fillStyle = pose.isSleeping ? COLORS.sleepRed : COLORS.okGreen;
+      fillCircle(ctx, 43.5, 44, 1.85);
+    } else {
+      ctx.fillStyle = COLORS.gold;
+      fillCircle(ctx, eyeX, eyeY, 11.2);
+      ctx.fillStyle = COLORS.navy;
+      fillCircle(ctx, eyeX, eyeY, 7.1);
+      ctx.fillStyle = '#F7F3EA';
+      fillCircle(ctx, eyeX + gazeX * 1.4, eyeY + gazeY * 1.4, 3.5);
+      ctx.fillStyle = COLORS.dotBlue;
+      fillCircle(ctx, eyeX + gazeX * 2.2, eyeY + gazeY * 2.2, 1.7);
+      ctx.fillStyle = COLORS.okGreen;
+      fillCircle(ctx, 43.5, 44, 1.85);
+    }
+
+    // Right sensor slot
+    ctx.fillStyle = COLORS.navy;
+    rRect(ctx, 77, 37.5, 5.4, 2.5, 1.25);
+
+    // Beak & Articulated Jaw
+    const drop = pose.jawOpen * 9.5;
+    ctx.fillStyle = COLORS.navy;
+    rRect(ctx, 34.5, 58, 55, 4.5 + drop * 0.75, 2);
+    if (drop > 1.2) {
+      ctx.fillStyle = COLORS.orangeDeep;
+      rRect(ctx, 41, 59.5 + drop * 0.35, 42, 3.2, 1.5);
+    }
+
+    ctx.fillStyle = COLORS.orange;
+    ctx.beginPath();
+    ctx.moveTo(31, 55.8);
+    ctx.lineTo(93, 55.8);
+    ctx.lineTo(93, 59.5);
+    ctx.quadraticCurveTo(93, 62, 90, 62);
+    ctx.lineTo(34, 62);
+    ctx.quadraticCurveTo(31, 62, 31, 59.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = COLORS.orangeDeep;
+    ctx.beginPath();
+    ctx.moveTo(33.5, 61.8 + drop * 0.6);
+    ctx.lineTo(90.5, 61.8 + drop);
+    ctx.lineTo(88.8, 65.2 + drop);
+    ctx.quadraticCurveTo(88, 66.4 + drop, 86, 66.4 + drop);
+    ctx.lineTo(38, 66.4 + drop * 0.6);
+    ctx.quadraticCurveTo(36, 66.4 + drop * 0.6, 35, 65.2 + drop * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawDelicateZzz(ctx, originX, originY, time) {
+    const letters = [
+      { char: 'z', size: 10, delay: 0.0, xBase: 6 },
+      { char: 'z', size: 12.5, delay: 0.95, xBase: 15 },
+      { char: 'Z', size: 15, delay: 1.9, xBase: 25 }
+    ];
+    const period = 3.2;
+    letters.forEach((item, idx) => {
+      const localT = (time - item.delay + period * 10) % period;
+      const p = localT / period;
+      const alpha = p < 0.22 ? (p / 0.22) : p > 0.72 ? (1 - (p - 0.72) / 0.28) : 1.0;
+      const riseY = originY - p * 28;
+      const waveX = originX + item.xBase + Math.sin(p * Math.PI * 2 + idx) * 2.5;
+      ctx.save();
+      ctx.translate(waveX, riseY);
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha * 0.92));
+      ctx.font = `800 ${item.size}px "SF Pro Rounded", ui-rounded, sans-serif`;
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = 'rgba(22, 33, 62, 0.7)';
+      ctx.strokeText(item.char, 0, 0);
+      ctx.fillStyle = idx === 2 ? '#8DD3F6' : COLORS.dotBlue;
+      ctx.fillText(item.char, 0, 0);
+      ctx.restore();
+    });
+  }
+
+  function drawFloatingQuacks(ctx, beakX, beakY, cycleT) {
+    const quacks = [
+      { text: 'quack', start: 0.05, dur: 1.55, dx: 18, dy: -18, size: 11, rot: -10, color: COLORS.gold },
+      { text: 'quack', start: 0.52, dur: 1.65, dx: 34, dy: -34, size: 13, rot: -6, color: COLORS.orange }
+    ];
+    quacks.forEach((q) => {
+      const elapsed = cycleT - q.start;
+      if (elapsed < 0 || elapsed > q.dur) return;
+      const p = elapsed / q.dur;
+      const easeOut = 1 - Math.pow(1 - p, 2.4);
+      const alpha = p < 0.18 ? (p / 0.18) : p > 0.68 ? (1 - (p - 0.68) / 0.32) : 1.0;
+      const x = beakX + q.dx * easeOut;
+      const y = beakY + q.dy * easeOut;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(q.rot * Math.PI / 180);
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      ctx.font = `800 ${q.size}px "SF Pro Rounded", ui-rounded, sans-serif`;
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = COLORS.navy;
+      ctx.strokeText(q.text, 0, 0);
+      ctx.fillStyle = q.color;
+      ctx.fillText(q.text, 0, 0);
+      ctx.restore();
+    });
+  }
+
+  function animate() {
+    clock += 0.016 * speedMult;
+
+    // Main stage + HUD size preview
+    const mainPose = computeChoreography(clock, currentMove);
+    cMain.ctx.clearRect(0, 0, cMain.w, cMain.h);
+    drawParadoA(cMain.ctx, 150, 276, 1.68, mainPose, clock);
+
+    cHud.ctx.clearRect(0, 0, cHud.w, cHud.h);
+    drawParadoA(cHud.ctx, 42, 86, 0.52, mainPose, clock);
+
+    // 6 Simultaneous Mini Previews
+    const miniList = [
+      { c: cMiniCurious, m: 'curious' },
+      { c: cMiniTiptap, m: 'tiptap' },
+      { c: cMiniWaddle, m: 'waddle' },
+      { c: cMiniHop, m: 'hop' },
+      { c: cMiniQuack, m: 'quack' },
+      { c: cMiniSleepy, m: 'sleepy' }
+    ];
+    miniList.forEach(({ c, m }) => {
+      c.ctx.clearRect(0, 0, c.w, c.h);
+      const p = computeChoreography(clock, m);
+      drawParadoA(c.ctx, 100, 162, 0.96, p, clock);
+    });
+
+    requestAnimationFrame(animate);
+  }
+
+  animate();
+</script>
+</body>
+</html>

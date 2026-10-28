@@ -192,7 +192,8 @@ def word_difference(source: str, candidate: str) -> list[str]:
 
 def transcribe_corpus(args: argparse.Namespace, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
     corrections = () if args.no_memory else tuple(CorrectionStore().load())
-    prompt = "" if args.no_memory else build_initial_prompt(load_vocabulary(), PROMPT_CHAR_BUDGET)
+    raw_vocab = () if args.no_memory else tuple(load_vocabulary())
+    prompt = "" if args.no_memory else build_initial_prompt(raw_vocab, PROMPT_CHAR_BUDGET)
     pipeline = DictationPipeline(
         transcriber=WhisperCppTranscriber(
             model_path=args.whisper_model,
@@ -202,6 +203,7 @@ def transcribe_corpus(args: argparse.Namespace, samples: list[dict[str, Any]]) -
         ),
         cleaner=LiteralCleaner(),
         corrections=corrections,
+        vocabulary=raw_vocab,
     )
     transcribed: list[dict[str, Any]] = []
     for sample in samples:

@@ -33,6 +33,7 @@ from .prompt import (
     MEETING_NOTES_SYSTEM_PROMPT,
     TRANSLATE_EN_SYSTEM_PROMPT,
     output_token_budget,
+    strip_enclosing_markdown_fences,
 )
 
 
@@ -56,6 +57,18 @@ MODEL_CHAIN = ("gemini-3.8-flash", "gemini-4-argon")
 def model_chain(preferred: str) -> tuple[str, ...]:
     """The preferred model first, then the remaining known models in order."""
     return (preferred,) + tuple(m for m in MODEL_CHAIN if m != preferred)
+
+
+def _is_reasoning_model(model: str) -> bool:
+    lowered = model.casefold()
+    return "argon" in lowered or "reason" in lowered
+
+
+def _supports_zero_thinking_budget(model: str) -> bool:
+    """Flash models default to dynamic thinking, spending 2-4s on hidden thought tokens.
+    Setting thinkingBudget=0 disables hidden reasoning for fast deterministic cleanup."""
+    lowered = model.casefold()
+    return "flash" in lowered and not _is_reasoning_model(lowered)
 
 # The 2026-08-31 measurement of the earlier chain: successful replies took 5.4 to 34.6 seconds, so the previous
 # 20-second ceiling cancelled calls that were about to succeed and made a healthy model
@@ -98,11 +111,13 @@ CONTACT_TIMED_OUT = "timed out"
 # because the clock is not what ran out, and apart from an unreachable host because the
 # next model is still worth trying.
 CONTACT_DROPPED = "dropped"
+CONTACT_INVALID_PAYLOAD = "invalid payload"
 
 _ONE_MODEL = {
     CONTACT_AT_CAPACITY: "Gemini is at capacity ({names}).",
     CONTACT_TIMED_OUT: "Gemini ran out of the time budget ({names}).",
     CONTACT_DROPPED: "Gemini dropped the connection ({names}).",
+    CONTACT_INVALID_PAYLOAD: "Gemini returned an invalid payload ({names}).",
 }
 _EVERY_MODEL = {
     CONTACT_AT_CAPACITY: "Every Gemini model contacted is at capacity: {names}.",
@@ -110,11 +125,15 @@ _EVERY_MODEL = {
         "Every Gemini model contacted ran out of the time budget: {names}."
     ),
     CONTACT_DROPPED: "Every Gemini model contacted dropped the connection: {names}.",
+    CONTACT_INVALID_PAYLOAD: (
+        "Every Gemini model contacted returned an unusable payload: {names}."
+    ),
 }
 _PER_MODEL = {
     CONTACT_AT_CAPACITY: "{model} was at capacity",
     CONTACT_TIMED_OUT: "{model} ran out of the time budget",
     CONTACT_DROPPED: "{model} dropped the connection",
+    CONTACT_INVALID_PAYLOAD: "{model} returned an invalid payload",
 }
 
 
@@ -304,7 +323,7 @@ class GeminiCleaner:
             f"({self.model}{chain_label}){mode_label}. No audio is sent."
         )
 
-        payload = {
+        base_payload = {
             "contents": [
                 {
                     "parts": [
@@ -320,13 +339,7 @@ class GeminiCleaner:
             "systemInstruction": {
                 "parts": [{"text": system_instruction}]
             },
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseSchema": CLEANED_TEXT_SCHEMA,
-                "maxOutputTokens": output_token_budget(text),
-            },
         }
-        body = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
 
         self.answered_with = None
@@ -350,6 +363,17 @@ class GeminiCleaner:
             # and then refusing to contact it is a promise the speaker can see broken.
             if index:
                 self._announce(f"Trying {model}.")
+            generation_config: dict[str, Any] = {
+                "responseMimeType": "application/json",
+                "responseSchema": CLEANED_TEXT_SCHEMA,
+                "maxOutputTokens": output_token_budget(
+                    text, is_reasoning=_is_reasoning_model(model)
+                ),
+            }
+            if _supports_zero_thinking_budget(model):
+                generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+            payload = {**base_payload, "generationConfig": generation_config}
+            body = json.dumps(payload).encode("utf-8")
             request = Request(
                 self._build_url(model), data=body, headers=headers, method="POST"
             )
@@ -384,8 +408,19 @@ class GeminiCleaner:
                 contacted.append((model, CONTACT_AT_CAPACITY))
                 self._announce(f"{model} is at capacity ({exc.status}).")
                 continue
-            self.answered_with = model
-            return _extract_cleaned_text(raw)
+
+            try:
+                cleaned = _extract_cleaned_text(raw)
+                self.answered_with = model
+                return cleaned
+            except CleanupError as exc:
+                last_error = exc
+                contacted.append((model, CONTACT_INVALID_PAYLOAD))
+                if is_last:
+                    raise CleanupError(describe_chain_failure(contacted, skipped)) from exc
+                self._announce(f"{model} returned an unusable response. Falling back.")
+                continue
+
 
         if last_error is None:
             raise CleanupError("Gemini had no time left to answer.")
@@ -506,7 +541,7 @@ def _extract_cleaned_text(body: str) -> str:
         raise CleanupError("Gemini returned invalid cleanup JSON.") from exc
     if not isinstance(cleaned_text, str) or not cleaned_text.strip():
         raise CleanupError("Gemini returned empty cleaned text.")
-    return cleaned_text.strip()
+    return strip_enclosing_markdown_fences(cleaned_text.strip())
 
 
 def _text_from_candidates(parsed: dict[str, Any]) -> str | None:

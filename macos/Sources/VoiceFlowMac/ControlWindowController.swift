@@ -180,6 +180,17 @@ final class ControlWindowController: NSWindowController, NSWindowDelegate {
         viewModel.healthReport = report
     }
 
+    /// Update live macOS permission indicators for Settings (D-111).
+    func updatePermissions(
+        globalHotkeyAvailable: Bool,
+        needsInputMonitoring: Bool,
+        needsAccessibility: Bool
+    ) {
+        viewModel.globalHotkeyAvailable = globalHotkeyAvailable
+        viewModel.needsInputMonitoring = needsInputMonitoring
+        viewModel.needsAccessibility = needsAccessibility
+    }
+
     /// Say plainly where the words will go, and whether that route is ready.
     func updateProvider(selected: CleanerMode, keyStored: Bool) {
         viewModel.selectedCleaner = selected
